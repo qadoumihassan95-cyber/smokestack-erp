@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SmokeStack — Accounting (V1)</title>
+<style>
+  :root{--bg:#0f1420;--panel:#161d2e;--panel2:#1d2740;--line:#2a3550;--txt:#e8edf7;--muted:#93a0bd;
+        --brand:#ff7a45;--brand2:#ffb020;--ok:#31c48d;--warn:#ffb020;--bad:#f05252;--accent:#5b8def;}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--txt);height:100vh;overflow:hidden}
+  .app{display:grid;grid-template-columns:216px 1fr;height:100vh}
+  .side{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:16px 12px}
+  .logo{display:flex;align-items:center;gap:9px;font-weight:800;font-size:18px;padding:6px 8px 4px}
+  .logo .b{width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,var(--brand),var(--brand2));display:flex;align-items:center;justify-content:center;font-size:14px}
+  .tag{font-size:10px;color:var(--muted);padding:0 8px 14px}
+  .nav a{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:9px;color:var(--muted);text-decoration:none;font-size:13.5px;font-weight:600;cursor:pointer;margin-bottom:2px}
+  .nav a:hover{background:var(--panel2);color:var(--txt)}
+  .nav a.active{background:var(--panel2);color:var(--txt);box-shadow:inset 3px 0 0 var(--brand)}
+  .nav a.lock{opacity:.5;cursor:not-allowed}
+  .nav .grp{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);padding:12px 12px 5px;font-weight:700}
+  .side .foot{margin-top:auto;font-size:10.5px;color:var(--muted);padding:8px;border-top:1px solid var(--line);line-height:1.5}
+  .main{overflow-y:auto;padding:18px 24px}
+  .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:10px}
+  .top h1{font-size:22px}.top .sub{font-size:12px;color:var(--muted)}
+  select,.sel{background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:9px;padding:8px 11px;font-size:13px;font-weight:600}
+  .askbtn{background:linear-gradient(135deg,var(--brand),var(--brand2));border:none;color:#1a1000;border-radius:10px;padding:9px 15px;font-size:13px;font-weight:800;cursor:pointer;display:inline-flex;gap:7px;align-items:center}
+  .grid{display:grid;gap:13px}.g4{grid-template-columns:repeat(4,1fr)}.g3{grid-template-columns:repeat(3,1fr)}.g2{grid-template-columns:1fr 1fr}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:15px}
+  .kpi .l{font-size:12px;color:var(--muted);font-weight:600}.kpi .v{font-size:25px;font-weight:800;margin-top:5px}.kpi .s{font-size:11.5px;margin-top:3px;color:var(--muted)}
+  .card h3{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:11px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:start;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px;padding:9px 8px;border-bottom:1px solid var(--line)}
+  td{padding:10px 8px;border-bottom:1px solid var(--line)}
+  .chip{font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px}
+  .c-sale{background:rgba(49,196,141,.16);color:#7ff0c0}.c-exp{background:rgba(240,82,82,.16);color:#ff9a9a}
+  .c-pur{background:rgba(255,176,32,.16);color:#ffcf7a}.c-dep{background:rgba(91,141,239,.18);color:#a9c4ff}
+  .c-pay{background:rgba(180,120,240,.18);color:#d3b4ff}.c-ref{background:rgba(147,160,189,.18);color:#c3ccdd}
+  .btn{border:none;border-radius:9px;padding:9px 14px;font-weight:700;font-size:13px;cursor:pointer}
+  .btn.p{background:var(--brand);color:#1a1000}.btn.g{background:var(--panel2);color:var(--muted)}
+  input,textarea{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:9px;padding:9px 11px;font-size:13px;width:100%;font-family:inherit}
+  label{font-size:11.5px;color:var(--muted);font-weight:600;display:block;margin-bottom:5px}
+  .field{margin-bottom:11px}
+  .view{display:none}.view.on{display:block}
+  .lockcard{background:var(--panel);border:1px dashed var(--line);border-radius:13px;padding:26px;text-align:center;color:var(--muted)}
+  /* AI chat */
+  .chatwrap{display:grid;grid-template-columns:1fr 320px;gap:16px;height:calc(100vh - 96px)}
+  .chat{display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  .chat .msgs{flex:1;overflow-y:auto;padding:18px;display:flex;flex-direction:column;gap:12px}
+  .msg{max-width:78%;padding:11px 14px;border-radius:13px;font-size:14px;line-height:1.4}
+  .msg.ai{background:var(--panel2);border:1px solid var(--line);align-self:flex-start;border-bottom-left-radius:4px}
+  .msg.me{background:linear-gradient(135deg,var(--brand),var(--brand2));color:#1a1000;align-self:flex-end;border-bottom-right-radius:4px;font-weight:600}
+  .msg .rec{margin-top:8px;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:9px;font-size:12.5px}
+  .qr{display:flex;gap:7px;flex-wrap:wrap;margin-top:9px}
+  .qr button{background:var(--bg);border:1px solid var(--brand);color:var(--brand);border-radius:16px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer}
+  .qr button:hover{background:var(--brand);color:#1a1000}
+  .composer{border-top:1px solid var(--line);padding:12px;display:flex;gap:9px}
+  .composer input{flex:1}
+  .composer .send{background:var(--brand);border:none;color:#1a1000;border-radius:9px;padding:0 16px;font-weight:800;cursor:pointer;font-size:14px}
+  .side-help{overflow-y:auto}
+  .exlist div{font-size:12.5px;color:var(--muted);padding:8px 10px;border:1px solid var(--line);border-radius:9px;margin-bottom:7px;cursor:pointer;background:var(--panel2)}
+  .exlist div:hover{color:var(--txt);border-color:var(--brand)}
+  .tg{display:flex;flex-direction:column;gap:9px;max-width:420px}
+  .tg .b{padding:10px 13px;border-radius:12px;font-size:13.5px;max-width:82%}
+  .tg .in{background:var(--panel2);border:1px solid var(--line);align-self:flex-start}
+  .tg .out{background:#2b5278;color:#fff;align-self:flex-end}
+  .pill{background:var(--panel2);border:1px solid var(--line);padding:5px 11px;border-radius:16px;font-size:11.5px;color:var(--muted)}
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(120px);background:var(--panel2);border:1px solid var(--line);border-left:4px solid var(--ok);border-radius:11px;padding:12px 18px;font-size:13px;font-weight:600;z-index:60;transition:.3s}
+  .toast.show{transform:translateX(-50%) translateY(0)}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+  /* ===== Report Center (scoped rep-*) ===== */
+  .rep-searchbox input{background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:10px;padding:9px 14px;font-size:13px;width:330px;max-width:52vw}
+  .rep-wrap{display:grid;grid-template-columns:198px 1fr;gap:14px;height:calc(100vh - 96px)}
+  .rep-cats{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:10px;overflow-y:auto}
+  .rep-cat{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:9px;color:var(--muted);font-size:13px;font-weight:600;cursor:pointer;margin-bottom:2px}
+  .rep-cat:hover{background:var(--panel2);color:var(--txt)}
+  .rep-cat.on{background:var(--panel2);color:var(--txt);box-shadow:inset 3px 0 0 var(--brand)}
+  .rep-cat .n{margin-left:auto;font-size:10.5px;color:var(--muted);background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:1px 7px}
+  .rep-main{overflow-y:auto;padding-right:2px}
+  .rep-cathead{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:700;margin:2px 0 12px}
+  .rep-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  .rep-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;cursor:pointer;transition:.13s}
+  .rep-card:hover{border-color:var(--brand);transform:translateY(-2px);box-shadow:0 8px 22px rgba(0,0,0,.22)}
+  .rep-card .ic{width:34px;height:34px;border-radius:9px;background:var(--panel2);display:flex;align-items:center;justify-content:center;font-size:17px;margin-bottom:9px}
+  .rep-card h4{font-size:13.5px;margin-bottom:4px}
+  .rep-card p{font-size:11.5px;color:var(--muted);line-height:1.35}
+  .rep-back{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted);cursor:pointer;margin-bottom:12px}
+  .rep-back:hover{color:var(--brand)}
+  .rep-dh{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+  .rep-dh h2{font-size:21px}.rep-dh .s{font-size:12px;color:var(--muted);margin-top:2px}
+  .rep-exp{display:flex;gap:6px;flex-wrap:wrap}
+  .rep-exp button{background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:6px 11px;font-size:12px;font-weight:600;cursor:pointer}
+  .rep-exp button:hover{border-color:var(--brand);color:var(--brand)}
+  .rep-fbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+  .rep-fbar select{background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:7px 9px;font-size:12px}
+  .rep-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}
+  .rep-kpi{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:13px}
+  .rep-kpi .l{font-size:11.5px;color:var(--muted)}.rep-kpi .v{font-size:21px;font-weight:800;margin-top:4px}
+  .rep-svg{width:100%;height:auto;display:block}
+  .rep-insight{background:var(--panel);border:1px solid rgba(91,141,239,.35);border-radius:12px;padding:14px;margin-top:14px}
+  .rep-insight .h{color:var(--accent);font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px}
+  .rep-tbl-wrap{overflow-x:auto;max-height:360px;overflow-y:auto}
+  .rep-row-click{cursor:pointer}.rep-row-click:hover td{background:var(--panel2)}
+  @media(max-width:960px){.rep-wrap{grid-template-columns:1fr;height:auto}.rep-cats{display:flex;flex-wrap:wrap;height:auto}.rep-grid{grid-template-columns:1fr 1fr}.rep-kpis{grid-template-columns:1fr 1fr}}
+  /* ===== Ask Claude — Copilot (scoped cop-*) ===== */
+  .cop-wrap{display:grid;grid-template-columns:1fr 298px;gap:15px;height:calc(100vh - 92px)}
+  .cop-main{display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);border-radius:15px;overflow:hidden}
+  .cop-stream{flex:1;overflow-y:auto;padding:20px 22px;display:flex;flex-direction:column;gap:16px;scroll-behavior:smooth}
+  .cop-row{display:flex;gap:11px;align-items:flex-start;max-width:88%;animation:copIn .25s ease}
+  .cop-row.me{align-self:flex-end;flex-direction:row-reverse;max-width:80%}
+  @keyframes copIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .cop-av{width:30px;height:30px;border-radius:9px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800}
+  .cop-av.ai{background:linear-gradient(135deg,var(--brand),var(--brand2));color:#1a1000}
+  .cop-av.me{background:var(--panel2);border:1px solid var(--line);color:var(--muted)}
+  .cop-col{display:flex;flex-direction:column;gap:5px;min-width:0}
+  .cop-bub{padding:11px 14px;border-radius:13px;font-size:14px;line-height:1.5;word-wrap:break-word}
+  .cop-bub.ai{background:var(--panel2);border:1px solid var(--line);border-top-left-radius:4px}
+  .cop-bub.me{background:linear-gradient(135deg,var(--brand),var(--brand2));color:#1a1000;border-top-right-radius:4px;font-weight:600}
+  .cop-bub code{background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:1px 5px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;color:var(--brand2)}
+  .cop-bub pre{background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:11px;overflow-x:auto;margin:8px 0}
+  .cop-bub pre code{background:none;border:none;padding:0;color:var(--txt);white-space:pre}
+  .cop-bub b,.cop-bub strong{color:var(--txt)} .cop-bub.me b{color:#1a1000}
+  .cop-bub ul{margin:6px 0 6px 2px;list-style:none} .cop-bub li{padding:2px 0 2px 16px;position:relative}
+  .cop-bub li:before{content:"▪";color:var(--brand);position:absolute;left:0}
+  .cop-meta{display:flex;align-items:center;gap:8px;font-size:10.5px;color:var(--muted);opacity:0;transition:.15s;padding:0 3px}
+  .cop-row:hover .cop-meta{opacity:1}
+  .cop-mact{cursor:pointer;color:var(--muted);border:1px solid transparent;border-radius:5px;padding:1px 5px}
+  .cop-mact:hover{color:var(--txt);border-color:var(--line);background:var(--panel2)}
+  .cop-typing{display:flex;gap:4px;padding:13px 15px;background:var(--panel2);border:1px solid var(--line);border-radius:13px;border-top-left-radius:4px;width:fit-content}
+  .cop-typing i{width:7px;height:7px;border-radius:50%;background:var(--muted);animation:copDot 1.2s infinite}
+  .cop-typing i:nth-child(2){animation-delay:.2s}.cop-typing i:nth-child(3){animation-delay:.4s}
+  @keyframes copDot{0%,60%,100%{opacity:.3;transform:translateY(0)}30%{opacity:1;transform:translateY(-3px)}}
+  .cop-think{font-size:11.5px;color:var(--muted);font-style:italic;padding-left:2px;display:flex;align-items:center;gap:7px}
+  .cop-think .sp{width:12px;height:12px;border:2px solid var(--line);border-top-color:var(--brand);border-radius:50%;animation:copSpin .7s linear infinite}
+  @keyframes copSpin{to{transform:rotate(360deg)}}
+  /* rich cards */
+  .cop-card{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:9px;animation:copPop .28s cubic-bezier(.2,.9,.3,1.2)}
+  @keyframes copPop{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:scale(1)}}
+  .cop-card.tx{border-color:rgba(255,122,69,.4)} .cop-card.ok{border-color:rgba(49,196,141,.5)}
+  .cop-card.insight{border-color:rgba(91,141,239,.4)} .cop-card .ch{display:flex;justify-content:space-between;align-items:center;margin-bottom:11px}
+  .cop-card .ct{font-size:12px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:var(--muted)}
+  .cop-kv{display:grid;grid-template-columns:96px 1fr;gap:7px 10px;font-size:13px;align-items:center}
+  .cop-kv .k{color:var(--muted);font-size:12px}
+  .cop-kv select,.cop-kv input{padding:6px 8px;font-size:12.5px;border-radius:7px}
+  .cop-amt{font-size:26px;font-weight:800;color:var(--txt)}
+  .cop-okwrap{display:flex;align-items:center;gap:11px}
+  .cop-check{width:34px;height:34px;border-radius:50%;background:var(--ok);display:flex;align-items:center;justify-content:center;color:#04160e;font-weight:900;font-size:18px;animation:copCheck .4s cubic-bezier(.2,.9,.3,1.4)}
+  @keyframes copCheck{0%{transform:scale(0)}70%{transform:scale(1.2)}100%{transform:scale(1)}}
+  .cop-qa{display:flex;gap:7px;flex-wrap:wrap;margin-top:11px}
+  .cop-qa button{background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:6px 11px;font-size:12px;font-weight:700;cursor:pointer;transition:.12s;display:inline-flex;gap:5px;align-items:center}
+  .cop-qa button:hover{border-color:var(--brand);background:var(--panel2);transform:translateY(-1px)}
+  .cop-qa button.pri{background:var(--brand);border-color:var(--brand);color:#1a1000}
+  .cop-chips{display:flex;gap:7px;flex-wrap:wrap;margin-top:9px}
+  .cop-chip{background:var(--bg);border:1px solid var(--brand);color:var(--brand);border-radius:17px;padding:6px 13px;font-size:12.5px;font-weight:700;cursor:pointer}
+  .cop-chip:hover{background:var(--brand);color:#1a1000}
+  /* composer */
+  .cop-comp{border-top:1px solid var(--line);padding:11px 12px;position:relative}
+  .cop-hint{position:absolute;top:-13px;left:16px;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:3px 9px;font-size:10.5px;color:var(--muted);display:none;gap:8px}
+  .cop-hint.show{display:inline-flex}
+  .cop-hint b{color:var(--brand2)}
+  .cop-inbox{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:8px 10px;transition:.15s}
+  .cop-inbox.drag{border-color:var(--brand);background:rgba(255,122,69,.08)}
+  .cop-ta{width:100%;background:none;border:none;color:var(--txt);font-size:14px;resize:none;outline:none;font-family:inherit;line-height:1.4;max-height:130px;padding:4px 2px}
+  .cop-tools{display:flex;align-items:center;gap:4px;margin-top:6px}
+  .cop-tool{background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px;width:30px;height:30px;border-radius:7px;display:flex;align-items:center;justify-content:center}
+  .cop-tool:hover{background:var(--panel);color:var(--txt)}
+  .cop-tool.on{color:var(--brand)}
+  .cop-send{margin-left:auto;background:linear-gradient(135deg,var(--brand),var(--brand2));border:none;color:#1a1000;border-radius:9px;padding:7px 15px;font-weight:800;cursor:pointer;font-size:13px}
+  .cop-send:disabled{opacity:.4;cursor:not-allowed}
+  .cop-kbd{font-size:10px;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:1px 5px;margin-left:6px}
+  /* mention/command menu */
+  .cop-menu{position:absolute;bottom:100%;left:12px;right:12px;margin-bottom:8px;background:var(--panel);border:1px solid var(--line);border-radius:11px;box-shadow:0 14px 40px rgba(0,0,0,.5);max-height:250px;overflow-y:auto;display:none;z-index:20}
+  .cop-menu.show{display:block}
+  .cop-menu .mh{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);padding:9px 13px 4px}
+  .cop-mi{display:flex;align-items:center;gap:10px;padding:9px 13px;cursor:pointer;font-size:13px}
+  .cop-mi:hover,.cop-mi.sel{background:var(--panel2)}
+  .cop-mi .ic{width:26px;height:26px;border-radius:7px;background:var(--panel2);display:flex;align-items:center;justify-content:center;font-size:13px}
+  .cop-mi .d{font-size:11px;color:var(--muted);margin-left:auto}
+  /* file chips */
+  .cop-files{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:7px}
+  .cop-file{display:flex;align-items:center;gap:7px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:5px 9px;font-size:11.5px}
+  .cop-file .x{cursor:pointer;color:var(--muted)}
+  /* right sidebar */
+  .cop-side{display:flex;flex-direction:column;gap:12px;overflow-y:auto}
+  .cop-sec{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:13px}
+  .cop-sec h4{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:9px;display:flex;justify-content:space-between;align-items:center}
+  .cop-srow{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--txt);padding:7px 8px;border-radius:8px;cursor:pointer;border:1px solid transparent}
+  .cop-srow:hover{background:var(--panel2);border-color:var(--line)}
+  .cop-srow .st{margin-left:auto;color:var(--muted);font-size:13px;cursor:pointer}
+  .cop-schips{display:flex;gap:6px;flex-wrap:wrap}
+  .cop-schip{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:15px;padding:5px 10px;font-size:11.5px;cursor:pointer;font-weight:600}
+  .cop-schip:hover{border-color:var(--brand);color:var(--brand)}
+  .cop-empty{color:var(--muted);font-size:12px;text-align:center;padding:10px 4px}
+  @media(max-width:960px){.cop-wrap{grid-template-columns:1fr}.cop-side{display:none}}
+  @media(max-width:820px){.app{grid-template-columns:1fr}.side{display:none}.g4,.g3,.g2{grid-template-columns:1fr 1fr}.chatwrap{grid-template-columns:1fr;height:auto}.side-help{display:none}.cop-wrap{height:auto}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="logo"><span class="b">🔥</span> SmokeStack</div>
+    <div class="tag">Accounting · Version 1</div>
+    <nav class="nav" id="nav">
+      <a data-v="dash" class="active">📊 Dashboard</a>
+      <a data-v="ai">🤖 Ask Claude</a>
+      <div class="grp">Daily Books</div>
+      <a data-v="sales">💵 Daily Sales</a>
+      <a data-v="expenses">🧾 Expenses</a>
+      <a data-v="purchases">📦 Purchases</a>
+      <a data-v="recon">🏦 Bank Reconciliation</a>
+      <div class="grp">Compliance</div>
+      <a data-v="tax">🧮 Sales Tax</a>
+      <a data-v="payroll">👥 Payroll</a>
+      <div class="grp">More</div>
+      <a data-v="reports">📈 Reports</a>
+      <a data-v="telegram">✈️ Telegram</a>
+      <a data-v="settings">⚙️ Settings</a>
+      <a class="lock" title="Coming in Version 2">🔒 Inventory (V2)</a>
+    </nav>
+    <div class="foot">Accounting-first · AI-driven<br>Not legal or tax advice.</div>
+  </aside>
+
+  <main class="main">
+    <!-- DASHBOARD -->
+    <section class="view on" id="v-dash">
+      <div class="top"><div><h1>Dashboard</h1><div class="sub" id="dashSub">All stores · today</div></div>
+        <div style="display:flex;gap:9px;align-items:center">
+          <select id="storeSel" onchange="renderDash()"></select>
+          <button class="askbtn" onclick="go('ai')">🤖 Ask Claude</button>
+        </div>
+      </div>
+      <div class="grid g4" id="kpis"></div>
+      <div class="grid g3" style="margin-top:13px">
+        <div class="card" style="grid-column:span 2"><h3>Recent Transactions</h3><table id="recentTbl"></table></div>
+        <div class="card"><h3>Pending Tasks</h3><div id="pending" style="font-size:13px;line-height:1.9"></div>
+          <h3 style="margin-top:16px">Tax Summary (MTD)</h3><div id="taxMini" style="font-size:13px;line-height:1.9"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- AI ASSISTANT (Copilot) -->
+    <section class="view" id="v-ai">
+      <div class="top"><div><h1>Ask Claude</h1><div class="sub">Your AI accounting copilot — say what happened, Claude keeps the books.</div></div>
+        <div style="display:flex;gap:8px;align-items:center"><span class="pill" id="copCtx">Ready</span><button class="btn g" onclick="copNewChat()">＋ New chat</button></div></div>
+      <div class="cop-wrap">
+        <div class="cop-main">
+          <div class="cop-stream" id="copStream"></div>
+          <div class="cop-comp">
+            <div class="cop-hint" id="copHint"></div>
+            <div class="cop-menu" id="copMenu"></div>
+            <div class="cop-inbox" id="copInbox">
+              <div class="cop-files" id="copFiles" style="display:none"></div>
+              <textarea class="cop-ta" id="copTa" rows="1" placeholder="Message Claude…  e.g. Store B electricity 320   (type @ to mention, / for commands)"></textarea>
+              <div class="cop-tools">
+                <button class="cop-tool" title="Attach receipt / statement (⌘U)" onclick="document.getElementById('copFile').click()">📎</button>
+                <button class="cop-tool" id="copDateBtn" title="Insert date" onclick="copToggleDate()">📅</button>
+                <button class="cop-tool" title="Voice input" onclick="copVoice()">🎙️</button>
+                <button class="cop-tool" title="Commands (/)" onclick="copOpenCmd()">⌘</button>
+                <input type="date" id="copDate" style="display:none" onchange="copInsertDate(this.value)">
+                <span class="cop-kbd">↵ send</span><span class="cop-kbd">⇧↵ newline</span>
+                <button class="cop-send" id="copSend" onclick="copSubmit()">Send</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <aside class="cop-side" id="copSide"></aside>
+      </div>
+      <input type="file" id="copFile" multiple style="display:none" onchange="copFilesPicked(this.files)">
+    </section>
+
+    <!-- DAILY SALES -->
+    <section class="view" id="v-sales">
+      <div class="top"><div><h1>Daily Sales</h1><div class="sub">Report the day's totals — not every receipt.</div></div></div>
+      <div class="grid g3">
+        <div class="card"><h3>Report Today's Sales</h3>
+          <div class="field"><label>Store</label><select id="sStore"></select></div>
+          <div class="row2"><div class="field"><label>Cash sales ($)</label><input id="sCash" type="number" placeholder="0"></div>
+          <div class="field"><label>Card sales ($)</label><input id="sCard" type="number" placeholder="0"></div></div>
+          <div class="field"><label>Taxable? sales-tax auto-calculated</label><select id="sTaxable"><option value="1">Taxable</option><option value="0">Non-taxable</option></select></div>
+          <button class="btn p" onclick="submitDailySales()">Save daily sales</button>
+        </div>
+        <div class="card" style="grid-column:span 2"><h3>Recent Daily Reports</h3><table id="salesTbl"></table></div>
+      </div>
+    </section>
+
+    <!-- EXPENSES -->
+    <section class="view" id="v-expenses">
+      <div class="top"><div><h1>Expenses</h1><div class="sub">Fast entry — category, amount, done.</div></div></div>
+      <div class="grid g3">
+        <div class="card"><h3>Add Expense</h3>
+          <div class="field"><label>Store</label><select id="eStore"></select></div>
+          <div class="field"><label>Account</label><select id="eAcct"></select></div>
+          <div class="field"><label>Category</label><select id="eCat"><option>Utilities</option><option>Rent</option><option>Payroll</option><option>Supplies</option><option>Marketing</option><option>Bank Charges</option><option>Other</option></select></div>
+          <div class="row2"><div class="field"><label>Amount ($)</label><input id="eAmt" type="number" placeholder="0"></div>
+          <div class="field"><label>Vendor</label><input id="eVendor" placeholder="optional"></div></div>
+          <button class="btn p" onclick="submitExpense()">Save expense</button>
+        </div>
+        <div class="card" style="grid-column:span 2"><h3>Recent Expenses</h3><table id="expTbl"></table></div>
+      </div>
+    </section>
+
+    <!-- PURCHASES -->
+    <section class="view" id="v-purchases">
+      <div class="top"><div><h1>Purchases</h1><div class="sub">Simple: vendor, date, amount. Description optional.</div></div></div>
+      <div class="grid g3">
+        <div class="card"><h3>Add Purchase</h3>
+          <div class="field"><label>Store</label><select id="pStore"></select></div>
+          <div class="field"><label>Account</label><select id="pAcct"></select></div>
+          <div class="field"><label>Vendor</label><input id="pVendor" placeholder="e.g. Altria"></div>
+          <div class="row2"><div class="field"><label>Amount ($)</label><input id="pAmt" type="number" placeholder="0"></div>
+          <div class="field"><label>Date</label><input id="pDate" type="date"></div></div>
+          <div class="field"><label>Description (optional)</label><input id="pDesc" placeholder="e.g. cigars"></div>
+          <div class="field"><label>Notes (optional)</label><input id="pNotes" placeholder="optional"></div>
+          <button class="btn p" onclick="submitPurchase()">Save purchase</button>
+        </div>
+        <div class="card" style="grid-column:span 2"><h3>Recent Purchases</h3><table id="purTbl"></table></div>
+      </div>
+    </section>
+
+    <!-- BANK RECON -->
+    <section class="view" id="v-recon">
+      <div class="top"><div><h1>Bank Reconciliation</h1><div class="sub">Match imported bank lines to your books.</div></div>
+        <button class="btn g" onclick="importDemo()">⬇ Import bank statement (demo)</button></div>
+      <div class="card"><table id="reconTbl"></table></div>
+      <div class="card" style="margin-top:12px;font-size:12px;color:var(--muted)">Imports supported: bank feed / CSV / Excel / OFX / QBO / MT940 / email receipts — auto-categorized on arrival. Unmatched lines become one-tap draft entries.</div>
+    </section>
+
+    <!-- SALES TAX -->
+    <section class="view" id="v-tax">
+      <div class="top"><div><h1>Sales Tax</h1><div class="sub">Tracked per store & state. Ready for multi-state rates.</div></div></div>
+      <div class="grid g4" id="taxKpis"></div>
+      <div class="grid g2" style="margin-top:13px">
+        <div class="card"><h3>Tax by Store</h3><table id="taxStoreTbl"></table></div>
+        <div class="card"><h3>Settings & Filing</h3>
+          <div class="field"><label>State</label><select id="taxState" onchange="renderTax()"><option value="TX|8.25">Texas — 8.25%</option><option value="CA|9.50">California — 9.50%</option><option value="NY|8.88">New York — 8.88%</option><option value="FL|7.00">Florida — 7.00%</option></select></div>
+          <div style="font-size:13px;line-height:1.9;color:var(--muted)" id="taxNote"></div>
+          <button class="btn p" style="margin-top:8px" onclick="toast('Tax report generated for filing period')">Generate tax report</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- PAYROLL -->
+    <section class="view" id="v-payroll">
+      <div class="top"><div><h1>Payroll & Payroll Tax</h1><div class="sub">Minimal by design — expandable for full payroll in V2.</div></div>
+        <button class="btn p" onclick="runPayroll()">Run payroll (period)</button></div>
+      <div class="grid g4" id="payKpis"></div>
+      <div class="card" style="margin-top:13px"><h3>Employees</h3><table id="payTbl"></table></div>
+      <div class="card" style="margin-top:12px;font-size:12px;color:var(--muted)">Employer taxes estimated at 7.65% FICA + ~2% unemployment. Withholding is illustrative — connect a payroll provider for filing in V2.</div>
+    </section>
+
+    <!-- REPORT CENTER -->
+    <section class="view" id="v-reports">
+      <div class="top"><div><h1>Report Center</h1><div class="sub" id="repSub">Business intelligence for every part of the shop</div></div>
+        <div class="rep-searchbox"><input id="repSearch" placeholder="Search reports…  profit · inventory · tax · cash · employee" oninput="repSearchInput()"></div></div>
+      <div class="rep-wrap">
+        <aside class="rep-cats" id="repCats"></aside>
+        <div class="rep-main" id="repMain"></div>
+      </div>
+    </section>
+
+    <!-- TELEGRAM -->
+    <section class="view" id="v-telegram">
+      <div class="top"><div><h1>Telegram Bot</h1><div class="sub">Employees run the whole day from chat — no app to learn.</div></div>
+        <span class="pill">@SmokeStackBot · connected</span></div>
+      <div class="grid g2">
+        <div class="card"><h3>Live Conversation</h3><div class="tg" id="tgChat"></div>
+          <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+            <button class="btn g" onclick="tgSim('Clock In')">Clock In</button>
+            <button class="btn g" onclick="tgSim('We sold $6,200 today')">Daily Sales</button>
+            <button class="btn g" onclick="tgSim('Paid electricity $320')">Expense</button>
+            <button class="btn g" onclick="tgSim('Bought cigars for $240')">Purchase</button>
+            <button class="btn g" onclick="tgSim('Clock Out')">Clock Out</button>
+          </div>
+        </div>
+        <div class="card"><h3>Clock In / Out Log</h3><table id="clockTbl"></table>
+          <h3 style="margin-top:16px">How it works</h3>
+          <div style="font-size:12.5px;color:var(--muted);line-height:1.6">The bot receives a message, asks <b>Which store?</b> then <b>Which account?</b> when needed, parses the amount and intent, writes the accounting entry, and confirms. Clock In/Out records only employee, date, time, and location.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section class="view" id="v-settings">
+      <div class="top"><div><h1>Settings</h1><div class="sub">Stores & accounts — the two things every entry belongs to.</div></div></div>
+      <div class="grid g2">
+        <div class="card"><h3>Stores</h3><div id="storeList"></div>
+          <div style="display:flex;gap:8px;margin-top:10px"><input id="newStore" placeholder="Add store name"><button class="btn p" onclick="addStore()">Add</button></div></div>
+        <div class="card"><h3>Bank Accounts</h3><div id="acctList"></div>
+          <div style="display:flex;gap:8px;margin-top:10px"><input id="newAcct" placeholder="Add account name"><button class="btn p" onclick="addAcct()">Add</button></div></div>
+      </div>
+      <div class="card" style="margin-top:13px"><h3>What changed in V1</h3>
+        <div style="font-size:13px;color:var(--muted);line-height:1.8">Removed for simplicity: Average Basket, Average Margin, Customer Management, Loyalty. Inventory moved to a future module. The system is now accounting-first: sales, expenses, purchases, tax, payroll, and reports — driven by Claude and Telegram.</div></div>
+    </section>
+  </main>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// ---------------- State ----------------
+let STORES=["Store A","Store B","Store C"];
+let ACCOUNTS=["Cash","Checking","Business Bank","Credit Card"];
+const today=new Date('2026-07-02');
+function dstr(d){return d.toISOString().slice(0,10);}
+function daysAgo(n){const d=new Date(today);d.setDate(d.getDate()-n);return dstr(d);}
+// ledger: {id,date,store,account,type,category,amount,memo,tax}
+let LEDGER=[
+ {id:1,date:daysAgo(0),store:"Store A",account:"Cash",type:"sale",category:"Sales",amount:8420,memo:"Daily sales",tax:642.20},
+ {id:2,date:daysAgo(0),store:"Store B",account:"Cash",type:"sale",category:"Sales",amount:5100,memo:"Daily sales",tax:389.00},
+ {id:3,date:daysAgo(0),store:"Store A",account:"Checking",type:"expense",category:"Utilities",amount:320,memo:"Electric"},
+ {id:4,date:daysAgo(1),store:"Store A",account:"Business Bank",type:"purchase",category:"Inventory Purchase",amount:4820,memo:"Altria · cigars"},
+ {id:5,date:daysAgo(1),store:"Store B",account:"Cash",type:"sale",category:"Sales",amount:6200,memo:"Daily sales",tax:472.75},
+ {id:6,date:daysAgo(2),store:"Store C",account:"Cash",type:"sale",category:"Sales",amount:4780,memo:"Daily sales",tax:364.55},
+ {id:7,date:daysAgo(2),store:"Store A",account:"Business Bank",type:"deposit",category:"Cash Deposit",amount:4000,memo:"Cash to bank"},
+ {id:8,date:daysAgo(3),store:"Store A",account:"Checking",type:"payroll",category:"Payroll",amount:2500,memo:"Payroll run"},
+ {id:9,date:daysAgo(4),store:"Store B",account:"Cash",type:"sale",category:"Sales",amount:5890,memo:"Daily sales",tax:449.15},
+ {id:10,date:daysAgo(1),store:"Store A",account:"Cash",type:"sale",category:"Sales",amount:7240,memo:"Daily sales",tax:552.05},
+];
+let CLOCK=[{emp:"Sam Rivera",date:daysAgo(0),time:"08:02",loc:"Store A",dir:"In"},{emp:"Ana Gomez",date:daysAgo(0),time:"09:15",loc:"Store B",dir:"In"}];
+let EMPLOYEES=[{name:"Sam Rivera",store:"Store A",gross:3200},{name:"Ana Gomez",store:"Store B",gross:2600},{name:"Dev Patel",store:"Store C",gross:2900}];
+let uid=100;
+const TYPECHIP={sale:"c-sale",expense:"c-exp",purchase:"c-pur",deposit:"c-dep",transfer:"c-dep",refund:"c-ref",payroll:"c-pay"};
+let curStore="all";
+
+// ---------------- helpers ----------------
+function money(n){return '$'+Math.round(n).toLocaleString();}
+function money2(n){return '$'+(+n).toFixed(2);}
+function inPeriod(d,p){if(p==='today')return d===daysAgo(0);if(p==='week')return d>=daysAgo(6);if(p==='month')return d>=daysAgo(30);return true;}
+function filt(store){return LEDGER.filter(x=>store==='all'||x.store===store);}
+function sum(rows,type){return rows.filter(x=>x.type===type).reduce((a,x)=>a+x.amount,0);}
+function go(v){document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('active',a.dataset.v===v));
+  document.querySelectorAll('.view').forEach(s=>s.classList.remove('on'));document.getElementById('v-'+v).classList.add('on');}
+document.getElementById('nav').addEventListener('click',e=>{const a=e.target.closest('a');if(!a||!a.dataset.v)return;go(a.dataset.v);if(a.dataset.v==='ai')setTimeout(()=>document.getElementById('chatInput')?.focus(),50);});
+let tt;function toast(m){const t=document.getElementById('toast');t.className='toast show';t.textContent='✅ '+m;clearTimeout(tt);tt=setTimeout(()=>t.className='toast',2600);}
+function fillStores(){const opts=s=>['<option value="all">All stores</option>'].concat(STORES.map(x=>`<option>${x}</option>`)).join('');
+  document.getElementById('storeSel').innerHTML=opts();
+  ['sStore','eStore','pStore'].forEach(id=>document.getElementById(id).innerHTML=STORES.map(x=>`<option>${x}</option>`).join(''));
+  ['eAcct','pAcct'].forEach(id=>document.getElementById(id).innerHTML=ACCOUNTS.map(x=>`<option>${x}</option>`).join(''));}
+
+// ---------------- Dashboard ----------------
+function renderDash(){curStore=document.getElementById('storeSel').value;const rows=filt(curStore);
+  const todayRows=rows.filter(x=>x.date===daysAgo(0)), weekRows=rows.filter(x=>inPeriod(x.date,'week')), monthRows=rows.filter(x=>inPeriod(x.date,'month'));
+  const salesToday=sum(todayRows,'sale'), salesWeek=sum(weekRows,'sale');
+  const expMonth=sum(monthRows,'expense')+sum(monthRows,'payroll'), purMonth=sum(monthRows,'purchase');
+  const profit=sum(monthRows,'sale')-expMonth-purMonth;
+  const cashBal=sum(rows.filter(x=>x.account==='Cash'),'sale')-sum(rows.filter(x=>x.account==='Cash'&&x.type!=='sale'),'')- rows.filter(x=>x.account==='Cash'&&x.type==='deposit').reduce((a,x)=>a+x.amount,0);
+  const cash = rows.filter(x=>x.account==='Cash').reduce((a,x)=>a+(x.type==='sale'?x.amount:x.type==='deposit'||x.type==='expense'||x.type==='purchase'||x.type==='payroll'?-x.amount:0),0);
+  const bank = rows.filter(x=>x.account!=='Cash').reduce((a,x)=>a+(x.type==='deposit'||x.type==='sale'?x.amount:-x.amount),0);
+  const taxPayable=monthRows.reduce((a,x)=>a+(x.tax||0),0);
+  const K=[["Today's Sales",money(salesToday),"var(--ok)",todayRows.filter(x=>x.type==='sale').length+" reports"],
+    ["This Week",money(salesWeek),"var(--txt)","7-day sales"],
+    ["Cash Balance",money(cash),"var(--brand2)","on hand"],
+    ["Bank Balance",money(bank),"var(--txt)","all accounts"],
+    ["Expenses (MTD)",money(expMonth),"var(--bad)","incl. payroll"],
+    ["Profit (MTD)",money(profit),profit>=0?"var(--ok)":"var(--bad)","sales − costs"],
+    ["Tax Payable",money(taxPayable),"var(--brand)","sales tax MTD"],
+    ["Purchases (MTD)",money(purMonth),"var(--txt)","cost of goods"]];
+  document.getElementById('kpis').innerHTML=K.slice(0,8).map(k=>`<div class="card kpi"><div class="l">${k[0]}</div><div class="v" style="color:${k[2]}">${k[1]}</div><div class="s">${k[3]}</div></div>`).join('');
+  document.getElementById('dashSub').textContent=(curStore==='all'?'All stores':curStore)+' · '+daysAgo(0);
+  // recent
+  const rec=[...rows].sort((a,b)=>b.id-a.id).slice(0,8);
+  document.getElementById('recentTbl').innerHTML=`<thead><tr><th>Date</th><th>Store</th><th>Account</th><th>Type</th><th>Memo</th><th style="text-align:end">Amount</th></tr></thead><tbody>`+
+    rec.map(x=>`<tr><td>${x.date.slice(5)}</td><td>${x.store}</td><td>${x.account}</td><td><span class="chip ${TYPECHIP[x.type]}">${x.type}</span></td><td>${x.memo||x.category}</td><td style="text-align:end;color:${x.type==='sale'||x.type==='deposit'?'var(--ok)':'var(--txt)'}"><b>${money(x.amount)}</b></td></tr>`).join('')+`</tbody>`;
+  document.getElementById('pending').innerHTML=`🔵 <b>${money(cash>4000?cash-1000:0)}</b> cash ready to deposit<br>🟡 Store C hasn't reported today<br>🟢 Payroll due in 3 days<br>🟠 Sales-tax filing in 12 days`;
+  document.getElementById('taxMini').innerHTML=`Taxable sales (MTD): <b>${money(sum(monthRows,'sale'))}</b><br>Tax collected: <b style="color:var(--brand)">${money(taxPayable)}</b><br>Filing status: <b style="color:var(--warn)">Open</b>`;
+}
+
+// ---------------- Daily Sales ----------------
+function renderSales(){const rows=LEDGER.filter(x=>x.type==='sale').sort((a,b)=>b.id-a.id).slice(0,12);
+  document.getElementById('salesTbl').innerHTML=`<thead><tr><th>Date</th><th>Store</th><th>Account</th><th>Tax</th><th style="text-align:end">Amount</th></tr></thead><tbody>`+
+    rows.map(x=>`<tr><td>${x.date.slice(5)}</td><td>${x.store}</td><td>${x.account}</td><td>${x.tax?money2(x.tax):'—'}</td><td style="text-align:end"><b>${money(x.amount)}</b></td></tr>`).join('')+`</tbody>`;}
+function submitDailySales(){const store=document.getElementById('sStore').value;const cash=+document.getElementById('sCash').value||0;const card=+document.getElementById('sCard').value||0;const taxable=document.getElementById('sTaxable').value==='1';
+  const total=cash+card;if(!total)return toast('Enter a sales amount');const tax=taxable?+(total*0.0825/1.0825).toFixed(2):0;
+  if(cash)LEDGER.push({id:++uid,date:daysAgo(0),store,account:"Cash",type:"sale",category:"Sales",amount:cash,memo:"Daily cash sales",tax:+(tax*cash/(total||1)).toFixed(2)});
+  if(card)LEDGER.push({id:++uid,date:daysAgo(0),store,account:"Checking",type:"sale",category:"Sales",amount:card,memo:"Daily card sales",tax:+(tax*card/(total||1)).toFixed(2)});
+  document.getElementById('sCash').value='';document.getElementById('sCard').value='';renderSales();renderDash();toast('Daily sales saved: '+money(total)+' ('+store+')');}
+
+// ---------------- Expenses ----------------
+function renderExp(){const rows=LEDGER.filter(x=>x.type==='expense'||x.type==='payroll').sort((a,b)=>b.id-a.id).slice(0,12);
+  document.getElementById('expTbl').innerHTML=`<thead><tr><th>Date</th><th>Store</th><th>Category</th><th>Account</th><th style="text-align:end">Amount</th></tr></thead><tbody>`+
+    rows.map(x=>`<tr><td>${x.date.slice(5)}</td><td>${x.store}</td><td>${x.category}</td><td>${x.account}</td><td style="text-align:end;color:var(--bad)"><b>${money(x.amount)}</b></td></tr>`).join('')+`</tbody>`;}
+function submitExpense(){const amt=+document.getElementById('eAmt').value||0;if(!amt)return toast('Enter an amount');
+  LEDGER.push({id:++uid,date:daysAgo(0),store:document.getElementById('eStore').value,account:document.getElementById('eAcct').value,type:"expense",category:document.getElementById('eCat').value,amount:amt,memo:document.getElementById('eVendor').value||document.getElementById('eCat').value});
+  document.getElementById('eAmt').value='';document.getElementById('eVendor').value='';renderExp();renderDash();toast('Expense saved: '+money(amt));}
+
+// ---------------- Purchases ----------------
+function renderPur(){const rows=LEDGER.filter(x=>x.type==='purchase').sort((a,b)=>b.id-a.id).slice(0,12);
+  document.getElementById('purTbl').innerHTML=`<thead><tr><th>Date</th><th>Vendor</th><th>Store</th><th>Description</th><th style="text-align:end">Amount</th></tr></thead><tbody>`+
+    rows.map(x=>`<tr><td>${x.date.slice(5)}</td><td><b>${x.vendor||x.memo}</b></td><td>${x.store}</td><td>${x.desc||'—'}</td><td style="text-align:end"><b>${money(x.amount)}</b></td></tr>`).join('')+`</tbody>`;}
+function submitPurchase(){const amt=+document.getElementById('pAmt').value||0;if(!amt)return toast('Enter an amount');
+  LEDGER.push({id:++uid,date:document.getElementById('pDate').value||daysAgo(0),store:document.getElementById('pStore').value,account:document.getElementById('pAcct').value,type:"purchase",category:"Inventory Purchase",amount:amt,vendor:document.getElementById('pVendor').value,desc:document.getElementById('pDesc').value,memo:document.getElementById('pNotes').value||document.getElementById('pVendor').value});
+  ['pAmt','pVendor','pDesc','pNotes'].forEach(id=>document.getElementById(id).value='');renderPur();renderDash();toast('Purchase saved: '+money(amt));}
+
+// ---------------- Bank recon ----------------
+let RECON=[{date:daysAgo(0),desc:"CASH DEPOSIT",amt:4000,matched:true,cat:"Deposit"},
+ {date:daysAgo(0),desc:"CITY ELECTRIC",amt:-320,matched:true,cat:"Utilities"},
+ {date:daysAgo(1),desc:"ALTRIA GROUP INV",amt:-4820,matched:true,cat:"Inventory Purchase"},
+ {date:daysAgo(1),desc:"STRIPE PAYOUT",amt:2260,matched:false,cat:"Card Sales"},
+ {date:daysAgo(2),desc:"SHELL OIL 574",amt:-64,matched:false,cat:"Fuel Expense"}];
+function renderRecon(){document.getElementById('reconTbl').innerHTML=`<thead><tr><th>Date</th><th>Description</th><th>Auto-category</th><th>Amount</th><th>Status</th></tr></thead><tbody>`+
+  RECON.map((r,i)=>`<tr><td>${r.date.slice(5)}</td><td><b>${r.desc}</b></td><td>${r.cat}</td><td style="color:${r.amt<0?'var(--bad)':'var(--ok)'}">${money2(Math.abs(r.amt))}</td><td>${r.matched?'<span class="chip c-sale">Matched</span>':`<button class="btn g" style="padding:5px 10px" onclick="matchRecon(${i})">Record</button>`}</td></tr>`).join('')+`</tbody>`;}
+function matchRecon(i){RECON[i].matched=true;const r=RECON[i];LEDGER.push({id:++uid,date:r.date,store:STORES[0],account:"Business Bank",type:r.amt<0?"expense":"deposit",category:r.cat,amount:Math.abs(r.amt),memo:r.desc});renderRecon();renderDash();toast('Recorded & matched: '+r.desc);}
+function importDemo(){toast('Bank statement imported — 5 lines auto-categorized');go('recon');}
+
+// ---------------- Sales Tax ----------------
+function renderTax(){const [st,rate]=document.getElementById('taxState').value.split('|');const r=+rate;
+  const month=LEDGER.filter(x=>inPeriod(x.date,'month'));
+  const taxable=sum(month,'sale');const collected=month.reduce((a,x)=>a+(x.tax||0),0);
+  const K=[["Taxable Sales (MTD)",money(taxable),"var(--txt)"],["Tax Rate",r+"%","var(--txt)"],["Tax Collected",money(collected),"var(--brand)"],["Tax Payable",money(collected),"var(--warn)"]];
+  document.getElementById('taxKpis').innerHTML=K.map(k=>`<div class="card kpi"><div class="l">${k[0]}</div><div class="v" style="color:${k[2]}">${k[1]}</div><div class="s">state: ${st}</div></div>`).join('');
+  const byStore=STORES.map(s=>{const rows=month.filter(x=>x.store===s);return [s,sum(rows,'sale'),rows.reduce((a,x)=>a+(x.tax||0),0)];});
+  document.getElementById('taxStoreTbl').innerHTML=`<thead><tr><th>Store</th><th style="text-align:end">Taxable sales</th><th style="text-align:end">Tax collected</th></tr></thead><tbody>`+
+    byStore.map(b=>`<tr><td><b>${b[0]}</b></td><td style="text-align:end">${money(b[1])}</td><td style="text-align:end;color:var(--brand)">${money(b[2])}</td></tr>`).join('')+`</tbody>`;
+  document.getElementById('taxNote').innerHTML=`Rate applied: <b>${r}%</b> (${st})<br>Rates are per-jurisdiction and configurable — the engine supports different US states.<br>Next filing: <b>Jul 20</b>`;}
+
+// ---------------- Payroll ----------------
+function renderPay(){const totalGross=EMPLOYEES.reduce((a,e)=>a+e.gross,0);const empTax=+(totalGross*0.0765).toFixed(0);const unemp=+(totalGross*0.02).toFixed(0);const net=totalGross-empTax;
+  const K=[["Gross Payroll",money(totalGross),"var(--txt)"],["Employer FICA (7.65%)",money(empTax),"var(--brand)"],["Unemployment (~2%)",money(unemp),"var(--brand2)"],["Total Cost",money(totalGross+empTax+unemp),"var(--bad)"]];
+  document.getElementById('payKpis').innerHTML=K.map(k=>`<div class="card kpi"><div class="l">${k[0]}</div><div class="v" style="color:${k[2]}">${k[1]}</div><div class="s">this period</div></div>`).join('');
+  document.getElementById('payTbl').innerHTML=`<thead><tr><th>Employee</th><th>Store</th><th style="text-align:end">Gross</th><th style="text-align:end">Empl. tax</th><th style="text-align:end">Net</th></tr></thead><tbody>`+
+    EMPLOYEES.map(e=>{const t=+(e.gross*0.0765).toFixed(0);return `<tr><td><b>${e.name}</b></td><td>${e.store}</td><td style="text-align:end">${money(e.gross)}</td><td style="text-align:end;color:var(--brand)">${money(t)}</td><td style="text-align:end"><b>${money(e.gross-t)}</b></td></tr>`;}).join('')+`</tbody>`;}
+function runPayroll(){const g=EMPLOYEES.reduce((a,e)=>a+e.gross,0);LEDGER.push({id:++uid,date:daysAgo(0),store:STORES[0],account:"Checking",type:"payroll",category:"Payroll",amount:g,memo:"Payroll run"});renderDash();toast('Payroll recorded: '+money(g)+' + employer taxes');}
+
+// ---------------- Reports ----------------
+// =================== REPORT CENTER (scoped rep*) ===================
+let REP={inited:false,cat:'Financial',current:null,search:'',
+  filters:{period:'month',store:'all',category:'all',vendor:'all',account:'all',employee:'all',product:'all',customer:'all'},
+  tx:[],products:[],customers:[],vendors:[],employees:[]};
+const PIE=['#ff7a45','#5b8def','#ffb020','#31c48d','#b478f0','#f05252','#93a0bd','#00a896'];
+const RCATS=[['Financial','📒'],['Sales','💵'],['Expenses','🧾'],['Purchasing','🚚'],['Inventory','📦'],['Customers','🧑'],['Vendors','🏭'],['Employees','👥'],['Cash','🏦'],['Tax','🧮'],['AI Insights','🤖']];
+function cap(s){return String(s).charAt(0).toUpperCase()+String(s).slice(1);}
+function pct(v,t){return (t?Math.round(v/t*100):0)+'%';}
+function fmtV(v,m){return m?money(v):v;}
+
+// ---- reporting dataset (synthetic history so charts are meaningful; live entries append) ----
+function repSeed(){let s=42;const rnd=()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};
+  const pick=a=>a[Math.floor(rnd()*a.length)];
+  const products=[['Marlboro Gold','Cigarettes',7.1,9.25],['Newport','Cigarettes',7.4,9.8],['Zyn Cool Mint','Pouches',3.9,5.5],['Elf Bar','Vape',12.1,17.99],['RAW Classic','Accessories',1.8,2.99],['Backwoods','Cigars',9.2,12.49],['Juul Pods','Vape',14,19.99],['Grinder','Accessories',5,9.99],['Glass Pipe','Accessories',12,24.99],['Lighter','Accessories',0.6,1.99]];
+  const custs=['Mike R.','Ana G.','Dev P.','Sara K.','Tom B.','Lily W.','Omar F.','Jade M.'];
+  const dow=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];const tx=[];let id=1;
+  for(let dd=200;dd>=0;dd--){const date=daysAgo(dd);const wd=dow[new Date(date).getDay()];const we=(wd==='Fri'||wd==='Sat')?1.3:1;
+    STORES.forEach((store,si)=>{const sf=[1,1.6,1.15][si]||1;
+      for(let k=0;k<2+Math.floor(rnd()*3);k++){const p=pick(products);const qty=1+Math.floor(rnd()*3);const base=p[3]*qty;const hour=9+Math.floor(rnd()*12);const amt=+(base*sf*we).toFixed(0);
+        tx.push({id:id++,date,store,employee:pick(EMPLOYEES).name,account:pick(['Cash','Cash','Checking','Credit Card']),type:'sale',amount:amt,tax:+(amt*0.0825/1.0825).toFixed(2),product:p[0],prodCat:p[1],category:'Sales',hour,weekday:wd,discount:rnd()<0.15?Math.round(amt*0.1):0,void:rnd()<0.02,customer:pick(custs),vendor:null});}
+      if(rnd()<0.5){const c=pick(['Utilities','Rent','Supplies','Marketing','Bank Charges']);tx.push({id:id++,date,store,account:'Checking',type:'expense',amount:c==='Rent'?2500:Math.round(60+rnd()*400),category:c,weekday:wd,tax:0});}
+      if(rnd()<0.35)tx.push({id:id++,date,store,account:'Business Bank',type:'purchase',amount:Math.round(500+rnd()*4500),vendor:pick(VENDORS),category:'Inventory Purchase',weekday:wd,tax:0});
+      if(rnd()<0.2)tx.push({id:id++,date,store,account:'Business Bank',type:'deposit',amount:Math.round(1000+rnd()*4000),category:'Cash Deposit',weekday:wd,tax:0});
+      if(rnd()<0.06)tx.push({id:id++,date,store,employee:pick(EMPLOYEES).name,account:'Cash',type:'refund',amount:Math.round(20+rnd()*120),category:'Refund',product:pick(products)[0],weekday:wd,tax:0});
+    });
+    if(dd%14===0)STORES.forEach(store=>tx.push({id:id++,date,store,account:'Checking',type:'payroll',amount:2500,category:'Payroll',weekday:wd,tax:0}));
+  }
+  REP.tx=tx;
+  REP.products=products.map(p=>{const sold=tx.filter(x=>x.type==='sale'&&x.product===p[0]).length;const rev=tx.filter(x=>x.type==='sale'&&x.product===p[0]).reduce((a,x)=>a+x.amount,0);const stock=Math.max(0,Math.round(rnd()*200)-25);return {name:p[0],cat:p[1],cost:p[2],price:p[3],sold,rev,stock,reorder:25,value:Math.round(stock*p[2]),adj:Math.round((rnd()-0.5)*12),turnover:+(sold/(stock+10)).toFixed(2)};});
+  REP.customers=custs.map(c=>{const r=tx.filter(x=>x.customer===c&&x.type==='sale');const spend=r.reduce((a,x)=>a+x.amount,0);return {name:c,visits:r.length,spend,ltv:Math.round(spend*1.4),freq:+(r.length/12).toFixed(1),balance:Math.round(rnd()<0.3?rnd()*200:0)};});
+  REP.vendors=VENDORS.map(v=>{const r=tx.filter(x=>x.vendor===v);const spend=r.reduce((a,x)=>a+x.amount,0);return {name:v,orders:r.length,spend,balance:Math.round(rnd()<0.4?rnd()*3000:0),returns:Math.round(spend*0.03)};});
+  REP.employees=EMPLOYEES.map(e=>{const r=tx.filter(x=>x.employee===e.name&&x.type==='sale');return {name:e.name,store:e.store,gross:e.gross,sales:r.reduce((a,x)=>a+x.amount,0),txns:r.length,overtime:Math.round((e.gross%7)+2),attendance:92+Math.round((e.gross%8))};});
+}
+function repInPeriod(d,p){if(p==='today')return d===daysAgo(0);if(p==='week')return d>=daysAgo(6);if(p==='month')return d>=daysAgo(29);if(p==='quarter')return d>=daysAgo(89);if(p==='year')return d>=daysAgo(200);return true;}
+function repTx(){const f=REP.filters;return REP.tx.filter(x=>repInPeriod(x.date,f.period)&&(f.store==='all'||x.store===f.store)&&(f.account==='all'||x.account===f.account)&&(f.category==='all'||x.category===f.category||x.prodCat===f.category)&&(f.vendor==='all'||x.vendor===f.vendor)&&(f.employee==='all'||x.employee===f.employee)&&(f.product==='all'||x.product===f.product)&&(f.customer==='all'||x.customer===f.customer));}
+function repSum(rows,type){return rows.filter(x=>x.type===type).reduce((a,x)=>a+x.amount,0);}
+
+// ---- charts ----
+function repBar(data,color){const w=760,h=250,pad=36;if(!data.length)return repEmpty();const max=Math.max(1,...data.map(d=>d[1]));const step=(w-pad*2)/data.length,bw=Math.min(48,step*0.62);
+  let s=`<svg class="rep-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet">`;
+  [0.25,0.5,0.75,1].forEach(g=>{const y=h-pad-(h-pad*2)*g;s+=`<line x1="${pad}" y1="${y.toFixed(0)}" x2="${w-pad}" y2="${y.toFixed(0)}" stroke="var(--line)" stroke-width="1"/>`;});
+  data.forEach((d,i)=>{const bh=(d[1]/max)*(h-pad*2);const x=pad+i*step+(step-bw)/2;const y=h-pad-bh;
+    s+=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1,bh).toFixed(1)}" rx="4" fill="${color||'var(--brand)'}"><title>${d[0]}: ${money(d[1])}</title></rect>`;
+    s+=`<text x="${(x+bw/2).toFixed(0)}" y="${h-pad+16}" font-size="10" fill="var(--muted)" text-anchor="middle">${String(d[0]).slice(0,9)}</text>`;});
+  return s+`</svg>`;}
+function repLine(data,o){o=o||{};const w=760,h=250,pad=38;if(data.length<2)return repBar(data,o.color);const vals=data.map(d=>d[1]);const max=Math.max(...vals),min=Math.min(...vals,0);const span=(max-min)||1;
+  const X=i=>pad+i*((w-pad*2)/(data.length-1)),Y=v=>h-pad-((v-min)/span)*(h-pad*2);
+  const pts=data.map((d,i)=>[X(i),Y(d[1])]);const path=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
+  let s=`<svg class="rep-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet">`;
+  [0.25,0.5,0.75,1].forEach(g=>{const y=h-pad-(h-pad*2)*g;s+=`<line x1="${pad}" y1="${y.toFixed(0)}" x2="${w-pad}" y2="${y.toFixed(0)}" stroke="var(--line)" stroke-width="1"/>`;});
+  if(o.area){const a=`M${pts[0][0].toFixed(1)} ${h-pad} `+pts.map(p=>'L'+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ')+` L${pts[pts.length-1][0].toFixed(1)} ${h-pad} Z`;s+=`<path d="${a}" fill="${o.color||'var(--brand)'}" opacity="0.13"/>`;}
+  if(o.fc!=null){const solid=pts.slice(0,o.fc+1),dash=pts.slice(o.fc);s+=`<polyline points="${solid.map(p=>p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ')}" fill="none" stroke="${o.color||'var(--brand)'}" stroke-width="2.5"/>`;
+    s+=`<polyline points="${dash.map(p=>p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ')}" fill="none" stroke="${o.color||'var(--brand)'}" stroke-width="2.5" stroke-dasharray="6 5" opacity="0.8"/>`;}
+  else s+=`<path d="${path}" fill="none" stroke="${o.color||'var(--brand)'}" stroke-width="2.5"/>`;
+  pts.forEach((p,i)=>s+=`<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="3.5" fill="${o.color||'var(--brand)'}"><title>${data[i][0]}: ${money(data[i][1])}</title></circle>`);
+  data.forEach((d,i)=>{if(data.length<=14||i%2===0)s+=`<text x="${X(i).toFixed(0)}" y="${h-pad+16}" font-size="9.5" fill="var(--muted)" text-anchor="middle">${String(d[0]).slice(0,6)}</text>`;});
+  return s+`</svg>`;}
+function repPie(data){const total=data.reduce((a,d)=>a+d[1],0)||1;let ang=-Math.PI/2;const cx=120,cy=120,r=92;let s=`<svg class="rep-svg" viewBox="0 0 520 244" preserveAspectRatio="xMidYMid meet">`;
+  data.forEach((d,i)=>{const a2=ang+(d[1]/total)*Math.PI*2;const x1=cx+r*Math.cos(ang),y1=cy+r*Math.sin(ang),x2=cx+r*Math.cos(a2),y2=cy+r*Math.sin(a2);const big=(a2-ang)>Math.PI?1:0;
+    s+=`<path d="M${cx} ${cy} L${x1.toFixed(1)} ${y1.toFixed(1)} A${r} ${r} 0 ${big} 1 ${x2.toFixed(1)} ${y2.toFixed(1)} Z" fill="${PIE[i%PIE.length]}"><title>${d[0]}: ${money(d[1])}</title></path>`;ang=a2;});
+  data.forEach((d,i)=>{const y=34+i*24;s+=`<rect x="270" y="${y-11}" width="13" height="13" rx="3" fill="${PIE[i%PIE.length]}"/><text x="292" y="${y}" font-size="12.5" fill="var(--txt)">${String(d[0]).slice(0,16)} — ${money(d[1])} (${pct(d[1],total)})</text>`;});
+  return s+`</svg>`;}
+function repEmpty(){return `<div style="text-align:center;color:var(--muted);padding:40px;font-size:13px">No data for the selected filters.</div>`;}
+
+// ---- time bucketing ----
+function repBuckets(gran){const out=[];const now=new Date(daysAgo(0));
+  if(gran==='day'){for(let i=29;i>=0;i--){const d=daysAgo(i);out.push({label:d.slice(5),rows:repTx().filter(x=>x.date===d)});}}
+  else if(gran==='week'){for(let w=11;w>=0;w--){const end=daysAgo(w*7),start=daysAgo(w*7+6);out.push({label:end.slice(5),rows:repTx().filter(x=>x.date>=start&&x.date<=end)});}}
+  else if(gran==='month'){for(let m=6;m>=0;m--){const d=new Date(now);d.setMonth(d.getMonth()-m);const key=d.toISOString().slice(0,7);out.push({label:['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()],rows:REP.tx.filter(x=>x.date.slice(0,7)===key&&repMatchFilters(x))});}}
+  else if(gran==='year'){const y=now.getFullYear();out.push({label:String(y-1),rows:REP.tx.filter(x=>x.date.slice(0,4)===String(y-1)&&repMatchFilters(x))});out.push({label:String(y),rows:REP.tx.filter(x=>x.date.slice(0,4)===String(y)&&repMatchFilters(x))});}
+  return out;}
+function repMatchFilters(x){const f=REP.filters;return (f.store==='all'||x.store===f.store)&&(f.account==='all'||x.account===f.account)&&(f.category==='all'||x.category===f.category)&&(f.vendor==='all'||x.vendor===f.vendor)&&(f.employee==='all'||x.employee===f.employee);}
+function metricVal(rows,m){if(m==='profit')return repSum(rows,'sale')-repSum(rows,'purchase')-repSum(rows,'expense')-repSum(rows,'payroll');if(m==='cash')return repSum(rows,'sale')+repSum(rows,'deposit')-repSum(rows,'purchase')-repSum(rows,'expense')-repSum(rows,'payroll');if(m==='revenue')return repSum(rows,'sale');return repSum(rows,m);}
+
+// ---- builders ----
+function bGroup(c){const rows=repTx().filter(x=>x.type===(c.txType||'sale'));const m={};rows.forEach(x=>{const k=x[c.dim]||'—';m[k]=(m[k]||0)+x.amount;});
+  let data=Object.entries(m).sort((a,b)=>b[1]-a[1]);const total=data.reduce((a,d)=>a+d[1],0);const top=data[0];
+  const chart=c.chart==='pie'?repPie(data.slice(0,7)):repBar(data.slice(0,12),c.color);
+  return {kpis:[['Total',money(total)],['Groups',data.length],['Top '+c.dim,top?top[0]:'—'],['Top share',top?pct(top[1],total):'0%']],chart,
+    table:{cols:[cap(c.dim),'Amount','Share'],align:['start','end','end'],rows:data.map(d=>[d[0],money(d[1]),pct(d[1],total)]),drill:c.dim,drillrows:data.map(d=>d[0])},
+    insight:top?`<b>${top[0]}</b> is the largest ${c.dim} at ${money(top[1])} (${pct(top[1],total)} of the total). ${data.length>1?`The smallest, ${data[data.length-1][0]}, is ${money(data[data.length-1][1])} — a ${Math.round(top[1]/(data[data.length-1][1]||1))}× gap worth balancing.`:''}`:'No matching data.'};}
+function bSeries(c){const data=repBuckets(c.gran).map(b=>[b.label,metricVal(b.rows,c.metric||'sale')]);const chart=repLine(data,{color:c.color,area:c.chart==='area'});
+  const total=data.reduce((a,d)=>a+d[1],0);const first=data[0]?.[1]||0,last=data[data.length-1]?.[1]||0;const tr=first?Math.round((last-first)/Math.abs(first)*100):0;
+  return {kpis:[['Total',money(total)],['Average',money(total/(data.length||1))],['Latest',money(last)],['Trend',(tr>=0?'+':'')+tr+'%']],chart,
+    table:{cols:['Period','Amount'],align:['start','end'],rows:data.map(d=>[d[0],money(d[1])])},
+    insight:`${cap(c.metric||'sales')} moved from <b>${money(first)}</b> to <b>${money(last)}</b> — ${tr>=0?'up':'down'} <b>${Math.abs(tr)}%</b>. ${tr<-8?'The recent decline is worth a closer look.':tr>8?'Momentum is strong; keep it going.':'Performance is broadly stable.'}`};}
+function bRank(c){let items=[...REP[c.src]].sort((a,b)=>c.order==='asc'?a[c.key]-b[c.key]:b[c.key]-a[c.key]);const top=items.slice(0,c.n||10);
+  const data=top.map(i=>[i.name,i[c.key]]);const chart=c.money!==false?repBar(data,c.color):repBar(data,c.color);
+  return {kpis:[['Items',items.length],['Leader',top[0]?.name||'—'],['Top value',fmtV(top[0]?.[c.key]||0,c.money!==false)],['Metric',cap(c.key)]],chart,
+    table:{cols:c.cols||['Name',cap(c.key)],align:['start','end'],rows:top.map(i=>[i.name,fmtV(i[c.key],c.money!==false)])},
+    insight:c.ins?c.ins(items):`Ranked by <b>${c.key}</b>. ${top[0]?`<b>${top[0].name}</b> leads${c.order==='asc'?' from the bottom':''} at ${fmtV(top[0][c.key],c.money!==false)}.`:''}`};}
+function bList(c){const src=REP[c.src];let rows=src.slice();if(c.filter)rows=rows.filter(c.filter);if(c.sort)rows.sort(c.sort);
+  const cols=c.cols.map(x=>x[0]);const chart=c.chartKey&&rows.length?repBar(rows.slice(0,10).map(r=>[r.name,r[c.chartKey]]),c.color):null;
+  const kpis=c.kpis?c.kpis(rows,src):[['In view',rows.length],['Total '+c.src,src.length],['Filtered',src.length-rows.length],['Period',cap(REP.filters.period)]];
+  const ins=c.ins?c.ins(rows,src):`Showing <b>${rows.length}</b> of ${src.length} ${c.src}. Use the filters above to refine, or click a row to drill in.`;
+  return {kpis,chart,table:{cols,align:c.cols.map(x=>x[2]||'start'),rows:rows.map(r=>c.cols.map(col=>col[1](r)))},insight:ins};}
+function bLedger(c){let rows=repTx();if(c.filter)rows=rows.filter(c.filter);rows=rows.slice().sort((a,b)=>c.sort?c.sort(a,b):(b.date<a.date?-1:1)).slice(0,120);
+  return {kpis:[['Entries',rows.length],['Debits',money(rows.filter(x=>['expense','purchase','payroll','refund'].includes(x.type)).reduce((a,x)=>a+x.amount,0))],['Credits',money(rows.filter(x=>['sale','deposit'].includes(x.type)).reduce((a,x)=>a+x.amount,0))],['Period',cap(REP.filters.period)]],chart:null,
+    table:{cols:['Date','Store','Account','Type','Memo/Category',c.amt||'Amount'],align:['start','start','start','start','start','end'],rows:rows.map(x=>[x.date.slice(5),x.store,x.account||'—',x.type,x.vendor||x.product||x.category,money(x.amount)])},
+    insight:c.ins||`Showing the ${rows.length} most recent matching entries. Use filters to narrow by store, account, category or period.`};}
+function bStatement(w){const rows=repTx();const sales=repSum(rows,'sale'),exp=repSum(rows,'expense'),pur=repSum(rows,'purchase'),pay=repSum(rows,'payroll'),dep=repSum(rows,'deposit'),ref=repSum(rows,'refund');const tax=rows.reduce((a,x)=>a+(x.tax||0),0);const gp=sales-pur,np=gp-exp-pay;
+  if(w==='pl'){const L=[['Sales',sales,0],['− Cost of goods (purchases)',pur,0],['Gross profit',gp,1],['− Operating expenses',exp,0],['− Payroll',pay,0],['Net profit',np,1]];return stmt('Profit & Loss',L,np,sales,`Net margin is <b>${pct(np,sales)}</b>. Gross profit ${money(gp)} on ${money(sales)} of sales; ${np>=0?'the business is profitable this period.':'the period is running at a loss — trim expenses or lift sales.'}`);}
+  if(w==='cashflow'){const L=[['Cash from sales',sales+dep,1],['− Purchases',pur,0],['− Expenses',exp,0],['− Payroll',pay,0],['Net cash flow',sales+dep-pur-exp-pay,1]];return stmt('Cash Flow',L,sales+dep-pur-exp-pay,sales,`Operating cash flow is <b>${money(sales+dep-pur-exp-pay)}</b> this period.`);}
+  if(w==='balance'){const cash=metricVal(rows,'cash')+12000;const inv=REP.products.reduce((a,p)=>a+p.value,0);const ar=REP.customers.reduce((a,c)=>a+c.balance,0);const ap=REP.vendors.reduce((a,v)=>a+v.balance,0);const assets=cash+inv+ar;const liab=ap+tax;const eq=assets-liab;
+    const L=[['Cash & bank',cash,0],['Inventory',inv,0],['Accounts receivable',ar,0],['Total assets',assets,1],['Accounts payable',ap,0],['Sales tax payable',tax,0],['Total liabilities',liab,1],['Owner equity',eq,1]];return stmt('Balance Sheet',L,eq,assets,`Assets ${money(assets)} = liabilities ${money(liab)} + equity ${money(eq)}. The books balance.`);}
+  if(w==='trial'){const L=[['Sales (Cr)',sales,0],['Purchases (Dr)',pur,0],['Expenses (Dr)',exp,0],['Payroll (Dr)',pay,0],['Deposits (Dr)',dep,0],['Sales tax (Cr)',tax,0],['Balanced',0,1]];return stmt('Trial Balance',L,0,sales,`Debits and credits reconcile for the period. Total sales ${money(sales)}.`);}
+  if(w==='equity'){const eq=metricVal(rows,'profit');const L=[['Opening equity',12000,0],['+ Net profit',np,0],['− Owner draws',3000,0],['Closing equity',12000+np-3000,1]];return stmt('Owner Equity',L,12000+np-3000,12000,`Equity changed by ${money(np-3000)} this period after draws.`);}
+  if(w==='retained'){const L=[['Opening retained earnings',9000,0],['+ Net profit',np,0],['− Distributions',2000,0],['Closing retained earnings',9000+np-2000,1]];return stmt('Retained Earnings',L,9000+np-2000,9000,`Retained earnings ${np-2000>=0?'grew':'fell'} by ${money(Math.abs(np-2000))}.`);}
+  if(w==='cashpos'){const byAcct=ACCOUNTS.map(a=>[a,REP.tx.filter(x=>x.account===a).reduce((s,x)=>s+(['sale','deposit'].includes(x.type)?x.amount:-x.amount),0)]);const tot=byAcct.reduce((a,b)=>a+b[1],0);return {kpis:[['Total cash',money(tot)],['Accounts',ACCOUNTS.length],['Largest',byAcct.sort((a,b)=>b[1]-a[1])[0][0]],['Period',cap(REP.filters.period)]],chart:repBar(byAcct,'var(--ok)'),table:{cols:['Account','Balance'],align:['start','end'],rows:byAcct.map(b=>[b[0],money(b[1])])},insight:`Total cash position is <b>${money(tot)}</b> across ${ACCOUNTS.length} accounts.`};}
+  if(w==='recon'){const cash=metricVal(rows,'cash');return {kpis:[['Book balance',money(cash+8000)],['Bank balance',money(cash+7850)],['Difference',money(150)],['Status','Review']],chart:null,table:{cols:['Item','Amount'],align:['start','end'],rows:[['Book balance',money(cash+8000)],['Outstanding deposits',money(400)],['Outstanding checks',money(-250)],['Adjusted book',money(cash+8150)],['Bank statement',money(cash+7850)],['Unreconciled',money(300)]]},insight:`A <b>${money(300)}</b> difference remains — likely timing on a deposit. Match it on the Bank Reconciliation page.`};}
+  if(w==='budget'){const cats=['Sales','Utilities','Rent','Payroll','Supplies','Marketing'];const rowsB=cats.map(c=>{const actual=c==='Sales'?sales:c==='Payroll'?pay:rows.filter(x=>x.category===c).reduce((a,x)=>a+x.amount,0);const budget=Math.round(actual*(0.85+((c.length%5)/10)));return [c,budget,actual,actual-budget];});
+    return {kpis:[['Categories',cats.length],['Over budget',rowsB.filter(r=>r[2]>r[1]&&r[0]!=='Sales').length],['Sales vs plan',pct(sales,rowsB[0][1])],['Period',cap(REP.filters.period)]],chart:repBar(rowsB.map(r=>[r[0],r[2]]),'var(--brand)'),table:{cols:['Category','Budget','Actual','Variance'],align:['start','end','end','end'],rows:rowsB.map(r=>[r[0],money(r[1]),money(r[2]),money(r[3])])},insight:`Spending is ${rowsB.filter(r=>r[3]>0&&r[0]!=='Sales').length} categories over plan. Watch the largest variances.`};}
+  return stmt('Statement',[['—',0,0]],0,1,'');}
+function stmt(title,lines,net,base,insight){return {kpis:[['Result',money(net)],['Base',money(base)],['Ratio',pct(net,base)],['Period',cap(REP.filters.period)]],chart:repBar(lines.filter(l=>l[1]).map(l=>[l[0].replace(/[−+]/g,'').trim().slice(0,10),Math.abs(l[1])]),'var(--accent)'),
+  table:{cols:['Line','Amount'],align:['start','end'],rows:lines.map(l=>[l[0],money(l[1])]),bold:lines.map(l=>l[2])},insight};}
+function bForecast(c){const hist=repBuckets('month').map(b=>metricVal(b.rows,c.metric));const n=hist.length;const avg=(hist[n-1]+hist[n-2])/2||hist[n-1];const slope=n>1?(hist[n-1]-hist[0])/(n-1):0;
+  const data=hist.map((v,i)=>[['Jan','Feb','Mar','Apr','May','Jun','Jul'][i]||('M'+i),v]);const fc=data.length-1;
+  for(let i=1;i<=3;i++)data.push(['+'+i+'m',Math.max(0,Math.round(hist[n-1]+slope*i))]);
+  const last=hist[n-1],proj=data[data.length-1][1];const tr=last?Math.round((proj-last)/Math.abs(last)*100):0;
+  return {kpis:[['Current',money(last)],['3-mo forecast',money(proj)],['Trend',(tr>=0?'+':'')+tr+'%'],['Confidence','~78%']],chart:repLine(data,{color:c.color||'var(--brand2)',fc,area:true}),
+    table:{cols:['Month','Value'],align:['start','end'],rows:data.map((d,i)=>[d[0]+(i>fc?' (forecast)':''),money(d[1])])},
+    insight:`Projecting the trend, ${c.metric} reaches <b>${money(proj)}</b> in 3 months (${tr>=0?'+':''}${tr}%).${c.metric==='cash'&&proj<0?' ⚠️ Cash could turn negative — plan a deposit or slow spending.':''}`};}
+function bTax(w){const rows=repTx();const collected=rows.reduce((a,x)=>a+(x.tax||0),0);const taxable=repSum(rows,'sale');const paid=Math.round(collected*0.6);
+  if(w==='collected')return {kpis:[['Tax collected',money(collected)],['Taxable sales',money(taxable)],['Eff. rate',pct(collected,taxable)],['Period',cap(REP.filters.period)]],chart:repBar(repBuckets('month').map(b=>[b.label,b.rows.reduce((a,x)=>a+(x.tax||0),0)]),'var(--brand)'),table:{cols:['Store','Taxable','Tax'],align:['start','end','end'],rows:STORES.map(s=>[s,money(rows.filter(x=>x.store===s&&x.type==='sale').reduce((a,x)=>a+x.amount,0)),money(rows.filter(x=>x.store===s).reduce((a,x)=>a+(x.tax||0),0))])},insight:`Collected <b>${money(collected)}</b> on ${money(taxable)} taxable sales.`};
+  if(w==='paid')return {kpis:[['Tax remitted',money(paid)],['Collected',money(collected)],['Outstanding',money(collected-paid)],['Next filing','Jul 20']],chart:null,table:{cols:['Filing','Amount'],align:['start','end'],rows:[['Q2 remitted',money(paid)],['Collected this period',money(collected)],['Balance due',money(collected-paid)]]},insight:`<b>${money(collected-paid)}</b> remains payable before the next filing.`};
+  if(w==='liability')return {kpis:[['Tax payable',money(collected-paid)],['Collected',money(collected)],['Remitted',money(paid)],['Due','Jul 20']],chart:null,table:{cols:['Item','Amount'],align:['start','end'],rows:[['Opening liability',money(paid)],['+ Collected',money(collected)],['− Remitted',money(paid)],['Closing liability',money(collected-paid)]]},insight:`Set aside <b>${money(collected-paid)}</b> for the upcoming filing.`};
+  if(w==='filing')return {kpis:[['Period','Q2 2026'],['Taxable',money(taxable)],['Tax due',money(collected-paid)],['Deadline','Jul 20']],chart:null,table:{cols:['Field','Value'],align:['start','end'],rows:[['Gross sales',money(taxable)],['Taxable sales',money(taxable)],['Tax rate','8.25%'],['Tax collected',money(collected)],['Tax due',money(collected-paid)]]},insight:`Filing packet ready — export to PDF for your state portal.`};
+  return {kpis:[['Tax collected',money(collected)],['Taxable sales',money(taxable)],['Payable',money(collected-paid)],['Rate','8.25%']],chart:repBar(STORES.map(s=>[s,rows.filter(x=>x.store===s).reduce((a,x)=>a+(x.tax||0),0)]),'var(--brand)'),table:{cols:['Store','Tax collected'],align:['start','end'],rows:STORES.map(s=>[s,money(rows.filter(x=>x.store===s).reduce((a,x)=>a+(x.tax||0),0))])},insight:`Total VAT/sales-tax collected is <b>${money(collected)}</b>; <b>${money(collected-paid)}</b> is payable.`};}
+function bKpi(){const rows=repTx();const sales=repSum(rows,'sale'),exp=repSum(rows,'expense')+repSum(rows,'payroll'),pur=repSum(rows,'purchase');const np=sales-pur-exp;const cash=metricVal(rows,'cash');
+  return {kpis:[['Revenue',money(sales)],['Net profit',money(np)],['Margin',pct(np,sales)],['Cash flow',money(cash)],['Purchases',money(pur)],['Expenses',money(exp)],['Tax collected',money(rows.reduce((a,x)=>a+(x.tax||0),0))],['Transactions',rows.length]],
+    chart:repLine(repBuckets('month').map(b=>[b.label,metricVal(b.rows,'revenue')]),{color:'var(--brand)',area:true}),
+    table:{cols:['Store','Sales','Profit','Margin'],align:['start','end','end','end'],rows:STORES.map(s=>{const r=rows.filter(x=>x.store===s);const sl=repSum(r,'sale'),p=sl-repSum(r,'purchase')-repSum(r,'expense')-repSum(r,'payroll');return [s,money(sl),money(p),pct(p,sl)];})},
+    insight:`Revenue <b>${money(sales)}</b>, net profit <b>${money(np)}</b> (${pct(np,sales)} margin). ${np>=0?'Healthy period.':'Margin is under pressure.'}`};}
+function bInsights(){const rows=repTx();const b=repBuckets('week');const lastW=metricVal(b[b.length-1].rows,'revenue'),prevW=metricVal(b[b.length-2].rows,'revenue');const sd=prevW?Math.round((lastW-prevW)/prevW*100):0;
+  const worst=STORES.map(s=>[s,repSum(rows.filter(x=>x.store===s),'sale')]).sort((a,b)=>a[1]-b[1])[0];
+  const dead=REP.products.filter(p=>p.sold<3);const reorder=REP.products.filter(p=>p.stock<p.reorder);
+  const cashFc=bForecast({metric:'cash'});
+  const ins=[['📉',`Revenue ${sd>=0?'rose':'fell'} <b>${Math.abs(sd)}%</b> week-over-week (${money(prevW)} → ${money(lastW)}).`],
+    ['🏬',`<b>${worst[0]}</b> is the lowest-selling store at ${money(worst[1])} — consider staffing or promo support.`],
+    ['📦',reorder.length?`<b>${reorder.length} products</b> are below reorder point: ${reorder.slice(0,3).map(p=>p.name).join(', ')}.`:'Stock levels look healthy.'],
+    ['🗑️',dead.length?`<b>${dead.length} products</b> are barely moving and may be worth discontinuing.`:'No dead stock detected.'],
+    ['🧮',`Sales-tax filing is due <b>Jul 20</b> — set aside ${money(rows.reduce((a,x)=>a+(x.tax||0),0))}.`],
+    ['💡',`Top growth opportunity: your best category by margin is Accessories — feature it near the register.`]];
+  return {kpis:[['Insights',ins.length],['Revenue Δ',(sd>=0?'+':'')+sd+'%'],['Reorder',reorder.length],['Watchlist',dead.length]],chart:cashFc.chart,
+    table:{cols:['Signal','Observation'],align:['start','start'],rows:ins.map(i=>[i[0],i[1].replace(/<[^>]+>/g,'')])},
+    insight:ins.map(i=>i[0]+' '+i[1]).join('<br>')};}
+
+// ---- catalog ----
+function repCatalog(){const C=[];const R=(cat,id,name,ic,desc,fn)=>C.push({cat,id,name,ic,desc,fn});
+  // Financial
+  R('Financial','pl','Profit & Loss','📊','Revenue, COGS, expenses, net profit',()=>bStatement('pl'));
+  R('Financial','cashflow','Cash Flow','💧','Cash in vs out for the period',()=>bStatement('cashflow'));
+  R('Financial','balance','Balance Sheet','⚖️','Assets, liabilities & equity',()=>bStatement('balance'));
+  R('Financial','trial','Trial Balance','🧾','Debits and credits reconciliation',()=>bStatement('trial'));
+  R('Financial','gl','General Ledger','📚','Every posted transaction',()=>bLedger({}));
+  R('Financial','journal','Journal Entries','✍️','Chronological journal',()=>bLedger({sort:(a,b)=>a.date<b.date?-1:1}));
+  R('Financial','cashpos','Cash Position','🏦','Balance by account',()=>bStatement('cashpos'));
+  R('Financial','bankacct','Bank Account Summary','🏛️','Movement by account',()=>bGroup({dim:'account',txType:'sale',chart:'pie'}));
+  R('Financial','equity','Owner Equity','👑','Equity movement',()=>bStatement('equity'));
+  R('Financial','retained','Retained Earnings','💰','Earnings retained',()=>bStatement('retained'));
+  R('Financial','budget','Budget vs Actual','🎯','Plan vs actual by category',()=>bStatement('budget'));
+  // Sales
+  R('Sales','sdaily','Daily Sales','📅','Sales by day (30d)',()=>bSeries({gran:'day',metric:'sale'}));
+  R('Sales','sweekly','Weekly Sales','🗓️','Sales by week (12w)',()=>bSeries({gran:'week',metric:'sale'}));
+  R('Sales','smonthly','Monthly Sales','📆','Sales by month',()=>bSeries({gran:'month',metric:'sale',chart:'area'}));
+  R('Sales','syearly','Yearly Sales','📈','Sales by year',()=>bSeries({gran:'year',metric:'sale'}));
+  R('Sales','sstore','Sales by Store','🏬','Store comparison',()=>bGroup({dim:'store',txType:'sale'}));
+  R('Sales','semp','Sales by Employee','🧑','Employee comparison',()=>bGroup({dim:'employee',txType:'sale'}));
+  R('Sales','shour','Sales by Hour','🕐','Best hours of day',()=>bGroup({dim:'hour',txType:'sale'}));
+  R('Sales','swday','Sales by Weekday','📊','Best days of week',()=>bGroup({dim:'weekday',txType:'sale'}));
+  R('Sales','scat','Sales by Category','🍩','Category mix',()=>bGroup({dim:'prodCat',txType:'sale',chart:'pie'}));
+  R('Sales','sprod','Sales by Product','📦','Revenue by product',()=>bGroup({dim:'product',txType:'sale'}));
+  R('Sales','stop','Top Selling Products','🏆','Best sellers',()=>bRank({src:'products',key:'rev',order:'desc',cols:['Product','Revenue']}));
+  R('Sales','sslow','Slow Moving Products','🐌','Weakest sellers',()=>bRank({src:'products',key:'sold',order:'asc',money:false,cols:['Product','Units sold']}));
+  R('Sales','sbest','Best Customers','⭐','Highest spenders',()=>bRank({src:'customers',key:'spend',order:'desc',cols:['Customer','Spend']}));
+  R('Sales','sbasket','Average Basket Size','🧺','Avg sale over time',()=>{const b=repBuckets('week').map(x=>[x.label,x.rows.filter(r=>r.type==='sale').length?Math.round(repSum(x.rows,'sale')/x.rows.filter(r=>r.type==='sale').length):0]);return {kpis:[['Avg basket',money(b.reduce((a,x)=>a+x[1],0)/(b.length||1))],['Latest',money(b[b.length-1][1])],['Periods',b.length],['Range',cap(REP.filters.period)]],chart:repLine(b,{color:'var(--accent)'}),table:{cols:['Week','Avg basket'],align:['start','end'],rows:b.map(x=>[x[0],money(x[1])])},insight:`Average basket is <b>${money(b[b.length-1][1])}</b> — upsell accessories to grow it.`};});
+  R('Sales','smargin','Gross Margin','📐','Gross profit trend',()=>bSeries({gran:'month',metric:'profit',chart:'area',color:'var(--ok)'}));
+  R('Sales','sdisc','Discount Report','🏷️','Discounts given by store',()=>{const rows=repTx().filter(x=>x.discount);const m={};rows.forEach(x=>m[x.store]=(m[x.store]||0)+x.discount);const data=Object.entries(m).sort((a,b)=>b[1]-a[1]);const tot=data.reduce((a,d)=>a+d[1],0);return {kpis:[['Total discounts',money(tot)],['Transactions',rows.length],['Avg discount',money(tot/(rows.length||1))],['Stores',data.length]],chart:repBar(data,'var(--warn)'),table:{cols:['Store','Discounts','Share'],align:['start','end','end'],rows:data.map(d=>[d[0],money(d[1]),pct(d[1],tot)])},insight:`<b>${money(tot)}</b> given in discounts. Ensure they drive incremental volume, not margin erosion.`};});
+  R('Sales','sref','Refund Report','↩️','Refunds by store',()=>bGroup({dim:'store',txType:'refund',color:'var(--bad)'}));
+  R('Sales','svoid','Voided Transactions','🚫','Voids for review',()=>bLedger({filter:x=>x.void,ins:'Voids concentrated on one register or employee can indicate error — or theft. Review the pattern.'}));
+  // Expenses
+  R('Expenses','ecat','Expenses by Category','🍩','Category breakdown',()=>bGroup({dim:'category',txType:'expense',chart:'pie'}));
+  R('Expenses','estore','Expenses by Store','🏬','Store comparison',()=>bGroup({dim:'store',txType:'expense',color:'var(--bad)'}));
+  R('Expenses','etrend','Expense Trend','📉','Expenses over time',()=>bSeries({gran:'month',metric:'expense',chart:'area',color:'var(--bad)'}));
+  R('Expenses','elarge','Largest Expenses','💸','Biggest line items',()=>bLedger({filter:x=>x.type==='expense',sort:(a,b)=>b.amount-a.amount,ins:'Your largest expenses drive the P&L — negotiate the top few for the biggest impact.'}));
+  R('Expenses','emonthly','Monthly Expenses','📆','Monthly totals',()=>bSeries({gran:'month',metric:'expense',color:'var(--bad)'}));
+  R('Expenses','erecurring','Recurring Expenses','🔁','Rent, utilities, payroll',()=>{const cats=['Rent','Utilities','Payroll'];const data=cats.map(c=>[c,repTx().filter(x=>x.category===c).reduce((a,x)=>a+x.amount,0)]);const tot=data.reduce((a,d)=>a+d[1],0);return {kpis:[['Recurring total',money(tot)],['Categories',cats.length],['Largest',data.sort((a,b)=>b[1]-a[1])[0][0]],['Period',cap(REP.filters.period)]],chart:repBar(data,'var(--brand2)'),table:{cols:['Category','Amount','Share'],align:['start','end','end'],rows:data.map(d=>[d[0],money(d[1]),pct(d[1],tot)])},insight:`Recurring costs are <b>${money(tot)}</b> — the predictable base you must cover before profit.`};});
+  R('Expenses','eutil','Utilities Report','💡','Utilities only',()=>{REP.filters.category='Utilities';return bSeries({gran:'month',metric:'expense',color:'var(--brand2)'});});
+  R('Expenses','erent','Rent Report','🏠','Rent only',()=>{const rows=REP.tx.filter(x=>x.category==='Rent'&&repInPeriod(x.date,REP.filters.period));const tot=rows.reduce((a,x)=>a+x.amount,0);return {kpis:[['Total rent',money(tot)],['Payments',rows.length],['Per month',money(2500)],['Stores',STORES.length]],chart:repBar(STORES.map(s=>[s,rows.filter(x=>x.store===s).reduce((a,x)=>a+x.amount,0)]),'var(--brand2)'),table:{cols:['Store','Rent'],align:['start','end'],rows:STORES.map(s=>[s,money(rows.filter(x=>x.store===s).reduce((a,x)=>a+x.amount,0))])},insight:`Rent is a fixed <b>${money(tot)}</b> — factor it into each store's break-even.`};});
+  R('Expenses','epay','Payroll Expenses','👥','Payroll costs',()=>bSeries({gran:'month',metric:'payroll',color:'#b478f0'}));
+  // Purchasing
+  R('Purchasing','pvendor','Purchases by Vendor','🏭','Spend per vendor',()=>bGroup({dim:'vendor',txType:'purchase',color:'var(--brand2)'}));
+  R('Purchasing','pspend','Vendor Spending','💳','Vendor spend ranking',()=>bRank({src:'vendors',key:'spend',order:'desc',cols:['Vendor','Spend']}));
+  R('Purchasing','ptrend','Purchase Trends','📈','Purchases over time',()=>bSeries({gran:'month',metric:'purchase',chart:'area',color:'var(--brand2)'}));
+  R('Purchasing','pavg','Average Purchase Cost','🧮','Avg order value',()=>{const rows=repTx().filter(x=>x.type==='purchase');const avg=rows.length?repSum(rows,'purchase')/rows.length:0;return {kpis:[['Avg order',money(avg)],['Orders',rows.length],['Total',money(repSum(rows,'purchase'))],['Vendors',new Set(rows.map(x=>x.vendor)).size]],chart:repBar(repBuckets('month').map(b=>{const r=b.rows.filter(x=>x.type==='purchase');return [b.label,r.length?Math.round(repSum(b.rows,'purchase')/r.length):0];}),'var(--brand2)'),table:{cols:['Vendor','Orders','Avg cost'],align:['start','end','end'],rows:REP.vendors.map(v=>[v.name,v.orders,money(v.orders?v.spend/v.orders:0)])},insight:`Average purchase order is <b>${money(avg)}</b>. Consolidating orders can unlock better terms.`};});
+  R('Purchasing','preturns','Purchase Returns','↩️','Returns to vendors',()=>bRank({src:'vendors',key:'returns',order:'desc',cols:['Vendor','Returns']}));
+  R('Purchasing','ppo','Outstanding Purchase Orders','📋','Open POs',()=>({kpis:[['Open POs',3],['Value',money(8180)],['Vendors',3],['Oldest','5 days']],chart:null,table:{cols:['Vendor','Items','Value','ETA','Status'],align:['start','end','end','start','start'],rows:[['Altria',14,money(4820),'Jul 3','Sent'],['Republic Brands',6,money(1240),'Jul 5','Partial'],['Local Vape Wholesale',9,money(2120),'—','Draft']]},insight:`<b>${money(8180)}</b> in stock is inbound across 3 POs. Receive promptly to update cost & inventory.`}));
+  // Inventory
+  R('Inventory','icurrent','Current Stock','📦','All items on hand',()=>bList({src:'products',cols:[['Product',r=>r.name],['Category',r=>r.cat],['Stock',r=>r.stock,'end'],['Cost',r=>money(r.cost),'end'],['Value',r=>money(r.value),'end']],chartKey:'stock',kpis:(r)=>[['SKUs',r.length],['Units',r.reduce((a,p)=>a+p.stock,0)],['Value',money(r.reduce((a,p)=>a+p.value,0))],['Avg cost',money(r.reduce((a,p)=>a+p.cost,0)/r.length)]],ins:(r)=>`Inventory is a demo module in V1 — <b>${r.length} SKUs</b>, ${money(r.reduce((a,p)=>a+p.value,0))} at cost. Full inventory ships in Version 2.`}));
+  R('Inventory','ilow','Low Stock','⚠️','Below reorder point',()=>bList({src:'products',filter:p=>p.stock<p.reorder,cols:[['Product',r=>r.name],['Stock',r=>r.stock,'end'],['Reorder at',r=>r.reorder,'end'],['Cost',r=>money(r.cost),'end']],chartKey:'stock',color:'var(--warn)',ins:(r)=>`<b>${r.length} items</b> need reordering. Draft POs to your usual vendors.`}));
+  R('Inventory','iout','Out of Stock','🚫','Zero on hand',()=>{let out=REP.products.filter(p=>p.stock===0);if(!out.length)out=[...REP.products].sort((a,b)=>a.stock-b.stock).slice(0,3);return {kpis:[['Out of stock',REP.products.filter(p=>p.stock===0).length],['At risk',out.length],['SKUs',REP.products.length],['Lost-sales risk','High']],chart:repBar(out.map(p=>[p.name,p.stock]),'var(--bad)'),table:{cols:['Product','Category','Stock','Sold'],align:['start','start','end','end'],rows:out.map(p=>[p.name,p.cat,p.stock,p.sold])},insight:`Out-of-stock best-sellers are lost sales — prioritize these on the next order.`};});
+  R('Inventory','iover','Overstocked Items','📥','Excess stock',()=>bList({src:'products',filter:p=>p.stock>110,sort:(a,b)=>b.stock-a.stock,cols:[['Product',r=>r.name],['Stock',r=>r.stock,'end'],['Value',r=>money(r.value),'end']],chartKey:'stock',kpis:(r)=>[['Overstocked',r.length],['Units',r.reduce((a,p)=>a+p.stock,0)],['Cash tied',money(r.reduce((a,p)=>a+p.value,0))],['Threshold','>110 units']],ins:(r)=>`<b>${r.length} items</b> are overstocked, tying up ${money(r.reduce((a,p)=>a+p.value,0))} — run a promo to convert it to cash.`}));
+  R('Inventory','idead','Dead Stock','🗑️','Not selling',()=>{const avg=REP.products.reduce((a,p)=>a+p.sold,0)/REP.products.length;let dead=REP.products.filter(p=>p.sold<avg*0.55);if(dead.length<2)dead=[...REP.products].sort((a,b)=>a.sold-b.sold).slice(0,3);const val=dead.reduce((a,p)=>a+p.value,0);return {kpis:[['Dead SKUs',dead.length],['Cash tied up',money(val)],['Units',dead.reduce((a,p)=>a+p.stock,0)],['Threshold','<55% avg']],chart:repBar(dead.map(p=>[p.name,p.sold]),'var(--bad)'),table:{cols:['Product','Sold','Stock','Value'],align:['start','end','end','end'],rows:dead.map(p=>[p.name,p.sold,p.stock,money(p.value)])},insight:`<b>${dead.length} SKUs</b> sell well below average — discount or discontinue to free <b>${money(val)}</b> in cash.`};});
+  R('Inventory','ival','Inventory Valuation','💰','Value at cost',()=>bList({src:'products',sort:(a,b)=>b.value-a.value,cols:[['Product',r=>r.name],['Stock',r=>r.stock,'end'],['Cost',r=>money(r.cost),'end'],['Value',r=>money(r.value),'end']],chartKey:'value',color:'var(--ok)',kpis:(r)=>[['Total value',money(r.reduce((a,p)=>a+p.value,0))],['SKUs',r.length],['Units',r.reduce((a,p)=>a+p.stock,0)],['Top',r.slice().sort((a,b)=>b.value-a.value)[0].name]]}));
+  R('Inventory','iturn','Inventory Turnover','🔄','Turns by product',()=>bRank({src:'products',key:'turnover',order:'desc',money:false,cols:['Product','Turnover']}));
+  R('Inventory','ifast','Fast Moving Items','⚡','Highest velocity',()=>bRank({src:'products',key:'sold',order:'desc',money:false,cols:['Product','Units sold']}));
+  R('Inventory','islow','Slow Moving Items','🐢','Lowest velocity',()=>bRank({src:'products',key:'sold',order:'asc',money:false,cols:['Product','Units sold']}));
+  R('Inventory','iadj','Stock Adjustments','✏️','Manual adjustments',()=>bList({src:'products',filter:p=>p.adj!==0,cols:[['Product',r=>r.name],['Adjustment',r=>(r.adj>0?'+':'')+r.adj,'end'],['Stock',r=>r.stock,'end']],ins:()=>'Frequent negative adjustments can signal shrinkage — investigate.'}));
+  R('Inventory','ishrink','Shrinkage Report','📉','Estimated loss',()=>{const shrink=REP.products.filter(p=>p.adj<0);const loss=shrink.reduce((a,p)=>a+Math.abs(p.adj)*p.cost,0);return {kpis:[['Est. shrinkage',money(loss)],['Items',shrink.length],['% of value',pct(loss,REP.products.reduce((a,p)=>a+p.value,0))],['Period',cap(REP.filters.period)]],chart:repBar(shrink.map(p=>[p.name,Math.abs(p.adj)*p.cost]),'var(--bad)'),table:{cols:['Product','Units lost','Value'],align:['start','end','end'],rows:shrink.map(p=>[p.name,Math.abs(p.adj),money(Math.abs(p.adj)*p.cost)])},insight:`Estimated shrinkage is <b>${money(loss)}</b>. Tighten counts and review high-loss SKUs.`};});
+  // Customers
+  R('Customers','cpurch','Customer Purchases','🧾','Spend per customer',()=>bRank({src:'customers',key:'spend',order:'desc',cols:['Customer','Spend']}));
+  R('Customers','ctop','Top Customers','⭐','Best customers',()=>bRank({src:'customers',key:'spend',order:'desc',cols:['Customer','Spend'],ins:(r)=>`Your top 3 customers drive ${pct(r.slice(0,3).reduce((a,c)=>a+c.spend,0),r.reduce((a,c)=>a+c.spend,0))} of tracked spend.`}));
+  R('Customers','cltv','Customer Lifetime Value','💎','Projected LTV',()=>bRank({src:'customers',key:'ltv',order:'desc',cols:['Customer','LTV']}));
+  R('Customers','cfreq','Customer Frequency','🔁','Visits/month',()=>bRank({src:'customers',key:'freq',order:'desc',money:false,cols:['Customer','Visits/mo']}));
+  R('Customers','cbal','Customer Balance','💳','Store credit / owed',()=>bList({src:'customers',cols:[['Customer',r=>r.name],['Visits',r=>r.visits,'end'],['Balance',r=>money(r.balance),'end']],ins:()=>'Customer/CRM data is a demo in V1 — full customer management arrives in Version 2.'}));
+  R('Customers','crecv','Outstanding Receivables','📥','Amounts owed to you',()=>{const owed=REP.customers.filter(c=>c.balance>0);const tot=owed.reduce((a,c)=>a+c.balance,0);return {kpis:[['Receivables',money(tot)],['Customers',owed.length],['Avg',money(tot/(owed.length||1))],['Oldest','—']],chart:repBar(owed.map(c=>[c.name,c.balance]),'var(--warn)'),table:{cols:['Customer','Balance'],align:['start','end'],rows:owed.map(c=>[c.name,money(c.balance)])},insight:`<b>${money(tot)}</b> is outstanding — follow up on the largest balances first.`};});
+  // Vendors
+  R('Vendors','vbal','Vendor Balance','🏭','What you owe',()=>bList({src:'vendors',cols:[['Vendor',r=>r.name],['Orders',r=>r.orders,'end'],['Balance owed',r=>money(r.balance),'end']],chartKey:'balance',color:'var(--warn)',kpis:(r)=>[['Payables',money(r.reduce((a,v)=>a+v.balance,0))],['Vendors',r.length],['Largest',r.slice().sort((a,b)=>b.balance-a.balance)[0].name],['Period',cap(REP.filters.period)]]}));
+  R('Vendors','vhist','Vendor History','📜','Purchase history',()=>bLedger({filter:x=>x.type==='purchase',ins:'Full purchase history across vendors — filter by vendor to drill in.'}));
+  R('Vendors','vpay','Vendor Payments','💸','Payments made',()=>bGroup({dim:'vendor',txType:'purchase',color:'var(--brand2)'}));
+  R('Vendors','vpayable','Outstanding Payables','📤','Amounts you owe',()=>{const owed=REP.vendors.filter(v=>v.balance>0);const tot=owed.reduce((a,v)=>a+v.balance,0);return {kpis:[['Payables',money(tot)],['Vendors',owed.length],['Avg',money(tot/(owed.length||1))],['Due soon',owed.length]],chart:repBar(owed.map(v=>[v.name,v.balance]),'var(--warn)'),table:{cols:['Vendor','Balance owed'],align:['start','end'],rows:owed.map(v=>[v.name,money(v.balance)])},insight:`You owe <b>${money(tot)}</b> across ${owed.length} vendors — schedule payments to protect terms.`};});
+  R('Vendors','vtop','Top Vendors','🏆','By total spend',()=>bRank({src:'vendors',key:'spend',order:'desc',cols:['Vendor','Total spend']}));
+  // Employees
+  R('Employees','epayroll','Payroll Summary','👥','Payroll by employee',()=>bList({src:'employees',cols:[['Employee',r=>r.name],['Store',r=>r.store],['Gross',r=>money(r.gross),'end'],['Empl. tax',r=>money(Math.round(r.gross*0.0765)),'end']],chartKey:'gross',kpis:(r)=>[['Gross payroll',money(r.reduce((a,e)=>a+e.gross,0))],['Employer tax',money(Math.round(r.reduce((a,e)=>a+e.gross,0)*0.0765))],['Employees',r.length],['Avg',money(r.reduce((a,e)=>a+e.gross,0)/r.length)]]}));
+  R('Employees','esalary','Salary History','📜','Gross by employee',()=>bRank({src:'employees',key:'gross',order:'desc',cols:['Employee','Gross']}));
+  R('Employees','eot','Overtime','⏱️','Overtime hours',()=>bRank({src:'employees',key:'overtime',order:'desc',money:false,cols:['Employee','OT hours']}));
+  R('Employees','eatt','Attendance','📋','Attendance %',()=>bRank({src:'employees',key:'attendance',order:'desc',money:false,cols:['Employee','Attendance %']}));
+  R('Employees','esales','Sales Per Employee','💵','Revenue generated',()=>bRank({src:'employees',key:'sales',order:'desc',cols:['Employee','Sales']}));
+  R('Employees','eperf','Employee Performance','🏅','Sales & transactions',()=>bList({src:'employees',sort:(a,b)=>b.sales-a.sales,cols:[['Employee',r=>r.name],['Store',r=>r.store],['Sales',r=>money(r.sales),'end'],['Txns',r=>r.txns,'end'],['Avg sale',r=>money(r.txns?r.sales/r.txns:0),'end']],chartKey:'sales',ins:(r)=>`<b>${r[0].name}</b> leads on sales (${money(r[0].sales)}). Coach the team toward the top performer's average.`}));
+  // Cash
+  R('Cash','cmove','Cash Movement','💵','Net cash by day',()=>bSeries({gran:'day',metric:'cash',chart:'area',color:'var(--ok)'}));
+  R('Cash','creg','Cash Register Summary','🧾','Cash sales by store',()=>{REP.filters.account='Cash';return bGroup({dim:'store',txType:'sale',color:'var(--ok)'});});
+  R('Cash','cdep','Deposit History','🏦','Deposits made',()=>bLedger({filter:x=>x.type==='deposit',ins:'Regular deposits reduce cash-on-hand risk. Aim to bank surplus daily.'}));
+  R('Cash','cwith','Withdrawals','📤','Cash out',()=>bLedger({filter:x=>['expense','purchase','payroll'].includes(x.type),sort:(a,b)=>b.amount-a.amount,ins:'Every dollar leaving the business — keep receipts for each line for clean books.'}));
+  R('Cash','crecon','Cash Reconciliation','⚖️','Book vs bank',()=>bStatement('recon'));
+  // Tax
+  R('Tax','tvat','VAT Summary','🧮','Sales-tax overview',()=>bTax('summary'));
+  R('Tax','tcoll','VAT Collected','📥','Tax collected',()=>bTax('collected'));
+  R('Tax','tpaid','VAT Paid','📤','Tax remitted',()=>bTax('paid'));
+  R('Tax','tliab','Tax Liability','💰','Payable balance',()=>bTax('liability'));
+  R('Tax','tfile','Tax Filing Report','📋','Filing packet',()=>bTax('filing'));
+  // AI / BI
+  R('AI Insights','kpi','KPI Dashboard','📊','All key metrics',()=>bKpi());
+  R('AI Insights','tprofit','Profit Trend','📈','Net profit over time',()=>bSeries({gran:'month',metric:'profit',chart:'area',color:'var(--ok)'}));
+  R('AI Insights','trev','Revenue Trend','💹','Revenue over time',()=>bSeries({gran:'month',metric:'revenue',chart:'area'}));
+  R('AI Insights','texp','Expense Trend','📉','Expenses over time',()=>bSeries({gran:'month',metric:'expense',chart:'area',color:'var(--bad)'}));
+  R('AI Insights','tcash','Cash Trend','💧','Cash over time',()=>bSeries({gran:'month',metric:'cash',chart:'area',color:'var(--accent)'}));
+  R('AI Insights','frev','Forecast Revenue','🔮','3-month projection',()=>bForecast({metric:'revenue'}));
+  R('AI Insights','fcash','Forecast Cash Flow','🔮','Cash projection',()=>bForecast({metric:'cash',color:'var(--accent)'}));
+  R('AI Insights','ai','AI Business Insights','🤖','Automated observations',()=>bInsights());
+  return C;}
+let RCATALOG=[];
+
+// ---- render ----
+function renderReports(){if(!REP.inited){repSeed();RCATALOG=repCatalog();repBind();REP.inited=true;}
+  document.getElementById('repCats').innerHTML=RCATS.map(c=>`<div class="rep-cat ${c[0]===REP.cat&&!REP.current&&!REP.search?'on':''}" data-cat="${c[0]}">${c[1]} ${c[0]}<span class="n">${RCATALOG.filter(r=>r.cat===c[0]).length}</span></div>`).join('');
+  if(REP.current){repDetail();return;}
+  const main=document.getElementById('repMain');const q=REP.search.toLowerCase();
+  let list=RCATALOG;
+  if(q)list=RCATALOG.filter(r=>(r.name+' '+r.desc+' '+r.cat).toLowerCase().includes(q));
+  else list=RCATALOG.filter(r=>r.cat===REP.cat);
+  document.getElementById('repSub').textContent=q?`${list.length} reports match “${REP.search}”`:`${REP.cat} · ${list.length} reports · ${RCATALOG.length} total`;
+  main.innerHTML=`<div class="rep-cathead">${q?'Search results':REP.cat+' reports'}</div>`+
+    (list.length?`<div class="rep-grid">${list.map(r=>`<div class="rep-card" data-open="${r.id}"><div class="ic">${r.ic}</div><h4>${r.name}</h4><p>${r.desc}</p></div>`).join('')}</div>`
+     :`<div class="rep-cathead" style="color:var(--muted)">No reports match — try “profit”, “tax”, “inventory”, “cash”.</div>`);
+}
+function repDetail(){const rep=RCATALOG.find(r=>r.id===REP.current);if(!rep)return repBackCat();
+  let out;try{out=rep.fn();}catch(e){out={kpis:[['Error','—']],chart:null,table:{cols:['Info'],rows:[['This report could not be generated.']]},insight:''};}
+  const kpis=`<div class="rep-kpis">${(out.kpis||[]).slice(0,4).map(k=>`<div class="rep-kpi"><div class="l">${k[0]}</div><div class="v">${k[1]}</div></div>`).join('')}</div>`;
+  const chart=out.chart?`<div class="card" style="margin-bottom:14px">${out.chart}</div>`:'';
+  const t=out.table;let table='';
+  if(t){const head=`<tr>${t.cols.map((c,i)=>`<th style="text-align:${(t.align&&t.align[i])||'start'}">${c}</th>`).join('')}</tr>`;
+    const body=t.rows.map((r,ri)=>`<tr class="${t.drill?'rep-row-click':''}" ${t.drill?`data-drill="${t.drill}" data-dval="${(t.drillrows&&t.drillrows[ri])||''}"`:''}>${r.map((c,i)=>`<td style="text-align:${(t.align&&t.align[i])||'start'};${t.bold&&t.bold[ri]?'font-weight:800':''}">${c}</td>`).join('')}</tr>`).join('');
+    table=`<div class="card"><div class="rep-tbl-wrap"><table><thead>${head}</thead><tbody>${body}</tbody></table></div></div>`;}
+  const insight=out.insight?`<div class="rep-insight"><div class="h">🤖 AI Insight</div><div style="font-size:13.5px;line-height:1.55">${out.insight}</div></div>`:'';
+  document.getElementById('repSub').textContent=rep.cat+' report';
+  document.getElementById('repMain').innerHTML=
+    `<div class="rep-back" data-back="1">← Back to ${rep.cat}</div>
+     <div class="rep-dh"><div><h2>${rep.ic} ${rep.name}</h2><div class="s">${rep.desc}</div></div>
+       <div class="rep-exp"><button data-exp="pdf">⬇ PDF</button><button data-exp="excel">⬇ Excel</button><button data-exp="print">🖨 Print</button><button data-exp="share">🔗 Share</button><button data-exp="email">✉ Email</button></div></div>
+     ${repFilterBar()}${kpis}${chart}${table}${insight}`;
+}
+function repFilterBar(){const opt=(items,val)=>['<option value="all">All</option>'].concat(items.map(i=>`<option ${i===val?'selected':''}>${i}</option>`)).join('');
+  const f=REP.filters;
+  return `<div class="rep-fbar">
+    <select data-f="period"><option value="today" ${f.period==='today'?'selected':''}>Today</option><option value="week" ${f.period==='week'?'selected':''}>This week</option><option value="month" ${f.period==='month'?'selected':''}>This month</option><option value="quarter" ${f.period==='quarter'?'selected':''}>This quarter</option><option value="year" ${f.period==='year'?'selected':''}>This year</option><option value="all" ${f.period==='all'?'selected':''}>All time</option></select>
+    <select data-f="store">${opt(STORES,f.store)}</select>
+    <select data-f="account">${opt(ACCOUNTS,f.account)}</select>
+    <select data-f="category">${opt(['Utilities','Rent','Payroll','Supplies','Marketing','Bank Charges','Cigarettes','Vape','Pouches','Cigars','Accessories'],f.category)}</select>
+    <select data-f="vendor">${opt(VENDORS,f.vendor)}</select>
+    <select data-f="employee">${opt(EMPLOYEES.map(e=>e.name),f.employee)}</select>
+    <select data-f="product">${opt(REP.products.map(p=>p.name),f.product)}</select>
+    <select data-f="customer">${opt(REP.customers.map(c=>c.name),f.customer)}</select>
+  </div>`;}
+function repBackCat(){REP.current=null;renderReports();}
+function repBind(){const main=document.getElementById('repMain');const cats=document.getElementById('repCats');
+  cats.addEventListener('click',e=>{const c=e.target.closest('[data-cat]');if(c){REP.search='';document.getElementById('repSearch').value='';REP.cat=c.dataset.cat;REP.current=null;renderReports();}});
+  main.addEventListener('click',e=>{const open=e.target.closest('[data-open]');const back=e.target.closest('[data-back]');const exp=e.target.closest('[data-exp]');const drill=e.target.closest('[data-drill]');
+    if(open){REP.filters={period:'month',store:'all',category:'all',vendor:'all',account:'all',employee:'all',product:'all',customer:'all'};REP.current=open.dataset.open;renderReports();window.scrollTo(0,0);}
+    else if(back){repBackCat();}
+    else if(exp){repExport(exp.dataset.exp);}
+    else if(drill){const dim=drill.dataset.drill,val=drill.dataset.dval;if(REP.filters[dim]!==undefined&&val){REP.filters[dim]=val;renderReports();toast('Drilled into '+dim+': '+val);}}});
+  main.addEventListener('change',e=>{const f=e.target.closest('[data-f]');if(f){REP.filters[f.dataset.f]=f.value;renderReports();}});
+}
+function repSearchInput(){REP.search=document.getElementById('repSearch').value;REP.current=null;renderReports();}
+function repExport(kind){if(kind==='print'){window.print();return;}
+  if(kind==='excel'||kind==='pdf'){const rep=RCATALOG.find(r=>r.id===REP.current);if(!rep)return;const out=rep.fn();const t=out.table;
+    if(kind==='excel'&&t){const csv=[t.cols.join(',')].concat(t.rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'')}"`).join(','))).join('\n');const b=new Blob([csv],{type:'text/csv'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=rep.id+'.csv';a.click();URL.revokeObjectURL(u);toast('Exported '+rep.name+' to CSV');return;}
+    toast(rep.name+' — PDF ready (use Print → Save as PDF for pixel-perfect output)');return;}
+  toast(kind==='email'?'Report queued to email':'Shareable link copied');}
+
+// ---------------- Telegram ----------------
+function renderClock(){document.getElementById('clockTbl').innerHTML=`<thead><tr><th>Employee</th><th>Date</th><th>Time</th><th>Location</th><th>Dir</th></tr></thead><tbody>`+
+  [...CLOCK].reverse().map(c=>`<tr><td><b>${c.emp}</b></td><td>${c.date.slice(5)}</td><td>${c.time}</td><td>${c.loc}</td><td><span class="chip ${c.dir==='In'?'c-sale':'c-ref'}">${c.dir}</span></td></tr>`).join('')+`</tbody>`;}
+let tgMsgs=[];
+function tgPush(txt,side){tgMsgs.push({txt,side});const el=document.getElementById('tgChat');el.innerHTML=tgMsgs.map(m=>`<div class="b ${m.side==='in'?'in':'out'}">${m.txt}</div>`).join('');el.scrollTop=el.scrollHeight;}
+function tgSim(text){tgPush("👤 "+text,'in');const res=processMessage(text,"Sam Rivera","telegram");setTimeout(()=>tgPush("🤖 "+res.reply,'out'),250);}
+
+// ---------------- AI / NL engine (shared by chat + telegram) ----------------
+const EXAMPLES=["We sold $8,420 today","Bought cigars for $240","Paid electricity $320","Deposited $4,000 cash","Record payroll","What were sales today?","Show last week's profit","Generate tax report","How much cash should I deposit?"];
+function parseAmount(t){const m=t.replace(/,/g,'').match(/\$?\s?(\d+(?:\.\d{1,2})?)/);return m?+m[1]:null;}
+function detectIntent(t){const d=t.toLowerCase().trim();
+  // clock in/out are explicit commands — check first
+  if(/\bclock\s*in\b/.test(d))return 'clockin'; if(/\bclock\s*out\b/.test(d))return 'clockout';
+  // questions before transaction verbs, so 'what were sales today?' isn't logged as a sale
+  if(/\?/.test(d)||/^(what|show|how|generate|when|why|which|list|give me|tell me|display|report)\b/.test(d))return 'question';
+  if(/(sold|sales|revenue|we made|took in)/.test(d))return 'sale';
+  if(/(bought|purchase|purchased|buy|restock)/.test(d))return 'purchase';
+  if(/(payroll|salary|wages|paid staff|paid the team)/.test(d))return 'payroll';
+  if(/(paid|expense|bill|spent)/.test(d))return 'expense';
+  if(/(deposit|deposited)/.test(d))return 'deposit';
+  if(/(transfer|transferred|moved)/.test(d))return 'transfer';
+  if(/(refund|refunded)/.test(d))return 'refund';
+  return 'unknown';}
+function expCategory(t){const d=t.toLowerCase();if(/electric|power|water|gas bill|internet|phone|utility/.test(d))return 'Utilities';if(/rent|lease/.test(d))return 'Rent';if(/payroll|salary|wage/.test(d))return 'Payroll';if(/marketing|ads|ad /.test(d))return 'Marketing';if(/supplies|bags|register/.test(d))return 'Supplies';if(/fee|bank/.test(d))return 'Bank Charges';return 'Other';}
+
+// Conversational context (per session)
+let aiPending=null; // {intent, amount, memo, store, account, needs}
+function needsAccount(intent){return ['expense','purchase','deposit','transfer','refund','payroll'].includes(intent);}
+
+function processMessage(text,employee,channel){
+  const intent=detectIntent(text);
+  // clock in/out — minimal
+  if(intent==='clockin'||intent==='clockout'){const dir=intent==='clockin'?'In':'Out';const now=new Date();const time=('0'+now.getHours()).slice(-2)+':'+('0'+now.getMinutes()).slice(-2);
+    const loc=aiPending?.store||STORES[0];CLOCK.push({emp:employee,date:daysAgo(0),time,loc,dir});renderClock();
+    return {reply:`Clocked ${dir.toLowerCase()} — ${employee}, ${daysAgo(0)} ${time}, ${loc}.`,done:true};}
+  if(intent==='question')return {reply:answerQuestion(text),done:true};
+  if(intent==='unknown')return {reply:"I can record sales, expenses, purchases, deposits, transfers, refunds and payroll — or answer questions like “what were sales today?”. Try: “We sold $6,200 today.”",done:true};
+  // it's a recordable transaction
+  const amount=parseAmount(text);
+  if(amount==null)return {reply:"How much was that? e.g. “$240”.",done:false};
+  aiPending={intent,amount,memo:text,store:null,account:null};
+  return askNext();
+}
+function askNext(){
+  if(!aiPending.store)return {reply:`Got it — ${labelFor(aiPending.intent)} of ${money2(aiPending.amount)}. Which store?`,quick:STORES,done:false,ask:'store'};
+  if(needsAccount(aiPending.intent)&&!aiPending.account)return {reply:`Which account?`,quick:ACCOUNTS,done:false,ask:'account'};
+  return commitPending();
+}
+function labelFor(i){return {sale:'a sale',expense:'an expense',purchase:'a purchase',deposit:'a deposit',transfer:'a transfer',refund:'a refund',payroll:'payroll'}[i]||i;}
+function commitPending(){const p=aiPending;const acct=p.account||(p.intent==='sale'?'Cash':'Cash');
+  const rec={id:++uid,date:daysAgo(0),store:p.store,account:acct,type:p.intent,category:catFor(p.intent,p.memo),amount:p.amount,memo:cleanMemo(p.memo)};
+  if(p.intent==='sale')rec.tax=+(p.amount*0.0825/1.0825).toFixed(2);
+  if(p.intent==='purchase'){rec.vendor=guessVendor(p.memo);rec.desc=guessDesc(p.memo);}
+  LEDGER.push(rec);aiPending=null;refreshAll();
+  return {reply:`Recorded ✓ ${labelFor(rec.type)} of ${money(rec.amount)} at ${rec.store} (${rec.account})${rec.tax?` · tax ${money2(rec.tax)}`:''}.`,rec,done:true};
+}
+function catFor(i,memo){if(i==='expense')return expCategory(memo);if(i==='purchase')return 'Inventory Purchase';if(i==='payroll')return 'Payroll';if(i==='deposit')return 'Cash Deposit';if(i==='sale')return 'Sales';if(i==='refund')return 'Refund';if(i==='transfer')return 'Transfer';return 'Other';}
+function cleanMemo(t){return t.length>40?t.slice(0,40)+'…':t;}
+function guessVendor(t){const m=t.match(/(?:from|at|to)\s+([A-Z][a-zA-Z]+)/);if(m)return m[1];const w=t.replace(/[^a-zA-Z ]/g,'').split(' ').filter(x=>x.length>2&&!/bought|purchase|for|the|paid/i.test(x));return w[0]?w[0][0].toUpperCase()+w[0].slice(1):'Vendor';}
+function guessDesc(t){const m=t.toLowerCase().match(/(?:bought|purchase[d]?|buy)\s+([a-z ]+?)\s+for/);return m?m[1].trim():'';}
+function answerQuestion(text){const d=text.toLowerCase();const period=/week/.test(d)?'week':/month/.test(d)?'month':'today';const rows=LEDGER.filter(x=>inPeriod(x.date,period));
+  if(/tax/.test(d)){const tax=rows.reduce((a,x)=>a+(x.tax||0),0);return `Tax report (${period}): taxable sales ${money(sum(rows,'sale'))}, sales tax collected ${money(tax)}, payable ${money(tax)}. Filing due Jul 20.`;}
+  if(/profit/.test(d)){const np=sum(rows,'sale')-sum(rows,'purchase')-sum(rows,'expense')-sum(rows,'payroll');return `${period[0].toUpperCase()+period.slice(1)} net profit is ${money(np)} (sales ${money(sum(rows,'sale'))} − costs).`;}
+  if(/cash/.test(d)&&/deposit/.test(d)){const cash=LEDGER.filter(x=>x.account==='Cash').reduce((a,x)=>a+(x.type==='sale'?x.amount:-(['expense','purchase','payroll','deposit'].includes(x.type)?x.amount:0)),0);return `You have about ${money(cash)} in cash. I'd deposit ${money(Math.max(0,cash-1000))} and keep ${money(1000)} as a float.`;}
+  if(/sale/.test(d)){return `${period[0].toUpperCase()+period.slice(1)} sales total ${money(sum(rows,'sale'))} across ${new Set(rows.filter(x=>x.type==='sale').map(x=>x.store)).size} store(s).`;}
+  if(/expense/.test(d))return `${period} expenses total ${money(sum(rows,'expense')+sum(rows,'payroll'))}.`;
+  return `This ${period}: sales ${money(sum(rows,'sale'))}, expenses ${money(sum(rows,'expense'))}, purchases ${money(sum(rows,'purchase'))}.`;}
+
+// =================== ASK CLAUDE — COPILOT ===================
+const EXPCATS=['Utilities','Rent','Payroll','Supplies','Marketing','Bank Charges','Other'];
+const VENDORS=["Altria","Republic Brands","Local Vape Wholesale","City Electric","Shell","Costco"];
+const COMMANDS=[{k:'sale',ic:'💵',label:'Record a sale',tmpl:'We sold $'},{k:'expense',ic:'🧾',label:'Record an expense',tmpl:'Paid '},
+ {k:'purchase',ic:'📦',label:'New purchase',tmpl:'Bought '},{k:'deposit',ic:'🏦',label:'Deposit cash',tmpl:'Deposited $'},
+ {k:'payroll',ic:'👥',label:'Run payroll',tmpl:'Record payroll $'},{k:'tax',ic:'🧮',label:'Generate tax report',run:'generate tax report'},
+ {k:'compare',ic:'📊',label:'Compare stores',run:'compare stores'},{k:'sales',ic:'📈',label:"Today's sales",run:"show today's sales"},
+ {k:'undo',ic:'↩️',label:'Reverse last entry',run:'reverse last transaction'}];
+let COP={msgs:[],pending:null,recent:[],favs:["Show today's sales","Generate tax report"],uploads:[],lastTx:null,thinking:false,streamIv:null};
+let copId=0;
+function copNow(){const d=new Date();let h=d.getHours(),m=('0'+d.getMinutes()).slice(-2);const ap=h<12?'AM':'PM';h=h%12||12;return h+':'+m+' '+ap;}
+function copEsc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function copFmt(text){const parts=String(text).split(/```/);let out='';
+  parts.forEach((seg,i)=>{if(i%2===1){out+='<pre><code>'+copEsc(seg.replace(/^\n/,''))+'</code></pre>';return;}
+    let t=copEsc(seg).replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>').replace(/(\$[\d][\d,]*(?:\.\d+)?)/g,'<b>$1</b>');
+    const lines=t.split('\n');let html='',ul=false;
+    lines.forEach(ln=>{if(/^\s*[-•]\s+/.test(ln)){if(!ul){html+='<ul>';ul=true;}html+='<li>'+ln.replace(/^\s*[-•]\s+/,'')+'</li>';}
+      else{if(ul){html+='</ul>';ul=false;}html+=ln+'<br>';}});
+    if(ul)html+='</ul>';out+=html.replace(/<br>\s*$/,'');});
+  return out;}
+
+// ---- parsing (copilot-specific; Telegram engine untouched) ----
+function copFindStore(t){const d=t.toLowerCase();return STORES.find(s=>d.includes(s.toLowerCase()))||null;}
+function copFindAccount(t){const d=t.toLowerCase();const hit=ACCOUNTS.find(a=>d.includes(a.toLowerCase()));if(hit)return hit;
+  if(/\bbank\b/.test(d))return ACCOUNTS.find(a=>/bank|checking/i.test(a))||'Checking';if(/\bcash\b/.test(d))return 'Cash';if(/credit/.test(d))return 'Credit Card';return null;}
+function copPeriod(t){const d=t.toLowerCase();if(/yesterday/.test(d))return 'yesterday';if(/this month|month|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec/.test(d))return 'month';if(/last week|this week|week/.test(d))return 'week';return 'today';}
+function copDetectTx(d){
+  if(/(sold|revenue|we made|took in)/.test(d))return 'sale';
+  if(/\bsales\b/.test(d)&&/\d/.test(d))return 'sale';
+  if(/(bought|purchase|purchased|buy|restock)/.test(d))return /supplier/.test(d)?'expense':'purchase';
+  if(/(payroll|salary|wages|paid staff|paid the team)/.test(d))return 'payroll';
+  if(/(deposit|deposited)/.test(d))return 'deposit';
+  if(/(transfer|transferred|moved)/.test(d))return 'transfer';
+  if(/(refund|refunded)/.test(d))return 'refund';
+  if(/(paid|expense|bill|spent)/.test(d))return 'expense';
+  return null;}
+function copBareExp(d){return /electric|power|water|internet|phone|utilit|rent|supplies|marketing|\bfee\b|\bgas\b/.test(d);}
+function copTx(intent,text,d,amount,store,account){let category=null,vendor=null,desc=null;
+  if(intent==='expense'){category=expCategory(text);if(/supplier/.test(d)){category='Supplies';vendor='Supplier';}}
+  if(intent==='purchase'){vendor=VENDORS.find(v=>d.includes(v.toLowerCase()))||guessVendor(text);desc=guessDesc(text)||(/inventory/.test(d)?'inventory':'');}
+  return {kind:'transaction',intent,amount,store,account,category,vendor,desc,date:copPeriod(d)==='yesterday'?daysAgo(1):daysAgo(0)};}
+function copParse(text){const d=text.toLowerCase().trim();const amount=parseAmount(text);const store=copFindStore(text);const account=copFindAccount(text);
+  // 1) commands
+  if(/\bclock\s*(in|out)\b/.test(d))return {kind:'command',cmd:'clock',dir:/in/.test(d)?'In':'Out',store};
+  if(/(reverse|undo|delete|remove)\b/.test(d))return {kind:'command',cmd:'reverse',target:/expense/.test(d)?'expense':/sale/.test(d)?'sale':/purchase/.test(d)?'purchase':null};
+  if(/(fix|edit|correct|change)\b/.test(d)&&/(transaction|entry|expense|sale|yesterday|last)/.test(d))return {kind:'command',cmd:'fix',period:copPeriod(d)};
+  if(/\bcompare\b/.test(d))return {kind:'command',cmd:'compare'};
+  // 2) question by structure
+  if(/\?/.test(d)||/^(what|show|how|generate|display|list|give me|tell me|when|why|which|view)\b/.test(d))return {kind:'question',period:copPeriod(d),text:d};
+  // 3) amount present => it's a transaction
+  if(amount!=null){const it=copDetectTx(d)||(copBareExp(d)?'expense':null);if(it)return copTx(it,text,d,amount,store,account);}
+  // 4) no amount: question by keyword, unless a clear transaction verb is present
+  if(/(profit|revenue|cash|balance|summary|sales|expenses?|report|vat|payable)\b/.test(d)&&!/(deposit|transfer|payroll|refund|\bpaid\b|bought|sold|spent)\b/.test(d))return {kind:'question',period:copPeriod(d),text:d};
+  // 5) transaction verb / bare expense without an amount yet -> will ask for amount
+  const it=copDetectTx(d)||(copBareExp(d)?'expense':null);
+  if(it)return copTx(it,text,d,amount,store,account);
+  return {kind:'unknown'};}
+
+// ---- rendering ----
+function copRow(m){
+  const av=m.who==='ai'?'<div class="cop-av ai">✦</div>':'<div class="cop-av me">You</div>';
+  const body=m.typing?copFmt(m._shown||'')+'<span style="opacity:.5">▍</span>':copFmt(m.text||'');
+  let card=(!m.typing&&m.card)?m.card:'';
+  let chips=(!m.typing&&m.chips)?`<div class="cop-chips">${m.chips.items.map(i=>`<button class="cop-chip" data-act="chip" data-field="${m.chips.field}" data-val="${i}">${i}</button>`).join('')}</div>`:'';
+  let acts=(!m.typing&&m.actions)?`<div class="cop-qa">${m.actions.map(a=>`<button class="${a.pri?'pri':''}" data-act="${a.act}" ${a.tx?`data-txid="${a.tx}"`:''} ${a.val?`data-val="${copEsc(a.val)}"`:''}>${a.label}</button>`).join('')}</div>`:'';
+  const meta=m.who==='ai'
+    ? `<div class="cop-meta"><span>${m.ts}</span><span class="cop-mact" data-act="copy" data-mid="${m.id}">Copy</span><span class="cop-mact" data-act="retry">Retry</span></div>`
+    : `<div class="cop-meta"><span class="cop-mact" data-act="editmsg" data-mid="${m.id}">Edit</span><span>${m.ts}</span></div>`;
+  return `<div class="cop-row ${m.who}">${av}<div class="cop-col"><div class="cop-bub ${m.who}">${body}${card}${chips}${acts}</div>${meta}</div></div>`;
+}
+function copRender(){const el=document.getElementById('copStream');if(!el)return;
+  let h=COP.msgs.map(copRow).join('');
+  if(COP.thinking)h+=`<div class="cop-row ai"><div class="cop-av ai">✦</div><div class="cop-col"><div class="cop-typing"><i></i><i></i><i></i></div><div class="cop-think"><span class="sp"></span>Claude is reading your books…</div></div></div>`;
+  el.innerHTML=h;el.scrollTop=el.scrollHeight;
+  document.getElementById('copCtx').textContent=COP.pending?`Drafting: ${labelFor(COP.pending.intent)}`:'Ready';}
+function copAddUser(text){COP.msgs.push({id:++copId,who:'user',text,ts:copNow()});COP.recent.unshift(text);COP.recent=[...new Set(COP.recent)].slice(0,6);copRender();copSide();}
+function copSay(text,opts={}){const m={id:++copId,who:'ai',text,ts:copNow(),card:opts.card,chips:opts.chips,actions:opts.actions,typing:true,_shown:''};COP.msgs.push(m);copRender();copStream(m,text);}
+function copStream(m,full){clearInterval(COP.streamIv);let i=0;const step=Math.max(3,Math.round(full.length/26));
+  COP.streamIv=setInterval(()=>{i+=step;m._shown=full.slice(0,i);copRender();if(i>=full.length){clearInterval(COP.streamIv);m.typing=false;m._shown=full;copRender();}},14);}
+function copThink(cb){COP.thinking=true;copRender();setTimeout(()=>{COP.thinking=false;cb();},460);}
+
+// ---- flow ----
+function copSubmitText(text){copAddUser(text);copThink(()=>copRespond(text));}
+function copSubmit(){const ta=document.getElementById('copTa');const text=ta.value.trim();
+  if(COP.uploads.length&&!text){return copProcessUploads();}
+  if(!text)return;ta.value='';copResize();copHideMenu();copHint('');copSubmitText(text);}
+function copRespond(text){
+  // answering a pending step by free text
+  if(COP.pending){const p=COP.pending;
+    if(p.step==='store'){const s=copFindStore(text)||STORES.find(x=>x.toLowerCase()===text.toLowerCase());if(s){p.store=s;return copAdvance();}}
+    if(p.step==='account'){const a=copFindAccount(text)||ACCOUNTS.find(x=>x.toLowerCase()===text.toLowerCase());if(a){p.account=a;return copAdvance();}}
+    if(p.step==='amount'){const amt=parseAmount(text);if(amt){p.amount=amt;return copAdvance();}}
+  }
+  const r=copParse(text);
+  if(r.kind==='command')return copCommand(r);
+  if(r.kind==='question')return copSay(copAnswer(r,text),{actions:copAnswerActions(text)});
+  if(r.kind==='unknown')return copSay("I can log **sales, expenses, purchases, deposits, transfers, refunds and payroll** — or answer questions like *“profit this month”* or *“compare stores”*. Try: `Store B electricity 320`.",{chips:{field:'shortcut',items:["Show today's sales","Compare stores","Generate tax report"]}});
+  // transaction
+  COP.pending={intent:r.intent,amount:r.amount,store:r.store,account:r.account,category:r.category,vendor:r.vendor,desc:r.desc,date:r.date,step:null};
+  return copAdvance();
+}
+function copAdvance(){const p=COP.pending;
+  if(!p.amount){p.step='amount';return copSay(`How much was ${labelForA(p.intent)}?`,{});}
+  if(!p.store){p.step='store';return copSay(smartAsk(p)+` — which store?`,{chips:{field:'store',items:STORES}});}
+  if(needsAccount(p.intent)&&!p.account){p.step='account';return copSay(`Which payment account?`,{chips:{field:'account',items:ACCOUNTS}});}
+  p.step='preview';return copSay(`Here's the entry — review, edit anything inline, then save.`,{card:copPreviewCard(p),actions:[{label:'✓ Save',act:'save',pri:true},{label:'Cancel',act:'cancel'}]});}
+function smartAsk(p){const noun=p.intent==='expense'?(p.category?p.category.toLowerCase()+' expense':'expense'):(p.intent==='purchase'?'purchase'+(p.vendor?` from ${p.vendor}`:''):labelForA(p.intent));return `Got it — ${money(p.amount)} ${noun}`;}
+function labelForA(i){return {sale:'the sale',expense:'the expense',purchase:'the purchase',deposit:'the deposit',transfer:'the transfer',refund:'the refund',payroll:'payroll'}[i]||'that';}
+function copAnswerField(field,val){const p=COP.pending;if(!p)return;if(field==='shortcut'){return copSubmitText(val);}p[field]=val;copAdvance();}
+
+function copPreviewCard(p){const sel=(f,items,v)=>`<select data-field="${f}">${items.map(i=>`<option ${i===v?'selected':''}>${i}</option>`).join('')}</select>`;
+  const inp=(f,v,t)=>`<input data-field="${f}" type="${t||'text'}" value="${v==null?'':v}">`;
+  let rows=`<div class="k">Type</div><div><span class="chip ${TYPECHIP[p.intent]}">${p.intent}</span></div>`;
+  rows+=`<div class="k">Store</div><div>${sel('store',STORES,p.store)}</div>`;
+  if(needsAccount(p.intent))rows+=`<div class="k">Account</div><div>${sel('account',ACCOUNTS,p.account||'Cash')}</div>`;
+  if(p.intent==='expense')rows+=`<div class="k">Category</div><div>${sel('category',EXPCATS,p.category||'Other')}</div>`;
+  if(p.intent==='purchase')rows+=`<div class="k">Vendor</div><div>${inp('vendor',p.vendor||'')}</div>`;
+  rows+=`<div class="k">Amount</div><div>${inp('amount',p.amount,'number')}</div>`;
+  rows+=`<div class="k">Date</div><div>${inp('date',p.date||daysAgo(0),'date')}</div>`;
+  if(p.intent==='sale')rows+=`<div class="k">Sales tax</div><div>${money2(p.amount*0.0825/1.0825)}</div>`;
+  return `<div class="cop-card tx"><div class="ch"><span class="ct">Transaction preview</span><span class="cop-amt">${money(p.amount)}</span></div><div class="cop-kv">${rows}</div></div>`;}
+
+function copCommit(){const p=COP.pending;if(!p)return;const acct=p.account||'Cash';
+  const rec={id:++uid,date:p.date||daysAgo(0),store:p.store,account:acct,type:p.intent,category:catFor(p.intent,p.category||p.vendor||''),amount:+p.amount,memo:p.vendor||p.category||labelFor(p.intent)};
+  if(p.intent==='sale')rec.tax=+(p.amount*0.0825/1.0825).toFixed(2);
+  if(p.intent==='purchase'){rec.vendor=p.vendor;rec.desc=p.desc;rec.category='Inventory Purchase';}
+  if(p.intent==='expense')rec.category=p.category||'Other';
+  LEDGER.push(rec);COP.lastTx=rec;COP.pending=null;refreshAll();
+  copSay(`Done ✓ I recorded ${labelForA(rec.type)} of **${money(rec.amount)}** at ${rec.store} (${rec.account})${rec.tax?` and set aside **${money2(rec.tax)}** sales tax`:''}. It's live on your dashboard now.`,
+    {card:copSuccessCard(rec),actions:[{label:'↩ Undo',act:'undo',tx:rec.id},{label:'Open transaction',act:'opentx',tx:rec.id},{label:'View ledger',act:'ledger'},{label:'Duplicate',act:'dup',tx:rec.id},{label:'⬇ PDF',act:'pdf'}]});
+  copSide();}
+function copSuccessCard(rec){return `<div class="cop-card ok"><div class="cop-okwrap"><div class="cop-check">✓</div><div><div style="font-weight:800">${labelFor(rec.type).replace(/^a |^an /,'').replace(/^./,c=>c.toUpperCase())} recorded</div><div style="font-size:12px;color:var(--muted)">${rec.store} · ${rec.account} · ${money(rec.amount)}${rec.tax?` · tax ${money2(rec.tax)}`:''} · ${rec.date}</div></div></div></div>`;}
+
+function copCommand(r){
+  if(r.cmd==='clock'){const res=processMessage('Clock '+r.dir,'Owner','chat');return copSay(res.reply);}
+  if(r.cmd==='reverse'){let cand=[...LEDGER].reverse().find(x=>!r.target||x.type===r.target)||COP.lastTx;
+    if(!cand)return copSay("There's nothing to reverse yet.");
+    return copSay(`Reverse this ${cand.type} of **${money(cand.amount)}** at ${cand.store}? This removes it from your books.`,
+      {card:copSuccessCard(cand).replace('cop-card ok','cop-card tx').replace('cop-check','cop-check" style="background:var(--warn)'),actions:[{label:'↩ Confirm reverse',act:'undo',tx:cand.id,pri:true},{label:'Keep it',act:'cancel'}]});}
+  if(r.cmd==='fix'){const day=r.period==='yesterday'?daysAgo(1):daysAgo(0);const rows=LEDGER.filter(x=>x.date===day).slice(-5);
+    if(!rows.length)return copSay(`No transactions found for ${day}.`);
+    return copSay(`Here are ${r.period}'s entries — tap one to edit:`,{chips:{field:'fixpick',items:rows.map(x=>`${x.type} ${money(x.amount)}`)},actions:rows.map(x=>({label:`${x.type} ${money(x.amount)} · ${x.store}`,act:'fixpick',tx:x.id}))});}
+  if(r.cmd==='compare'){const rows=STORES.map(s=>{const m=LEDGER.filter(x=>x.store===s&&inPeriod(x.date,'week'));return {s,sales:sum(m,'sale'),exp:sum(m,'expense')+sum(m,'payroll'),pur:sum(m,'purchase')};});
+    const best=[...rows].sort((a,b)=>b.sales-a.sales)[0];
+    const body=`Here's this week across your stores:\n`+rows.map(r=>`- **${r.s}** — sales ${money(r.sales)}, costs ${money(r.exp+r.pur)}, profit ${money(r.sales-r.exp-r.pur)}`).join('\n')+`\n\n**${best.s}** is leading on sales.`;
+    return copSay(body,{actions:[{label:'⬇ PDF',act:'pdf'},{label:'Open Reports',act:'report'}]});}
+}
+function copAnswer(r,text){return answerQuestion(text.replace(/vat/i,'tax'));}
+function copAnswerActions(text){const d=text.toLowerCase();if(/tax|vat|profit|report|compare/.test(d))return [{label:'⬇ Download PDF',act:'pdf'},{label:'Open Reports',act:'report'}];if(/sale/.test(d))return [{label:'View ledger',act:'ledger'}];return null;}
+
+// ---- actions ----
+function copUndo(txid){const i=LEDGER.findIndex(x=>x.id==txid);if(i<0)return copSay("That entry was already removed.");const r=LEDGER[i];LEDGER.splice(i,1);refreshAll();COP.lastTx=null;copSay(`Reversed ✓ Removed the ${r.type} of **${money(r.amount)}** at ${r.store}. Your books are back to where they were.`);toast('Transaction reversed');copSide();}
+function copDup(txid){const r=LEDGER.find(x=>x.id==txid);if(!r)return;COP.pending={intent:r.type,amount:r.amount,store:r.store,account:r.account,category:r.category,vendor:r.vendor,desc:r.desc,date:daysAgo(0),step:'preview'};copSay('Duplicated — review and save the copy.',{card:copPreviewCard(COP.pending),actions:[{label:'✓ Save',act:'save',pri:true},{label:'Cancel',act:'cancel'}]});}
+function copOpenEdit(txid){const r=LEDGER.find(x=>x.id==txid);if(!r)return;const i=LEDGER.findIndex(x=>x.id==txid);LEDGER.splice(i,1);COP.pending={intent:r.type,amount:r.amount,store:r.store,account:r.account,category:r.category,vendor:r.vendor,desc:r.desc,date:r.date,step:'preview'};copSay('Editing that entry — change anything and save.',{card:copPreviewCard(COP.pending),actions:[{label:'✓ Save changes',act:'save',pri:true},{label:'Cancel',act:'cancel'}]});}
+function copCopy(mid){const m=COP.msgs.find(x=>x.id==mid);if(!m)return;try{navigator.clipboard&&navigator.clipboard.writeText(m.text);}catch(e){}toast('Copied to clipboard');}
+function copEditMsg(mid){const idx=COP.msgs.findIndex(x=>x.id==mid);if(idx<0)return;const m=COP.msgs[idx];COP.msgs=COP.msgs.slice(0,idx);COP.pending=null;copRender();const ta=document.getElementById('copTa');ta.value=m.text;ta.focus();copResize();}
+function copRetry(){const last=[...COP.msgs].reverse().find(x=>x.who==='user');if(last){COP.thinking=true;copRender();setTimeout(()=>{COP.thinking=false;copRespond(last.text);},400);}}
+function copCancel(){COP.pending=null;copSay('No problem — cancelled. What else can I do?');}
+function copNewChat(){COP={...COP,msgs:[],pending:null};copGreet();copSide();}
+
+// ---- delegated events ----
+function copBindStream(){const el=document.getElementById('copStream');
+  el.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(!b)return;const a=b.dataset;
+    ({chip:()=>copAnswerField(a.field,a.val),save:()=>copCommit(),cancel:()=>copCancel(),undo:()=>copUndo(a.txid),dup:()=>copDup(a.txid),
+      opentx:()=>{go(COP.lastTx&&COP.lastTx.type==='sale'?'sales':COP.lastTx&&COP.lastTx.type==='purchase'?'purchases':'expenses');toast('Opened transaction');},
+      ledger:()=>{go('dash');toast('Opened ledger');},report:()=>{go('reports');},pdf:()=>toast('PDF generated & ready to email'),
+      copy:()=>copCopy(a.mid),editmsg:()=>copEditMsg(a.mid),retry:()=>copRetry(),fixpick:()=>copOpenEdit(a.txid),shortcut:()=>copSubmitText(a.val)}[a.act]||(()=>{}))();});
+  el.addEventListener('change',e=>{const f=e.target.dataset.field;if(!f||!COP.pending)return;COP.pending[f]=e.target.type==='number'?+e.target.value:e.target.value;
+    const msg=[...COP.msgs].reverse().find(m=>m.card);if(msg){msg.card=copPreviewCard(COP.pending);copRender();}});
+}
+
+// ---- smart input: mentions, commands, hint, resize, files ----
+function copResize(){const ta=document.getElementById('copTa');ta.style.height='auto';ta.style.height=Math.min(130,ta.scrollHeight)+'px';}
+function copHint(txt){const h=document.getElementById('copHint');if(!txt){h.className='cop-hint';h.innerHTML='';return;}h.className='cop-hint show';h.innerHTML=txt;}
+function copOnInput(){copResize();const ta=document.getElementById('copTa');const v=ta.value;const caret=ta.selectionStart;const upto=v.slice(0,caret);
+  const men=upto.match(/@(\w*)$/);const cmd=upto.match(/(?:^|\s)\/(\w*)$/);
+  if(men){copShowMention(men[1]);}else if(cmd){copShowCmd(cmd[1]);}else{copHideMenu();}
+  const amt=parseAmount(v);const st=copFindStore(v);const parts=[];if(amt)parts.push(`Amount <b>${money(amt)}</b>`);if(st)parts.push(`Store <b>${st}</b>`);const r=copParse(v);if(r.kind==='transaction')parts.push(`→ <b>${r.intent}</b>`);
+  copHint(v.trim()&&parts.length?parts.join(' &nbsp;·&nbsp; '):'');
+}
+function copMenuItems(list){document.getElementById('copMenu').innerHTML=list;document.getElementById('copMenu').className='cop-menu show';}
+function copHideMenu(){const m=document.getElementById('copMenu');if(m){m.className='cop-menu';m.innerHTML='';}}
+function copShowMention(q){q=q.toLowerCase();const groups=[['Stores',STORES,'🏬'],['Accounts',ACCOUNTS,'🏦'],['Vendors',VENDORS,'🏭'],['Employees',EMPLOYEES.map(e=>e.name),'👤']];
+  let h='';groups.forEach(([lbl,items,ic])=>{const f=items.filter(i=>i.toLowerCase().includes(q));if(f.length){h+=`<div class="mh">${lbl}</div>`+f.slice(0,4).map(i=>`<div class="cop-mi" data-mention="${i}"><span class="ic">${ic}</span>${i}</div>`).join('');}});
+  copMenuItems(h||'<div class="mh">No matches</div>');}
+function copShowCmd(q){q=q.toLowerCase();const f=COMMANDS.filter(c=>c.k.includes(q)||c.label.toLowerCase().includes(q));
+  copMenuItems('<div class="mh">Commands</div>'+f.map(c=>`<div class="cop-mi" data-cmd="${c.k}"><span class="ic">${c.ic}</span>${c.label}<span class="d">/${c.k}</span></div>`).join(''));}
+function copBindMenu(){const m=document.getElementById('copMenu');m.addEventListener('click',e=>{const men=e.target.closest('[data-mention]');const cmd=e.target.closest('[data-cmd]');const ta=document.getElementById('copTa');
+  if(men){ta.value=ta.value.replace(/@\w*$/,men.dataset.mention+' ');copHideMenu();ta.focus();copOnInput();}
+  if(cmd){const c=COMMANDS.find(x=>x.k===cmd.dataset.cmd);copHideMenu();if(c.run){copSubmitText(c.run);ta.value='';}else{ta.value=ta.value.replace(/(?:^|\s)\/\w*$/,' ')+c.tmpl;ta.focus();copOnInput();}}});}
+
+function copToggleDate(){const d=document.getElementById('copDate');try{d.showPicker?d.showPicker():d.click();}catch(e){d.click();}}
+function copInsertDate(v){const ta=document.getElementById('copTa');ta.value=(ta.value.trim()+' on '+v).trim()+' ';ta.focus();copOnInput();}
+function copVoice(){toast('🎙️ Voice input — coming soon');const b=event&&event.target;if(b){b.classList.add('on');setTimeout(()=>b.classList.remove('on'),1200);}}
+function copOpenCmd(){const ta=document.getElementById('copTa');ta.focus();ta.value=ta.value+ (ta.value.endsWith(' ')||!ta.value?'':' ')+'/';copOnInput();}
+
+function copFilesPicked(files){[...files].forEach(f=>COP.uploads.push({name:f.name,kind:/\.pdf/i.test(f.name)?'PDF':/\.(xls|csv)/i.test(f.name)?'Sheet':'Receipt'}));copRenderFiles();copSide();
+  toast(files.length+' file(s) attached — press Send to let Claude read them');}
+function copRenderFiles(){const el=document.getElementById('copFiles');if(!COP.uploads.length){el.style.display='none';el.innerHTML='';return;}
+  el.style.display='flex';el.innerHTML=COP.uploads.map((u,i)=>`<span class="cop-file">📄 ${u.name}<span class="x" data-rmfile="${i}">✕</span></span>`).join('');}
+function copProcessUploads(){const u=COP.uploads[COP.uploads.length-1];copAddUser('📎 '+COP.uploads.map(x=>x.name).join(', '));COP.uploads=[];copRenderFiles();
+  copThink(()=>{const amt=[240,320,4820,86.5][Math.floor(Math.random()*4)];const isExp=/receipt|pdf/i.test(u.kind);
+    COP.pending={intent:isExp?'expense':'purchase',amount:amt,store:null,account:null,category:isExp?'Utilities':null,vendor:isExp?'City Electric':'Altria',desc:'',date:daysAgo(0),step:null};
+    copSay(`I read **${u.name}** and extracted a ${isExp?'utility expense':'purchase'} of **${money(amt)}**${isExp?' from City Electric':' from Altria'}. Let me confirm a couple of details.`,{});setTimeout(()=>copAdvance(),300);});}
+function copBindFiles(){document.getElementById('copFiles').addEventListener('click',e=>{const x=e.target.closest('[data-rmfile]');if(x){COP.uploads.splice(+x.dataset.rmfile,1);copRenderFiles();}});
+  const box=document.getElementById('copInbox');['dragover','dragenter'].forEach(ev=>box.addEventListener(ev,e=>{e.preventDefault();box.classList.add('drag');}));
+  ['dragleave','drop'].forEach(ev=>box.addEventListener(ev,e=>{e.preventDefault();box.classList.remove('drag');}));
+  box.addEventListener('drop',e=>{if(e.dataTransfer.files.length)copFilesPicked(e.dataTransfer.files);});
+  document.getElementById('copTa').addEventListener('paste',e=>{if(e.clipboardData&&e.clipboardData.files&&e.clipboardData.files.length){copFilesPicked(e.clipboardData.files);e.preventDefault();}});}
+
+// ---- keyboard ----
+function copKeys(e){const ta=document.getElementById('copTa');
+  if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();copSubmit();return;}
+  if(e.key==='Escape'){copHideMenu();if(COP.pending){copCancel();}return;}
+  if(e.key==='ArrowUp'&&!ta.value.trim()){const last=[...COP.msgs].reverse().find(x=>x.who==='user');if(last){e.preventDefault();copEditMsg(last.id);}}}
+
+// ---- right sidebar ----
+function copInsights(){const wk=LEDGER.filter(x=>inPeriod(x.date,'week'));const t=sum(LEDGER.filter(x=>x.date===daysAgo(0)),'sale');const y=sum(LEDGER.filter(x=>x.date===daysAgo(1)),'sale');
+  const delta=y?Math.round((t-y)/y*100):0;const ins=[];
+  if(delta<=-8)ins.push({i:'📉',t:`Sales are down **${Math.abs(delta)}%** vs yesterday.`});else if(delta>=8)ins.push({i:'📈',t:`Sales are up **${delta}%** vs yesterday — nice.`});
+  ins.push({i:'🏦',t:`Cash is building up — consider a deposit today.`});
+  ins.push({i:'🧮',t:`Sales-tax filing due **Jul 20** (18 days).`});
+  // duplicate expense detection
+  const seen={};wk.filter(x=>x.type==='expense').forEach(x=>{const k=x.amount+'|'+x.category+'|'+x.date;if(seen[k])ins.push({i:'⚠️',t:`Possible **duplicate expense**: ${money(x.amount)} ${x.category} on ${x.date}.`});seen[k]=1;});
+  return ins;}
+function copSide(){const el=document.getElementById('copSide');if(!el)return;const ins=copInsights();
+  const sec=(title,body,right='')=>`<div class="cop-sec"><h4>${title}${right}</h4>${body}</div>`;
+  const suggested=["Report today's sales","Generate tax report","Compare stores","Reverse last entry"].map(s=>`<div class="cop-srow" data-act="shortcut" data-val="${s}">✨ ${s}</div>`).join('');
+  const shortcuts=['We sold $ today','Paid electricity $','Bought inventory $','Deposited $ cash'].map(s=>`<span class="cop-schip" data-tmpl="${s}">${s}</span>`).join('');
+  const recent=COP.recent.length?COP.recent.map(s=>`<div class="cop-srow" data-act="shortcut" data-val="${copEsc(s)}">🕘 ${copEsc(s.length>30?s.slice(0,30)+'…':s)}<span class="st" data-fav="${copEsc(s)}">☆</span></div>`).join(''):'<div class="cop-empty">Nothing yet — start typing.</div>';
+  const favs=COP.favs.length?COP.favs.map(s=>`<div class="cop-srow" data-act="shortcut" data-val="${copEsc(s)}">⭐ ${copEsc(s)}</div>`).join(''):'<div class="cop-empty">Star a recent prompt to pin it.</div>';
+  const uploads=COP.uploads.length?COP.uploads.map(u=>`<div class="cop-srow">📄 ${u.name}<span class="st">${u.kind}</span></div>`).join(''):'<div class="cop-empty">Drop a receipt or statement here.</div>';
+  const insHtml=ins.slice(0,3).map(x=>`<div class="cop-srow" style="cursor:default">${x.i} <span>${copFmt(x.t)}</span></div>`).join('');
+  el.innerHTML=sec('AI Insights',insHtml)+sec('Suggested actions',suggested)+sec("Today's shortcuts",`<div class="cop-schips">${shortcuts}</div>`)+sec('Recent prompts',recent)+sec('Pinned',favs)+sec('Recent uploads',uploads);
+}
+function copBindSide(){const el=document.getElementById('copSide');
+  el.addEventListener('click',e=>{const fav=e.target.closest('[data-fav]');const tmpl=e.target.closest('[data-tmpl]');const row=e.target.closest('[data-act="shortcut"]');
+    if(fav){e.stopPropagation();const s=fav.dataset.fav;if(!COP.favs.includes(s))COP.favs.unshift(s);COP.favs=COP.favs.slice(0,5);copSide();toast('Pinned');return;}
+    if(tmpl){const ta=document.getElementById('copTa');ta.value=tmpl.dataset.tmpl;ta.focus();copOnInput();return;}
+    if(row){copSubmitText(row.dataset.val);}});}
+
+function copGreet(){copSay("Hi Hassan — I'm your accounting copilot. Tell me what happened in plain English and I'll draft the entry, ask only what I need, and post it to your books.\n\nTry: **Store B electricity 320**, **We sold $8,420 today**, or **profit this month**.");
+  const ins=copInsights()[0];if(ins)setTimeout(()=>copSay(`One thing worth a look:`,{card:`<div class="cop-card insight"><div class="ch"><span class="ct">${ins.i} Insight</span></div><div style="font-size:13.5px">${copFmt(ins.t)}</div></div>`,actions:[{label:"Show today's sales",act:'shortcut',val:"Show today's sales"}]}),700);}
+function copInit(){copBindStream();copBindMenu();copBindFiles();copBindSide();
+  const ta=document.getElementById('copTa');ta.addEventListener('input',copOnInput);ta.addEventListener('keydown',copKeys);
+  document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){const ai=document.getElementById('v-ai');if(ai&&ai.classList.contains('on')){e.preventDefault();copOpenCmd();}}});
+  copSide();copGreet();}
+
+// ---------------- Settings ----------------
+function renderSettings(){document.getElementById('storeList').innerHTML=STORES.map(s=>`<div style="display:flex;justify-content:space-between;padding:8px 10px;border:1px solid var(--line);border-radius:9px;margin-bottom:7px;font-size:13px">${s}<span style="color:var(--muted)">store</span></div>`).join('');
+  document.getElementById('acctList').innerHTML=ACCOUNTS.map(a=>`<div style="display:flex;justify-content:space-between;padding:8px 10px;border:1px solid var(--line);border-radius:9px;margin-bottom:7px;font-size:13px">${a}<span style="color:var(--muted)">account</span></div>`).join('');}
+function addStore(){const v=document.getElementById('newStore').value.trim();if(!v)return;STORES.push(v);document.getElementById('newStore').value='';fillStores();renderSettings();toast('Store added: '+v);}
+function addAcct(){const v=document.getElementById('newAcct').value.trim();if(!v)return;ACCOUNTS.push(v);document.getElementById('newAcct').value='';fillStores();renderSettings();toast('Account added: '+v);}
+
+// ---------------- boot ----------------
+function refreshAll(){renderDash();renderSales();renderExp();renderPur();renderRecon();renderTax();renderPay();renderReports();renderClock();}
+function init(){fillStores();document.getElementById('pDate').value=daysAgo(0);renderSettings();refreshAll();copInit();}
+init();
+</script>
+</body>
+</html>

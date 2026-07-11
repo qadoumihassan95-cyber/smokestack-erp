@@ -1,0 +1,12 @@
+node_modules/
+npm-debug.log*
+.env
+.env.*
+*.log
+.DS_Store
+dist/
+build/
+venv/
+__pycache__/
+*.sqlite
+*.db

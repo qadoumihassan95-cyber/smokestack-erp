@@ -1,0 +1,1235 @@
+<!DOCTYPE html>
+<html lang="en" id="html">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SmokeStack — Interactive Prototype</title>
+<style>
+  :root{
+    --bg:#0f1420; --panel:#161d2e; --panel2:#1d2740; --line:#2a3550;
+    --txt:#e8edf7; --muted:#93a0bd; --brand:#ff7a45; --brand2:#ffb020;
+    --ok:#31c48d; --warn:#ffb020; --bad:#f05252; --accent:#5b8def;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans Arabic",sans-serif;background:var(--bg);color:var(--txt);height:100vh;overflow:hidden}
+  html[dir="rtl"] body{font-family:"Noto Sans Arabic","Segoe UI",Tahoma,sans-serif}
+  .app{display:grid;grid-template-columns:238px 1fr;height:100vh}
+  html[dir="rtl"] .nav a.active{box-shadow:inset -3px 0 0 var(--brand)}
+  .side{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:18px 12px}
+  html[dir="rtl"] .side{border-right:none;border-left:1px solid var(--line)}
+  .logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:19px;padding:6px 8px 14px}
+  .logo .mark{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--brand),var(--brand2));display:flex;align-items:center;justify-content:center;font-size:16px}
+  .locsel{margin:0 6px 12px;background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:9px;padding:9px 10px;font-size:13px;font-weight:600;width:calc(100% - 12px)}
+  .nav a{display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:9px;color:var(--muted);text-decoration:none;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:2px}
+  .nav a:hover{background:var(--panel2);color:var(--txt)}
+  .nav a.active{background:var(--panel2);color:var(--txt);box-shadow:inset 3px 0 0 var(--brand)}
+  .side .foot{margin-top:auto;font-size:11px;color:var(--muted);padding:8px;line-height:1.5;border-top:1px solid var(--line)}
+  .langtog{display:flex;gap:6px;margin:8px 6px}
+  .langtog button{flex:1;background:var(--panel2);border:1px solid var(--line);color:var(--muted);border-radius:8px;padding:7px;font-size:12px;font-weight:700;cursor:pointer}
+  .langtog button.on{background:var(--brand);color:#1a1000;border-color:var(--brand)}
+  .main{overflow-y:auto;padding:22px 26px}
+  .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:12px}
+  .top h1{font-size:22px}
+  .top .loc{font-size:12px;color:var(--muted)}
+  .pill{background:var(--panel2);border:1px solid var(--line);padding:6px 12px;border-radius:20px;font-size:12px;color:var(--muted);display:inline-flex;gap:6px;align-items:center}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--ok)}
+  .grid{display:grid;gap:14px}
+  .g4{grid-template-columns:repeat(4,1fr)} .g3{grid-template-columns:repeat(3,1fr)} .g2{grid-template-columns:1fr 1fr}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:16px}
+  .kpi .lbl{font-size:12px;color:var(--muted);font-weight:600}
+  .kpi .val{font-size:26px;font-weight:800;margin-top:6px}
+  .kpi .sub{font-size:12px;margin-top:4px;color:var(--ok)}
+  .card h3{font-size:14px;margin-bottom:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px}
+  .pos{display:grid;grid-template-columns:1fr 340px;gap:16px;height:calc(100vh - 110px)}
+  .catalog{overflow-y:auto}
+  .cats{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+  .cats button{background:var(--panel2);border:1px solid var(--line);color:var(--muted);padding:7px 13px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer}
+  .cats button.on{background:var(--brand);color:#1a1000;border-color:var(--brand)}
+  .prods{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:11px}
+  .prod{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:13px;cursor:pointer;position:relative;transition:.12s}
+  .prod:hover{border-color:var(--brand);transform:translateY(-2px)}
+  .prod .nm{font-size:13px;font-weight:700;line-height:1.3;margin-bottom:4px}
+  .prod .br{font-size:11px;color:var(--muted)}
+  .prod .pr{font-size:15px;font-weight:800;margin-top:9px}
+  .badge{position:absolute;top:9px;right:9px;font-size:9px;font-weight:800;padding:3px 6px;border-radius:6px}
+  html[dir="rtl"] .badge{right:auto;left:9px}
+  .b21{background:rgba(240,82,82,.18);color:#ff9a9a}
+  .bblock{background:rgba(240,82,82,.9);color:#fff}
+  .tag{display:inline-block;font-size:10px;color:var(--muted);border:1px solid var(--line);border-radius:5px;padding:2px 5px;margin-top:7px}
+  .cart{background:var(--panel);border:1px solid var(--line);border-radius:13px;display:flex;flex-direction:column;overflow:hidden}
+  .cart .hd{padding:14px 16px;border-bottom:1px solid var(--line);font-weight:700;display:flex;justify-content:space-between;align-items:center}
+  .items{flex:1;overflow-y:auto;padding:8px 12px}
+  .ci{display:flex;justify-content:space-between;gap:8px;padding:10px 8px;border-bottom:1px solid var(--line);font-size:13px;align-items:center}
+  .ci .x{color:var(--muted);cursor:pointer;font-size:16px;padding:0 4px}
+  .ci .qn{color:var(--muted);font-size:12px}
+  .empty{color:var(--muted);text-align:center;padding:40px 10px;font-size:13px}
+  .sum{padding:14px 16px;border-top:1px solid var(--line);font-size:13px}
+  .sum .r{display:flex;justify-content:space-between;margin-bottom:6px;color:var(--muted)}
+  .sum .r.tot{color:var(--txt);font-size:18px;font-weight:800;margin-top:6px}
+  .btn{width:100%;border:none;border-radius:10px;padding:13px;font-weight:800;font-size:15px;cursor:pointer;margin-top:8px}
+  .btn.pay{background:linear-gradient(135deg,var(--brand),var(--brand2));color:#1a1000}
+  .btn.pay:disabled{opacity:.4;cursor:not-allowed}
+  .btn.ghost{background:var(--panel2);color:var(--muted);font-size:12px;padding:9px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:start;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px;padding:10px;border-bottom:1px solid var(--line)}
+  td{padding:11px 10px;border-bottom:1px solid var(--line)}
+  .chip{font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px}
+  .c-ok{background:rgba(49,196,141,.16);color:#7ff0c0}
+  .c-low{background:rgba(255,176,32,.16);color:#ffcf7a}
+  .c-block{background:rgba(240,82,82,.16);color:#ff9a9a}
+  .c-sent{background:rgba(91,141,239,.18);color:#a9c4ff}
+  .minibtn{background:var(--brand);border:none;color:#1a1000;font-weight:700;font-size:11px;padding:6px 11px;border-radius:7px;cursor:pointer}
+  .minibtn.gh{background:var(--panel2);color:var(--muted)}
+  .overlay{position:fixed;inset:0;background:rgba(6,10,18,.75);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
+  .overlay.show{display:flex}
+  .modal{background:var(--panel);border:1px solid var(--line);border-radius:16px;max-width:440px;width:100%;padding:24px;text-align:center}
+  .modal .ic{width:54px;height:54px;border-radius:14px;background:rgba(255,122,69,.15);display:flex;align-items:center;justify-content:center;font-size:26px;margin:0 auto 14px}
+  .modal h2{font-size:19px;margin-bottom:6px}
+  .modal p{color:var(--muted);font-size:13px;line-height:1.5;margin-bottom:18px}
+  .modal .age{font-size:13px;background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:10px;margin-bottom:16px}
+  .mbtns{display:flex;flex-direction:column;gap:9px}
+  .mbtn{border:none;border-radius:10px;padding:13px;font-weight:700;font-size:14px;cursor:pointer}
+  .m-ok{background:var(--ok);color:#04160e}
+  .m-bad{background:rgba(240,82,82,.15);color:#ff9a9a;border:1px solid rgba(240,82,82,.4)}
+  .m-cancel{background:transparent;color:var(--muted);font-size:12px}
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(120px);background:var(--panel2);border:1px solid var(--line);border-radius:11px;padding:13px 20px;font-size:13px;font-weight:600;z-index:60;transition:.3s;box-shadow:0 10px 30px rgba(0,0,0,.4)}
+  .toast.show{transform:translateX(-50%) translateY(0)}
+  .toast.ok{border-left:4px solid var(--ok)} .toast.bad{border-left:4px solid var(--bad)} .toast.warn{border-left:4px solid var(--warn)}
+  .disc{font-size:11px;color:var(--muted);background:var(--panel);border:1px dashed var(--line);border-radius:9px;padding:11px 13px;margin-top:16px;line-height:1.5}
+  .view{display:none} .view.on{display:block}
+  .logrow{font-size:12px;padding:9px 10px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:10px}
+  .logrow .t{color:var(--muted)}
+  /* ---- Light theme ---- */
+  body.light{--bg:#f4f6fb;--panel:#ffffff;--panel2:#eef1f7;--line:#dde3ee;--txt:#141a26;--muted:#5a6782}
+  body.light .side{box-shadow:0 0 0 1px rgba(0,0,0,.02)}
+  /* ---- Header bar ---- */
+  .hdr{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+  .search{flex:1;position:relative;max-width:520px}
+  .search input{width:100%;background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:10px;padding:10px 12px 10px 36px;font-size:13px}
+  html[dir="rtl"] .search input{padding:10px 36px 10px 12px}
+  .search .si{position:absolute;left:11px;top:9px;color:var(--muted)}
+  html[dir="rtl"] .search .si{left:auto;right:11px}
+  .search .kbd{position:absolute;right:9px;top:8px;font-size:10px;color:var(--muted);border:1px solid var(--line);border-radius:5px;padding:2px 6px}
+  html[dir="rtl"] .search .kbd{right:auto;left:9px}
+  .hdr .ctl{background:var(--panel);border:1px solid var(--line);color:var(--muted);border-radius:9px;padding:8px 11px;font-size:12px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+  .hdr .ctl:hover{color:var(--txt);border-color:var(--brand)}
+  .hdr .ctl.on{color:var(--ok);border-color:var(--ok)}
+  .updated{font-size:11px;color:var(--muted);white-space:nowrap}
+  .roleSel{background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:9px;padding:8px 10px;font-size:12px;font-weight:600}
+  /* ---- Clickable KPI ---- */
+  .kpi.clk{cursor:pointer;transition:.13s;position:relative}
+  .kpi.clk:hover{border-color:var(--brand);transform:translateY(-2px);box-shadow:0 8px 22px rgba(0,0,0,.22)}
+  .kpi.clk::after{content:"↗";position:absolute;top:12px;right:13px;color:var(--muted);font-size:12px;opacity:0;transition:.13s}
+  html[dir="rtl"] .kpi.clk::after{right:auto;left:13px;content:"↖"}
+  .kpi.clk:hover::after{opacity:1}
+  .kpi .val{font-size:22px}
+  .g6{grid-template-columns:repeat(6,1fr)} .g5{grid-template-columns:repeat(5,1fr)}
+  /* ---- Quick actions ---- */
+  .qa{display:flex;gap:9px;flex-wrap:wrap}
+  .qa button{background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:11px;padding:12px 14px;font-size:12.5px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:8px;transition:.12s}
+  .qa button:hover{border-color:var(--brand);background:var(--panel2);transform:translateY(-1px)}
+  .qa .qi{font-size:16px}
+  /* ---- Charts ---- */
+  .chartwrap{position:relative}
+  .segtog{display:flex;gap:4px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:3px}
+  .segtog button{background:transparent;border:none;color:var(--muted);font-size:11px;font-weight:700;padding:5px 10px;border-radius:6px;cursor:pointer}
+  .segtog button.on{background:var(--brand);color:#1a1000}
+  svg .bar:hover,svg .pt:hover{opacity:.75;cursor:pointer}
+  .cardhd{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+  .cardhd h3{margin:0}
+  .exp{font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:4px 8px;cursor:pointer;background:var(--panel)}
+  .exp:hover{color:var(--txt);border-color:var(--brand)}
+  .tip{position:fixed;background:#000;color:#fff;font-size:11px;padding:5px 9px;border-radius:6px;pointer-events:none;opacity:0;transition:.08s;z-index:80;white-space:nowrap}
+  body.light .tip{background:#141a26}
+  /* ---- Multi-store status ---- */
+  .storecard{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;cursor:pointer;transition:.13s;border-left:4px solid var(--ok)}
+  .storecard:hover{transform:translateY(-2px);border-color:var(--brand)}
+  .storecard.yellow{border-left-color:var(--warn)} .storecard.red{border-left-color:var(--bad)}
+  .storecard .sn{font-weight:800;font-size:15px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+  .stled{width:9px;height:9px;border-radius:50%;background:var(--ok)} .stled.yellow{background:var(--warn)} .stled.red{background:var(--bad)}
+  .storecard .row{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:4px}
+  /* ---- Timeline ---- */
+  .tl{position:relative;padding-left:18px}
+  html[dir="rtl"] .tl{padding-left:0;padding-right:18px}
+  .tl::before{content:"";position:absolute;left:5px;top:4px;bottom:4px;width:2px;background:var(--line)}
+  html[dir="rtl"] .tl::before{left:auto;right:5px}
+  .tli{position:relative;padding:0 0 14px 0;font-size:12.5px}
+  .tli::before{content:"";position:absolute;left:-16px;top:4px;width:10px;height:10px;border-radius:50%;background:var(--brand);box-shadow:0 0 0 3px var(--panel)}
+  html[dir="rtl"] .tli::before{left:auto;right:-16px}
+  .tli .tt{color:var(--muted);font-size:11px}
+  /* ---- Notifications ---- */
+  .note{display:flex;gap:10px;padding:11px 10px;border-bottom:1px solid var(--line);cursor:pointer;transition:.1s}
+  .note:hover{background:var(--panel2)}
+  .note .nb{width:4px;border-radius:3px;background:var(--muted)}
+  .note.crit .nb{background:var(--bad)} .note.warn .nb{background:var(--warn)} .note.info .nb{background:var(--accent)} .note.ok .nb{background:var(--ok)}
+  .note .nt{flex:1}.note .nt .h{font-size:12.5px;font-weight:700}.note .nt .d{font-size:11px;color:var(--muted)}
+  .note .na{font-size:11px;color:var(--muted)}
+  /* ---- Skeleton ---- */
+  .sk{background:linear-gradient(90deg,var(--panel2) 25%,var(--line) 37%,var(--panel2) 63%);background-size:400% 100%;animation:shim 1.2s infinite;border-radius:8px}
+  @keyframes shim{0%{background-position:100% 0}100%{background-position:-100% 0}}
+  .fade{animation:fade .18s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+  /* ---- Search modal ---- */
+  .searchModal{position:fixed;inset:0;background:rgba(6,10,18,.6);display:none;align-items:flex-start;justify-content:center;z-index:70;padding-top:12vh}
+  .searchModal.show{display:flex}
+  .sbox{background:var(--panel);border:1px solid var(--line);border-radius:14px;width:100%;max-width:560px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.5)}
+  .sbox input{width:100%;border:none;border-bottom:1px solid var(--line);background:transparent;color:var(--txt);padding:16px 18px;font-size:15px;outline:none}
+  .sres{max-height:340px;overflow-y:auto}
+  .sres .sr{display:flex;gap:11px;align-items:center;padding:11px 16px;cursor:pointer;font-size:13px}
+  .sres .sr:hover,.sres .sr.sel{background:var(--panel2)}
+  .sres .sr .ty{margin-left:auto;font-size:10px;color:var(--muted);border:1px solid var(--line);border-radius:5px;padding:2px 6px}
+  html[dir="rtl"] .sres .sr .ty{margin-left:0;margin-right:auto}
+  .sres .cathd{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);padding:9px 16px 4px}
+  /* ---- Import Center ---- */
+  .impbig{position:fixed;inset:0;background:rgba(6,10,18,.82);display:none;align-items:center;justify-content:center;z-index:75;padding:24px}
+  .impbig.show{display:flex}
+  .impcard{background:var(--panel);border:1px solid var(--line);border-radius:16px;width:100%;max-width:860px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 30px 90px rgba(0,0,0,.55)}
+  .imphd{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--line)}
+  .imphd h2{font-size:17px;display:flex;gap:9px;align-items:center}
+  .imptabs{display:flex;gap:6px}
+  .imptabs button{background:var(--panel2);border:1px solid var(--line);color:var(--muted);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer}
+  .imptabs button.on{background:var(--brand);color:#1a1000;border-color:var(--brand)}
+  .impclose{background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1}
+  .stepper{display:flex;gap:4px;padding:12px 20px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .stepper .st{font-size:11px;font-weight:700;color:var(--muted);display:flex;align-items:center;gap:5px}
+  .stepper .st .n{width:20px;height:20px;border-radius:50%;background:var(--panel2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:10px}
+  .stepper .st.on{color:var(--txt)}.stepper .st.on .n{background:var(--brand);color:#1a1000;border-color:var(--brand)}
+  .stepper .st.done .n{background:var(--ok);color:#04160e;border-color:var(--ok)}
+  .stepper .sep{flex:1;height:1px;background:var(--line);min-width:8px;align-self:center;max-width:26px}
+  .impbody{padding:20px;overflow-y:auto;flex:1}
+  .impfoot{display:flex;justify-content:space-between;gap:10px;padding:14px 20px;border-top:1px solid var(--line)}
+  .dz{border:2px dashed var(--line);border-radius:14px;padding:38px 20px;text-align:center;cursor:pointer;transition:.15s}
+  .dz:hover,.dz.drag{border-color:var(--brand);background:var(--panel2)}
+  .dz .big{font-size:40px;margin-bottom:10px}
+  .fmts{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-top:14px}
+  .fmts span{font-size:10px;font-weight:700;color:var(--muted);border:1px solid var(--line);border-radius:5px;padding:3px 7px}
+  .samples{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:16px}
+  .detbox{display:flex;align-items:center;gap:14px;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:16px}
+  .detbox .ic{font-size:34px}
+  .conf{height:8px;background:var(--bg);border-radius:5px;overflow:hidden;margin-top:6px}
+  .conf div{height:100%;background:linear-gradient(90deg,var(--ok),var(--brand2))}
+  .maprow{display:grid;grid-template-columns:1fr 24px 1fr auto;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--line);font-size:12.5px}
+  .maprow select{background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:6px 8px;font-size:12px}
+  .maptag{font-size:10px;padding:2px 6px;border-radius:5px}
+  .prog{height:14px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .prog div{height:100%;background:linear-gradient(90deg,var(--brand),var(--brand2));width:0;transition:width .2s}
+  .statgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+  .statgrid .s{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px;text-align:center}
+  .statgrid .s .n{font-size:22px;font-weight:800}.statgrid .s .l{font-size:11px;color:var(--muted)}
+  @media(max-width:820px){.statgrid{grid-template-columns:1fr 1fr 1fr}.maprow{grid-template-columns:1fr 16px 1fr}}
+  .fs-on .side{display:none}.fs-on .app{grid-template-columns:1fr}
+  @media(max-width:820px){.app{grid-template-columns:1fr}.side{display:none}.pos{grid-template-columns:1fr;height:auto}.g4,.g3,.g2,.g5,.g6{grid-template-columns:1fr 1fr}.hdr{flex-wrap:wrap}.search{order:-1;max-width:100%;flex-basis:100%}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="logo"><span class="mark">🔥</span> SmokeStack</div>
+    <select class="locsel" id="locsel" onchange="switchLoc()">
+      <option value="0">Austin, TX</option>
+      <option value="1">Houston, TX</option>
+      <option value="2">Dallas, TX</option>
+    </select>
+    <nav class="nav" id="nav">
+      <a data-v="dash" class="active"><span>🏆</span> <span data-i="nav_dash">Executive Dashboard</span></a>
+      <a data-v="ai"><span>🤖</span> <span data-i="nav_ai">AI Business Insights</span></a>
+      <a data-v="pos"><span>🛒</span> <span data-i="nav_pos">Smart POS</span></a>
+      <a data-v="stores"><span>🏬</span> <span data-i="nav_stores">Multi-Store</span></a>
+      <a data-v="inv"><span>📦</span> <span data-i="nav_inv">Advanced Inventory</span></a>
+      <a data-v="po"><span>🚚</span> <span data-i="nav_po">Purchasing &amp; Vendors</span></a>
+      <a data-v="cust"><span>🎁</span> <span data-i="nav_cust">Customers &amp; Loyalty</span></a>
+      <a data-v="emp"><span>👥</span> <span data-i="nav_emp">Employees</span></a>
+      <a data-v="acct"><span>📒</span> <span data-i="nav_acct">Accounting</span></a>
+      <a data-v="pay"><span>💳</span> <span data-i="nav_pay">Payments Inbox</span></a>
+      <a data-v="mkt"><span>📣</span> <span data-i="nav_mkt">Marketing</span></a>
+      <a data-v="rep"><span>📈</span> <span data-i="nav_rep">Reports Center</span></a>
+      <a data-v="comp"><span>🛡️</span> <span data-i="nav_comp">Compliance</span></a>
+    </nav>
+    <div class="langtog">
+      <button id="lang-en" class="on" onclick="setLang('en')">English</button>
+      <button id="lang-ar" onclick="setLang('ar')">العربية</button>
+    </div>
+    <div class="foot" data-i="foot">Demo · 3 locations · Federal + Texas (SB 2024)<br>Not legal advice.</div>
+  </aside>
+
+  <main class="main">
+    <!-- PERSISTENT HEADER BAR -->
+    <div class="hdr">
+      <div class="search"><span class="si">🔍</span><input id="searchTrigger" readonly onclick="openSearch()" placeholder="Search everything…" data-ph="search_ph"><span class="kbd">⌘K</span></div>
+      <select class="roleSel" id="roleSel" onchange="setRole()">
+        <option value="owner">👑 Owner</option><option value="manager">🧭 Manager</option><option value="cashier">🧾 Cashier</option><option value="warehouse">📦 Warehouse</option><option value="accountant">📒 Accountant</option>
+      </select>
+      <button class="ctl" onclick="refreshDash()" title="Refresh">↻</button>
+      <button class="ctl" id="autoBtn" onclick="toggleAuto()">⏱ <span data-i="d_auto">Auto</span></button>
+      <button class="ctl" id="themeBtn" onclick="toggleTheme()">🌙</button>
+      <button class="ctl" onclick="toggleFS()" title="Full screen">⛶</button>
+      <span class="updated" id="lastUpd"></span>
+    </div>
+
+    <!-- EXECUTIVE DASHBOARD -->
+    <section class="view on" id="v-dash">
+      <div class="top"><div><h1 data-i="nav_dash">Executive Dashboard</h1><div class="loc"><span id="dashloc">Austin, TX</span> · <span data-i="today">Today, July 1 2026</span> · <span id="roleLbl">Owner view</span></div></div>
+        <span class="pill"><span class="dot"></span> <span data-i="pay_active">Payments: Active (high-risk acquirer)</span></span></div>
+
+      <div class="cardhd"><h3 data-i="d_qa">Quick Actions</h3></div>
+      <div class="qa" id="qa"></div>
+
+      <div class="cardhd" style="margin-top:18px"><h3 data-i="d_kpi">Executive KPIs</h3><span class="segtog" id="rangeTog"></span></div>
+      <div class="grid g6" id="kpis"></div>
+
+      <div class="grid g2" style="margin-top:16px">
+        <div class="card chartwrap"><div class="cardhd"><h3 data-i="d_trend">Sales Trend</h3><div style="display:flex;gap:8px;align-items:center"><span class="segtog" id="trendTog"></span><button class="exp" onclick="exportCSV('trend')">CSV</button></div></div><div id="trendChart"></div></div>
+        <div class="card chartwrap"><div class="cardhd"><h3 data-i="d_revprofit">Revenue vs Profit</h3><button class="exp" onclick="exportCSV('revprofit')">CSV</button></div><div id="revChart"></div></div>
+      </div>
+      <div class="grid g3" style="margin-top:14px">
+        <div class="card chartwrap"><div class="cardhd"><h3 data-i="d_hourly">Hourly Sales</h3><button class="exp" onclick="exportCSV('hourly')">CSV</button></div><div id="hourChart"></div></div>
+        <div class="card chartwrap"><div class="cardhd"><h3 data-i="r_cat">Sales by Category</h3></div><div id="catChart2"></div></div>
+        <div class="card"><div class="cardhd"><h3 data-i="d_brands">Top Brands</h3></div><div id="brandChart"></div></div>
+      </div>
+
+      <div class="cardhd" style="margin-top:18px"><h3 data-i="d_stores">Multi-Store Overview</h3><span class="exp" onclick="nav('stores')" data-i="d_viewall">View all →</span></div>
+      <div class="grid g3" id="storeStatus"></div>
+
+      <div class="grid g3" style="margin-top:16px">
+        <div class="card"><div class="cardhd"><h3 data-i="d_ai">AI Recommendations</h3><span class="exp" onclick="nav('ai')" data-i="d_more">More →</span></div><div id="dashAI" style="font-size:12.5px;line-height:1.75"></div></div>
+        <div class="card"><div class="cardhd"><h3 data-i="d_timeline">Live Activity</h3><span class="stled" style="animation:none"></span></div><div class="tl" id="timeline"></div></div>
+        <div class="card"><div class="cardhd"><h3 data-i="d_notes">Notification Center</h3></div><div id="notes"></div></div>
+      </div>
+
+      <div class="grid g4" style="margin-top:14px">
+        <div class="card"><h3 data-i="d_invh">Inventory Health</h3><div id="invHealth" style="font-size:12.5px;line-height:1.9;margin-top:6px"></div></div>
+        <div class="card"><h3 data-i="d_empperf">Employee Performance</h3><div id="empPerf" style="font-size:12.5px;margin-top:6px"></div></div>
+        <div class="card"><h3 data-i="d_vendor">Vendor Deliveries</h3><div id="vendorDel" style="font-size:12.5px;margin-top:6px"></div></div>
+        <div class="card"><h3 data-i="d_renew">Compliance Renewals</h3><div id="compRenew" style="font-size:12.5px;margin-top:6px"></div></div>
+      </div>
+
+      <div class="disc" data-i="disc">⚖️ SmokeStack provides configurable tools to help you follow rules you configure for your jurisdiction. It is <b>not legal advice</b>. Verify all requirements with counsel and the Texas Comptroller / FDA before relying on them.</div>
+    </section>
+
+    <!-- POS -->
+    <section class="view" id="v-pos">
+      <div class="top"><div><h1 data-i="nav_pos">Point of Sale</h1><div class="loc"><span data-i="pos_sub">Cashier: Sam · Shift open · Drawer $200.00</span></div></div><span class="pill">Register 1</span></div>
+      <div class="pos">
+        <div class="catalog"><div class="cats" id="cats"></div><div class="prods" id="prods"></div></div>
+        <div class="cart">
+          <div class="hd"><span data-i="cart">Cart</span><span id="ccount" class="qn">0</span></div>
+          <div class="items" id="items"></div>
+          <div class="sum">
+            <div class="r"><span data-i="subtotal">Subtotal</span><span id="sub">$0.00</span></div>
+            <div class="r"><span data-i="tax">Tax (TX)</span><span id="taxv">$0.00</span></div>
+            <div class="r tot"><span data-i="total">Total</span><span id="tot">$0.00</span></div>
+            <button class="btn pay" id="pay" disabled onclick="checkout()" data-i="charge">Charge</button>
+            <button class="btn ghost" onclick="clearCart()" data-i="clearcart">Clear cart</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- INVENTORY -->
+    <section class="view" id="v-inv">
+      <div class="top"><div><h1 data-i="nav_inv">Inventory</h1><div class="loc" id="invsub">142 SKUs · Austin, TX</div></div><span class="pill">Valuation: $18,240</span></div>
+      <div class="card"><table id="invtable"></table></div>
+    </section>
+
+    <!-- PURCHASE ORDERS -->
+    <section class="view" id="v-po">
+      <div class="top"><div><h1 data-i="nav_po">Purchase Orders</h1><div class="loc" data-i="po_sub">Supplier ordering &amp; receiving</div></div><button class="minibtn" onclick="toast(T[lang].po_created,'ok')" data-i="po_new">+ New PO</button></div>
+      <div class="card"><table id="potable"></table></div>
+      <div class="disc" data-i="po_disc">🚚 Receiving updates stock and cost automatically and feeds supplier-performance and margin reports. Direct-store-delivery (DSD) receiving is supported without a PO.</div>
+    </section>
+
+    <!-- CUSTOMERS & LOYALTY -->
+    <section class="view" id="v-cust">
+      <div class="top"><div><h1 data-i="nav_cust">Customers &amp; Loyalty</h1><div class="loc" data-i="cust_sub">Privacy-minimal · no ID stored</div></div></div>
+      <div class="grid g3">
+        <div class="card kpi"><div class="lbl" data-i="l_members">Loyalty Members</div><div class="val">1,204</div><div class="sub">▲ 46 this week</div></div>
+        <div class="card kpi"><div class="lbl" data-i="l_points">Points Redeemed (MTD)</div><div class="val">18,900</div><div class="sub">= $189 value</div></div>
+        <div class="card"><h3 data-i="l_rule">Loyalty Rule</h3><div style="font-size:13px;line-height:2" data-i="l_ruletext">Earn <b>1 pt / $1</b><br>100 pts = <b>$1 off</b><br>Gold tier at <b>500 pts</b> → 1.5× earning</div></div>
+      </div>
+      <div class="card" style="margin-top:14px"><table id="custtable"></table></div>
+    </section>
+
+    <!-- COMPLIANCE -->
+    <section class="view" id="v-comp">
+      <div class="top"><div><h1 data-i="c_center">Compliance Center</h1><div class="loc" data-i="c_ruleset">Federal + Texas ruleset · SB 2024 enabled</div></div></div>
+      <div class="grid g3">
+        <div class="card"><h3 data-i="c_age">Age Rules</h3><div style="font-size:13px;line-height:1.9" data-i="c_agetext">Minimum age: <b>21</b><br>Prompt ID under: <b>30</b><br>Military-ID exception (18+): <b>On</b><br>Manager override: <b>Logged</b></div></div>
+        <div class="card"><h3 data-i="c_guard">Product Legality Guard</h3><div style="font-size:13px;line-height:1.9" data-i="c_guardtext">Flavor bans: <b>Off (TX)</b><br>State e-cig directory (SB 2024): <b>Enforced</b><br>FDA authorization check: <b>On</b><br>Foreign-adversary origin: <b>Blocked</b><br>Cannabinoid/kratom/kava: <b>Blocked</b></div></div>
+        <div class="card"><h3 data-i="c_permits">Permits</h3><div style="font-size:13px;line-height:1.9" data-i="c_permtext">TX Cigarette/Tobacco: <b>Active</b><br>TX E-Cigarette: <b>Active</b> · exp <b>05/31/26</b><br>Sales-tax permit: <b>Active</b></div></div>
+      </div>
+      <div class="card" style="margin-top:14px"><h3 data-i="c_audit">Restricted-Sale Audit Log (live)</h3><div id="log"><div class="logrow"><span data-i="c_nolog">No restricted sales this session yet — make one in POS.</span></div></div></div>
+      <div class="disc" data-i="c_privacy">🔐 The audit log stores only: outcome, ID type, verification method, cashier, and timestamp — <b>never</b> the customer's ID number or a scan of the ID. This is the record you show an inspector.</div>
+    </section>
+
+    <!-- REPORTS -->
+    <section class="view" id="v-rep">
+      <div class="top"><div><h1 data-i="nav_rep">Reports</h1><div class="loc" data-i="rep_sub">Sample analytics</div></div></div>
+      <div class="grid g3">
+        <div class="card"><h3 data-i="r_cat">Sales by Category (today)</h3><div id="bars"></div></div>
+        <div class="card"><h3 data-i="r_tax">Tax Summary (TX)</h3><div style="font-size:13px;line-height:2" data-i="r_taxtext">Cigarettes ($1.41/pack): <b>$59.22</b><br>OTP ($1.22/oz): <b>$14.64</b><br>Vapor (no TX excise): <b>$0.00</b><br>Sales tax collected: <b>$286.79</b></div></div>
+        <div class="card"><h3 data-i="r_rebate">Rebate Capture</h3><div style="font-size:13px;line-height:2" data-i="r_rebtext">Altria: <b>$402</b><br>RJR: <b>$210</b><br>Total MTD: <b style="color:var(--brand2)">$612</b><br><span style="color:var(--muted)">~9× the subscription.</span></div></div>
+      </div>
+      <div class="card" style="margin-top:14px"><h3 data-i="r_branch">Branch Comparison</h3><table id="branchtable"></table></div>
+    </section>
+
+    <!-- AI BUSINESS INSIGHTS -->
+    <section class="view" id="v-ai">
+      <div class="top"><div><h1 data-i="nav_ai">AI Business Insights</h1><div class="loc" data-i="ai_sub">Automated analysis across all stores · updated hourly</div></div><span class="pill">🤖 <span data-i="ai_model">Model: demand + margin</span></span></div>
+      <div class="grid g3">
+        <div class="card" style="border-color:rgba(91,141,239,.4)"><h3 data-i="ai_rec">Top Recommendations</h3><div id="airec" style="font-size:13px;line-height:1.8"></div></div>
+        <div class="card" style="border-color:rgba(240,82,82,.35)"><h3 data-i="ai_anom">Anomaly Alerts</h3><div id="aianom" style="font-size:13px;line-height:1.8"></div></div>
+        <div class="card"><h3 data-i="ai_fc">7-Day Demand Forecast</h3><div id="aifc"></div></div>
+      </div>
+      <div class="grid g2" style="margin-top:14px">
+        <div class="card"><h3 data-i="ai_reorder">Auto-Reorder Suggestions</h3><table id="aitable"></table></div>
+        <div class="card"><h3 data-i="ai_ask">Ask SmokeStack AI</h3>
+          <div style="font-size:13px;color:var(--muted);margin-bottom:10px" data-i="ai_askd">Natural-language questions over your live data (demo responses).</div>
+          <div id="aichat" style="font-size:13px;line-height:1.7;background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:12px;min-height:90px"></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px" id="aiqs"></div>
+        </div>
+      </div>
+      <div class="disc" data-i="ai_disc">🤖 AI suggestions are decision-support only. Reorder, pricing, and compliance actions always require human confirmation and never auto-execute restricted-product decisions.</div>
+    </section>
+
+    <!-- MULTI-STORE -->
+    <section class="view" id="v-stores">
+      <div class="top"><div><h1 data-i="nav_stores">Multi-Store Management</h1><div class="loc" data-i="st_sub">3 locations · centralized control</div></div><button class="minibtn" onclick="toast(T[lang].st_transfer_done,'ok')" data-i="st_newtransfer">+ New Transfer</button></div>
+      <div class="grid g3">
+        <div class="card kpi"><div class="lbl" data-i="st_total">Total Sales Today</div><div class="val">$13,512</div><div class="sub">3 stores</div></div>
+        <div class="card kpi"><div class="lbl" data-i="st_best">Top Store</div><div class="val">Houston</div><div class="sub">$5,910</div></div>
+        <div class="card kpi"><div class="lbl" data-i="st_pending">Pending Transfers</div><div class="val">2</div><div class="sub" data-i="st_intransit">in transit</div></div>
+      </div>
+      <div class="card" style="margin-top:14px"><h3 data-i="st_stores">Stores</h3><table id="storetable"></table></div>
+      <div class="card" style="margin-top:14px"><h3 data-i="st_transfers">Stock Transfers</h3><table id="transfertable"></table></div>
+    </section>
+
+    <!-- EMPLOYEES -->
+    <section class="view" id="v-emp">
+      <div class="top"><div><h1 data-i="nav_emp">Employee Management</h1><div class="loc" data-i="emp_sub">Roles, shifts &amp; performance</div></div><button class="minibtn" onclick="toast(T[lang].emp_added,'ok')" data-i="emp_add">+ Add Employee</button></div>
+      <div class="grid g2">
+        <div class="card"><h3 data-i="emp_staff">Staff</h3><table id="emptable"></table></div>
+        <div class="card"><h3 data-i="emp_perm">Role Permissions</h3><table id="permtable"></table></div>
+      </div>
+      <div class="card" style="margin-top:14px"><h3 data-i="emp_shift">Open Shifts &amp; Drawers</h3><table id="shifttable"></table></div>
+    </section>
+
+    <!-- ACCOUNTING -->
+    <section class="view" id="v-acct">
+      <div class="top"><div><h1 data-i="nav_acct">Accounting &amp; QuickBooks</h1><div class="loc" data-i="acct_sub">Books that reconcile to the register</div></div><span class="pill"><span class="dot"></span> <span data-i="acct_synced">QuickBooks: Synced 08:00</span></span></div>
+      <div class="grid g4">
+        <div class="card kpi"><div class="lbl" data-i="acct_rev">Revenue (MTD)</div><div class="val">$128,400</div><div class="sub">▲ 9%</div></div>
+        <div class="card kpi"><div class="lbl" data-i="acct_cogs">COGS (MTD)</div><div class="val">$75,300</div><div class="sub">58.6%</div></div>
+        <div class="card kpi"><div class="lbl" data-i="acct_gp">Gross Profit</div><div class="val">$53,100</div><div class="sub">41.4%</div></div>
+        <div class="card kpi"><div class="lbl" data-i="acct_taxliab">Tax Liability</div><div class="val" style="color:var(--brand2)">$8,240</div><div class="sub" data-i="acct_due">due Jul 20</div></div>
+      </div>
+      <div class="grid g2" style="margin-top:14px">
+        <div class="card"><h3 data-i="acct_pl">Profit &amp; Loss (MTD)</h3><table id="pltable"></table></div>
+        <div class="card"><h3 data-i="acct_qb">QuickBooks Sync</h3><div id="qbsync" style="font-size:13px;line-height:1.8"></div>
+          <button class="minibtn" style="margin-top:12px" onclick="toast(T[lang].acct_export_done,'ok')" data-i="acct_export">Export Journal to QuickBooks</button></div>
+      </div>
+      <div class="disc" data-i="acct_disc">📒 Every sale, refund, tax line, and cash-drawer close maps to a journal entry. Excise/OTP taxes are tracked separately for filing. Not a substitute for a CPA.</div>
+    </section>
+
+    <!-- PAYMENTS INBOX -->
+    <section class="view" id="v-pay">
+      <div class="top"><div><h1 data-i="nav_pay">Payments Inbox</h1><div class="loc" data-i="pay_sub">Real-time payment detection · bank / open-banking / webhook / email / SMS / iMessage</div></div>
+        <div style="display:flex;gap:8px"><button class="minibtn" onclick="simulatePayment()" data-i="pay_sim">⚡ Simulate incoming</button><span class="pill"><span class="dot"></span> <span id="payStream" data-i="pay_live">Live · agent connected</span></span></div></div>
+      <div class="grid g5" id="payKpis"></div>
+      <div class="cardhd" style="margin-top:16px"><h3 data-i="pay_inbox">Inbox</h3>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="paySearch" oninput="renderPayTable()" placeholder="Search sender / ref / memo…" style="background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:7px 10px;font-size:12px">
+          <span class="segtog" id="payFilter"></span>
+        </div>
+      </div>
+      <div class="card"><table id="payTable"></table></div>
+      <div class="grid g2" style="margin-top:14px">
+        <div class="card"><h3 data-i="pay_match">Auto-Match Explain</h3><div id="payMatch" style="font-size:12.5px;line-height:1.8;color:var(--muted)"></div></div>
+        <div class="card"><h3 data-i="pay_audit">Audit Log</h3><div id="payAudit" style="font-size:12px"></div></div>
+      </div>
+      <div class="disc" data-i="pay_disc">💳 Every payment event is stored with full history and a dedupe key (duplicates flagged, never double-counted). Auto-match scores amount, reference, customer, memo and date; low-confidence payments route to manual approval. The macOS iMessage agent sends only parsed fields over an HMAC-signed API — never message contents in bulk.</div>
+    </section>
+
+    <!-- MARKETING -->
+    <section class="view" id="v-mkt">
+      <div class="top"><div><h1 data-i="nav_mkt">Marketing &amp; Promotions</h1><div class="loc" data-i="mkt_sub">Campaigns, promos &amp; coupons</div></div><button class="minibtn" onclick="toast(T[lang].mkt_created,'ok')" data-i="mkt_new">+ New Campaign</button></div>
+      <div class="grid g3">
+        <div class="card kpi"><div class="lbl" data-i="mkt_active">Active Campaigns</div><div class="val">3</div><div class="sub" data-i="mkt_reach">reach 1,204 members</div></div>
+        <div class="card kpi"><div class="lbl" data-i="mkt_redeem">Coupons Redeemed</div><div class="val">312</div><div class="sub">▲ 18% MTD</div></div>
+        <div class="card kpi"><div class="lbl" data-i="mkt_roi">Promo ROI</div><div class="val">4.2×</div><div class="sub" data-i="mkt_rev">$14,900 attributed</div></div>
+      </div>
+      <div class="card" style="margin-top:14px"><h3 data-i="mkt_campaigns">Campaigns</h3><table id="mkttable"></table></div>
+      <div class="grid g2" style="margin-top:14px">
+        <div class="card"><h3 data-i="mkt_promo">Promo Builder</h3><div id="promobuild" style="font-size:13px;line-height:1.9"></div></div>
+        <div class="card"><h3 data-i="mkt_channel">Channels</h3><div id="mktchan" style="font-size:13px;line-height:1.9"></div></div>
+      </div>
+      <div class="disc" data-i="mkt_disc">📣 Age-restricted marketing follows FDA/FTC rules: no youth-appealing content, age-gated audiences only, and tobacco promotions exclude prohibited discounts (e.g., free samples / coupons to under-21).</div>
+    </section>
+  </main>
+</div>
+
+<!-- modals -->
+<div class="overlay" id="ageModal"><div class="modal">
+  <div class="ic">🔞</div>
+  <h2 data-i="m_agetitle">Age Verification Required</h2>
+  <p data-i="m_agedesc">This sale contains age-restricted products. Confirm the customer's ID before completing. FDA guidance: check ID for anyone who looks under 30.</p>
+  <div class="age" data-i="m_agemeta">Minimum age: <b>21+</b> · Texas · Military ID exception available</div>
+  <div class="mbtns">
+    <button class="mbtn m-ok" onclick="verify('pass')" data-i="m_pass">✓ ID checked — customer is 21+</button>
+    <button class="mbtn m-bad" onclick="verify('fail')" data-i="m_fail">✕ Under 21 / no valid ID — block restricted items</button>
+    <button class="mbtn m-cancel" onclick="closeAge()" data-i="m_cancel">Cancel</button>
+  </div>
+</div></div>
+<div class="overlay" id="blockModal"><div class="modal">
+  <div class="ic" style="background:rgba(240,82,82,.15)">🚫</div>
+  <h2 data-i="m_blocktitle">Cannot Be Sold Here</h2>
+  <p id="blockReason"></p>
+  <div class="mbtns"><button class="mbtn m-cancel" onclick="hide('blockModal')" style="background:var(--panel2)" data-i="m_remove">Remove &amp; continue</button></div>
+</div></div>
+<div class="searchModal" id="searchModal" onclick="if(event.target===this)closeSearch()">
+  <div class="sbox">
+    <input id="searchInput" placeholder="Search products, invoices, customers, employees, POs, compliance…" oninput="runSearch(this.value)" onkeydown="searchKey(event)">
+    <div class="sres" id="searchRes"></div>
+  </div>
+</div>
+<div class="impbig" id="importCenter">
+  <div class="impcard">
+    <div class="imphd">
+      <h2>📂 <span data-i="imp_title">AI Import Center</span></h2>
+      <div style="display:flex;gap:10px;align-items:center">
+        <div class="imptabs"><button id="impTabNew" class="on" onclick="impTab('new')" data-i="imp_new">New Import</button><button id="impTabHist" onclick="impTab('hist')" data-i="imp_hist">History</button></div>
+        <button class="impclose" onclick="closeImport()">×</button>
+      </div>
+    </div>
+    <div class="stepper" id="impStepper"></div>
+    <div class="impbody" id="impBody"></div>
+    <div class="impfoot" id="impFoot"></div>
+  </div>
+</div>
+<input type="file" id="impFile" style="display:none" onchange="impFilePicked(this.files)">
+<div class="tip" id="tip"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+// ---------- i18n ----------
+const T={
+ en:{nav_dash:"Executive Dashboard",nav_pos:"Smart POS",nav_inv:"Advanced Inventory",nav_po:"Purchasing & Vendors",nav_cust:"Customers & Loyalty",nav_comp:"Compliance",nav_rep:"Reports Center",nav_ai:"AI Business Insights",nav_stores:"Multi-Store",nav_emp:"Employees",nav_acct:"Accounting",nav_mkt:"Marketing",
+   foot:"Demo · 3 locations · Federal + Texas (SB 2024)<br>Not legal advice.",today:"Today, July 1 2026",pay_active:"Payments: Active (high-risk acquirer)",
+   k_sales:"Today's Sales",k_txn:"Transactions",k_basket:"Avg basket $23.69",k_margin:"Gross Margin",k_rebate:"Rebate Captured (MTD)",k_scan:"Scan-data · Altria + RJR",
+   c_comp:"Compliance Today",ct1:"Age-restricted sales",ct2:"ID checks logged",ct3:"Blocked (under 21)",ct4:"Blocked (illegal product)",c_attn:"Needs Attention",c_top:"Top Sellers",
+   disc:"⚖️ SmokeStack provides configurable tools to help you follow rules you configure for your jurisdiction. It is <b>not legal advice</b>. Verify all requirements with counsel and the Texas Comptroller / FDA before relying on them.",
+   pos_sub:"Cashier: Sam · Shift open · Drawer $200.00",cart:"Cart",subtotal:"Subtotal",tax:"Tax (TX)",total:"Total",charge:"Charge",clearcart:"Clear cart",
+   empty:"Tap a product to start a sale.<br><br>Try adding a <b>🔞 21+</b> item to see the age gate, or the <b>🚫 blocked</b> item to see the legality guard.",
+   po_sub:"Supplier ordering & receiving",po_new:"+ New PO",po_created:"Draft PO created",po_received:"Received — stock & cost updated",
+   po_disc:"🚚 Receiving updates stock and cost automatically and feeds supplier-performance and margin reports. Direct-store-delivery (DSD) receiving is supported without a PO.",
+   cust_sub:"Privacy-minimal · no ID stored",l_members:"Loyalty Members",l_points:"Points Redeemed (MTD)",l_rule:"Loyalty Rule",
+   l_ruletext:"Earn <b>1 pt / $1</b><br>100 pts = <b>$1 off</b><br>Gold tier at <b>500 pts</b> → 1.5× earning",
+   c_center:"Compliance Center",c_ruleset:"Federal + Texas ruleset · SB 2024 enabled",c_age:"Age Rules",
+   c_agetext:"Minimum age: <b>21</b><br>Prompt ID under: <b>30</b><br>Military-ID exception (18+): <b>On</b><br>Manager override: <b>Logged</b>",
+   c_guard:"Product Legality Guard",c_guardtext:"Flavor bans: <b>Off (TX)</b><br>State e-cig directory (SB 2024): <b>Enforced</b><br>FDA authorization check: <b>On</b><br>Foreign-adversary origin: <b>Blocked</b><br>Cannabinoid/kratom/kava: <b>Blocked</b>",
+   c_permits:"Permits",c_permtext:"TX Cigarette/Tobacco: <b>Active</b><br>TX E-Cigarette: <b>Active</b> · exp <b>05/31/26</b><br>Sales-tax permit: <b>Active</b>",
+   c_audit:"Restricted-Sale Audit Log (live)",c_nolog:"No restricted sales this session yet — make one in POS.",
+   c_privacy:"🔐 The audit log stores only: outcome, ID type, verification method, cashier, and timestamp — <b>never</b> the customer's ID number or a scan of the ID. This is the record you show an inspector.",
+   rep_sub:"Sample analytics",r_cat:"Sales by Category (today)",r_tax:"Tax Summary (TX)",r_rebate:"Rebate Capture",r_branch:"Branch Comparison",
+   r_taxtext:"Cigarettes ($1.41/pack): <b>$59.22</b><br>OTP ($1.22/oz): <b>$14.64</b><br>Vapor (no TX excise): <b>$0.00</b><br>Sales tax collected: <b>$286.79</b>",
+   r_rebtext:"Altria: <b>$402</b><br>RJR: <b>$210</b><br>Total MTD: <b style='color:var(--brand2)'>$612</b><br><span style='color:var(--muted)'>~9× the subscription.</span>",
+   m_agetitle:"Age Verification Required",m_agedesc:"This sale contains age-restricted products. Confirm the customer's ID before completing. FDA guidance: check ID for anyone who looks under 30.",
+   m_agemeta:"Minimum age: <b>21+</b> · Texas · Military ID exception available",m_pass:"✓ ID checked — customer is 21+",m_fail:"✕ Under 21 / no valid ID — block restricted items",m_cancel:"Cancel",
+   m_blocktitle:"Cannot Be Sold Here",m_remove:"Remove & continue",
+   sale_done:"Sale complete",receipt:"receipt printed",blocked_under:"Restricted items removed — sale to under-21 blocked & logged",added:"Added",
+   th_prod:"Product",th_brand:"Brand",th_cat:"Category",th_price:"Price",th_qty:"Qty",th_age:"Min age",th_status:"Status",
+   th_supplier:"Supplier",th_items:"Items",th_cost:"Cost",th_eta:"ETA",th_action:"",receive:"Receive",
+   th_cust:"Customer",th_phone:"Phone",th_pts:"Points",th_tier:"Tier",th_spend:"Lifetime",
+   th_branch:"Branch",th_dsales:"Sales",th_dmargin:"Margin",th_dreb:"Rebate",
+   st_instock:"In stock",st_low:"Low",st_out:"Out",st_cannot:"Cannot sell",st_sent:"Sent",st_partial:"Partial",st_draft:"Draft",
+   ai_sub:"Automated analysis across all stores · updated hourly",ai_model:"Model: demand + margin",ai_rec:"Top Recommendations",ai_anom:"Anomaly Alerts",ai_fc:"7-Day Demand Forecast",ai_reorder:"Auto-Reorder Suggestions",ai_ask:"Ask SmokeStack AI",ai_askd:"Natural-language questions over your live data (demo responses).",
+   ai_disc:"🤖 AI suggestions are decision-support only. Reorder, pricing, and compliance actions always require human confirmation and never auto-execute restricted-product decisions.",
+   st_sub:"3 locations · centralized control",st_newtransfer:"+ New Transfer",st_transfer_done:"Transfer created — awaiting dispatch",st_total:"Total Sales Today",st_best:"Top Store",st_pending:"Pending Transfers",st_intransit:"in transit",st_stores:"Stores",st_transfers:"Stock Transfers",
+   emp_sub:"Roles, shifts & performance",emp_add:"+ Add Employee",emp_added:"Employee invite sent",emp_staff:"Staff",emp_perm:"Role Permissions",emp_shift:"Open Shifts & Drawers",
+   acct_sub:"Books that reconcile to the register",acct_synced:"QuickBooks: Synced 08:00",acct_rev:"Revenue (MTD)",acct_cogs:"COGS (MTD)",acct_gp:"Gross Profit",acct_taxliab:"Tax Liability",acct_due:"due Jul 20",acct_pl:"Profit & Loss (MTD)",acct_qb:"QuickBooks Sync",acct_export:"Export Journal to QuickBooks",acct_export_done:"12 journal entries exported to QuickBooks",
+   acct_disc:"📒 Every sale, refund, tax line, and cash-drawer close maps to a journal entry. Excise/OTP taxes are tracked separately for filing. Not a substitute for a CPA.",
+   mkt_sub:"Campaigns, promos & coupons",mkt_new:"+ New Campaign",mkt_created:"Campaign draft created (age-gated audience)",mkt_active:"Active Campaigns",mkt_reach:"reach 1,204 members",mkt_redeem:"Coupons Redeemed",mkt_roi:"Promo ROI",mkt_rev:"$14,900 attributed",mkt_campaigns:"Campaigns",mkt_promo:"Promo Builder",mkt_channel:"Channels",
+   mkt_disc:"📣 Age-restricted marketing follows FDA/FTC rules: no youth-appealing content, age-gated audiences only, and tobacco promotions exclude prohibited discounts (e.g., free samples / coupons to under-21).",
+   d_qa:"Quick Actions",d_kpi:"Executive KPIs",d_trend:"Sales Trend",d_revprofit:"Revenue vs Profit",d_hourly:"Hourly Sales",d_brands:"Top Brands",d_stores:"Multi-Store Overview",d_viewall:"View all →",d_more:"More →",d_ai:"AI Recommendations",d_timeline:"Live Activity",d_notes:"Notification Center",d_invh:"Inventory Health",d_empperf:"Employee Performance",d_vendor:"Vendor Deliveries",d_renew:"Compliance Renewals",d_auto:"Auto",search_ph:"Search everything…",
+   nav_pay:"Payments Inbox",pay_sub:"Real-time payment detection · bank / open-banking / webhook / email / SMS / iMessage",pay_sim:"⚡ Simulate incoming",pay_live:"Live · agent connected",pay_inbox:"Inbox",pay_match:"Auto-Match Explain",pay_audit:"Audit Log",
+   pay_disc:"💳 Every payment event is stored with full history and a dedupe key (duplicates flagged, never double-counted). Auto-match scores amount, reference, customer, memo and date; low-confidence payments route to manual approval. The macOS iMessage agent sends only parsed fields over an HMAC-signed API — never message contents in bulk.",
+   imp_title:"AI Import Center",imp_new:"New Import",imp_hist:"History"},
+ ar:{nav_dash:"لوحة القيادة التنفيذية",nav_pos:"نقطة بيع ذكية",nav_inv:"مخزون متقدم",nav_po:"المشتريات والموردون",nav_cust:"العملاء والولاء",nav_comp:"الامتثال",nav_rep:"مركز التقارير",nav_ai:"رؤى الأعمال بالذكاء الاصطناعي",nav_stores:"إدارة الفروع",nav_emp:"الموظفون",nav_acct:"المحاسبة",nav_mkt:"التسويق",
+   foot:"عرض تجريبي · ٣ فروع · فيدرالي + تكساس (SB 2024)<br>ليست استشارة قانونية.",today:"اليوم، ١ يوليو ٢٠٢٦",pay_active:"المدفوعات: نشطة (بنك عالي المخاطر)",
+   k_sales:"مبيعات اليوم",k_txn:"المعاملات",k_basket:"متوسط السلة ٢٣.٦٩$",k_margin:"هامش الربح",k_rebate:"الحسومات المحصّلة (الشهر)",k_scan:"بيانات المسح · Altria + RJR",
+   c_comp:"امتثال اليوم",ct1:"مبيعات مقيّدة بالعمر",ct2:"عمليات فحص الهوية المسجّلة",ct3:"محظورة (أقل من ٢١)",ct4:"محظورة (منتج غير قانوني)",c_attn:"يتطلب انتباهاً",c_top:"الأكثر مبيعاً",
+   disc:"⚖️ يوفّر SmokeStack أدوات قابلة للتهيئة لمساعدتك على اتباع القواعد التي تحددها لولايتك. هذه ليست <b>استشارة قانونية</b>. تحقّق من جميع المتطلبات مع محامٍ ومكتب المراقب المالي في تكساس / FDA.",
+   pos_sub:"الكاشير: سام · الوردية مفتوحة · الدرج ٢٠٠.٠٠$",cart:"السلة",subtotal:"المجموع الفرعي",tax:"الضريبة (تكساس)",total:"الإجمالي",charge:"تحصيل",clearcart:"إفراغ السلة",
+   empty:"اضغط على منتج لبدء البيع.<br><br>جرّب إضافة صنف <b>🔞 ٢١+</b> لرؤية بوابة التحقق من العمر، أو الصنف <b>🚫 المحظور</b> لرؤية حارس القانونية.",
+   po_sub:"الطلب من المورّدين والاستلام",po_new:"+ أمر جديد",po_created:"تم إنشاء مسودة أمر شراء",po_received:"تم الاستلام — تحديث المخزون والتكلفة",
+   po_disc:"🚚 يحدّث الاستلام المخزون والتكلفة تلقائياً ويغذّي تقارير أداء المورّدين والهامش. يُدعم الاستلام المباشر (DSD) دون أمر شراء.",
+   cust_sub:"حد أدنى من الخصوصية · لا يتم تخزين الهوية",l_members:"أعضاء الولاء",l_points:"النقاط المستبدلة (الشهر)",l_rule:"قاعدة الولاء",
+   l_ruletext:"اكسب <b>نقطة / ١$</b><br>١٠٠ نقطة = <b>خصم ١$</b><br>الفئة الذهبية عند <b>٥٠٠ نقطة</b> → ١.٥×",
+   c_center:"مركز الامتثال",c_ruleset:"مجموعة قواعد فيدرالي + تكساس · SB 2024 مفعّل",c_age:"قواعد العمر",
+   c_agetext:"الحد الأدنى للعمر: <b>٢١</b><br>طلب الهوية لمن دون: <b>٣٠</b><br>استثناء الهوية العسكرية (١٨+): <b>مفعّل</b><br>تجاوز المدير: <b>مسجّل</b>",
+   c_guard:"حارس قانونية المنتج",c_guardtext:"حظر النكهات: <b>معطّل (تكساس)</b><br>دليل السجائر الإلكترونية (SB 2024): <b>مُطبّق</b><br>فحص ترخيص FDA: <b>مفعّل</b><br>منشأ دولة معادية: <b>محظور</b><br>القنّبينويد/الكراتوم/الكافا: <b>محظور</b>",
+   c_permits:"التصاريح",c_permtext:"سجائر/تبغ تكساس: <b>نشط</b><br>سجائر إلكترونية تكساس: <b>نشط</b> · ينتهي <b>٣١/٠٥/٢٦</b><br>تصريح ضريبة المبيعات: <b>نشط</b>",
+   c_audit:"سجل تدقيق المبيعات المقيّدة (مباشر)",c_nolog:"لا مبيعات مقيّدة في هذه الجلسة بعد — نفّذ عملية في نقطة البيع.",
+   c_privacy:"🔐 يخزّن السجل فقط: النتيجة، نوع الهوية، طريقة التحقق، الكاشير، والوقت — <b>لا يُخزَّن أبداً</b> رقم هوية العميل أو صورة الهوية. هذا هو السجل الذي تعرضه على المفتّش.",
+   rep_sub:"تحليلات نموذجية",r_cat:"المبيعات حسب الفئة (اليوم)",r_tax:"ملخص الضرائب (تكساس)",r_rebate:"تحصيل الحسومات",r_branch:"مقارنة الفروع",
+   r_taxtext:"السجائر (١.٤١$/علبة): <b>٥٩.٢٢$</b><br>منتجات تبغ أخرى (١.٢٢$/أونصة): <b>١٤.٦٤$</b><br>البخار (لا ضريبة تكساس): <b>٠.٠٠$</b><br>ضريبة المبيعات المحصّلة: <b>٢٨٦.٧٩$</b>",
+   r_rebtext:"Altria: <b>٤٠٢$</b><br>RJR: <b>٢١٠$</b><br>الإجمالي (الشهر): <b style='color:var(--brand2)'>٦١٢$</b><br><span style='color:var(--muted)'>≈٩× الاشتراك.</span>",
+   m_agetitle:"مطلوب التحقق من العمر",m_agedesc:"يحتوي هذا البيع على منتجات مقيّدة بالعمر. تحقّق من هوية العميل قبل الإتمام. إرشاد FDA: افحص هوية أي شخص يبدو دون ٣٠.",
+   m_agemeta:"الحد الأدنى للعمر: <b>٢١+</b> · تكساس · استثناء الهوية العسكرية متاح",m_pass:"✓ تم فحص الهوية — العميل ٢١+",m_fail:"✕ أقل من ٢١ / لا هوية صالحة — احظر الأصناف المقيّدة",m_cancel:"إلغاء",
+   m_blocktitle:"لا يمكن بيعه هنا",m_remove:"إزالة والمتابعة",
+   sale_done:"اكتمل البيع",receipt:"تمت طباعة الإيصال",blocked_under:"تمت إزالة الأصناف المقيّدة — حُظر البيع لمن دون ٢١ وسُجّل",added:"أُضيف",
+   th_prod:"المنتج",th_brand:"العلامة",th_cat:"الفئة",th_price:"السعر",th_qty:"الكمية",th_age:"أدنى عمر",th_status:"الحالة",
+   th_supplier:"المورّد",th_items:"الأصناف",th_cost:"التكلفة",th_eta:"الوصول",th_action:"",receive:"استلام",
+   th_cust:"العميل",th_phone:"الهاتف",th_pts:"النقاط",th_tier:"الفئة",th_spend:"الإجمالي",
+   th_branch:"الفرع",th_dsales:"المبيعات",th_dmargin:"الهامش",th_dreb:"الحسومات",
+   st_instock:"متوفر",st_low:"منخفض",st_out:"نفد",st_cannot:"لا يُباع",st_sent:"مُرسل",st_partial:"جزئي",st_draft:"مسودة",
+   ai_sub:"تحليل آلي عبر جميع الفروع · يُحدَّث كل ساعة",ai_model:"النموذج: الطلب + الهامش",ai_rec:"أهم التوصيات",ai_anom:"تنبيهات الشذوذ",ai_fc:"توقّع الطلب ٧ أيام",ai_reorder:"اقتراحات إعادة الطلب التلقائية",ai_ask:"اسأل ذكاء SmokeStack",ai_askd:"أسئلة بلغة طبيعية على بياناتك الحيّة (ردود تجريبية).",
+   ai_disc:"🤖 اقتراحات الذكاء الاصطناعي للدعم في اتخاذ القرار فقط. تتطلب إجراءات إعادة الطلب والتسعير والامتثال تأكيداً بشرياً دائماً ولا تُنفَّذ قرارات المنتجات المقيّدة تلقائياً.",
+   st_sub:"٣ فروع · تحكّم مركزي",st_newtransfer:"+ تحويل جديد",st_transfer_done:"تم إنشاء التحويل — بانتظار الإرسال",st_total:"إجمالي مبيعات اليوم",st_best:"أفضل فرع",st_pending:"تحويلات معلّقة",st_intransit:"قيد النقل",st_stores:"الفروع",st_transfers:"تحويلات المخزون",
+   emp_sub:"الأدوار والورديات والأداء",emp_add:"+ إضافة موظف",emp_added:"تم إرسال دعوة الموظف",emp_staff:"الطاقم",emp_perm:"صلاحيات الأدوار",emp_shift:"الورديات والأدراج المفتوحة",
+   acct_sub:"دفاتر تُطابِق سجل النقد",acct_synced:"QuickBooks: مُزامَن ٨:٠٠",acct_rev:"الإيرادات (الشهر)",acct_cogs:"تكلفة البضاعة (الشهر)",acct_gp:"إجمالي الربح",acct_taxliab:"الالتزام الضريبي",acct_due:"مستحق ٢٠ يوليو",acct_pl:"الأرباح والخسائر (الشهر)",acct_qb:"مزامنة QuickBooks",acct_export:"تصدير القيود إلى QuickBooks",acct_export_done:"تم تصدير ١٢ قيداً إلى QuickBooks",
+   acct_disc:"📒 كل عملية بيع واسترجاع وسطر ضريبة وإغلاق درج نقد يُقابله قيد يومية. تُتابَع ضرائب التبغ الخاصة بشكل منفصل للتقديم. ليست بديلاً عن محاسب قانوني.",
+   mkt_sub:"الحملات والعروض والكوبونات",mkt_new:"+ حملة جديدة",mkt_created:"تم إنشاء مسودة حملة (جمهور مُقيّد بالعمر)",mkt_active:"حملات نشطة",mkt_reach:"الوصول ١٬٢٠٤ عضواً",mkt_redeem:"الكوبونات المستبدلة",mkt_roi:"عائد العروض",mkt_rev:"١٤٬٩٠٠$ مُسنَدة",mkt_campaigns:"الحملات",mkt_promo:"منشئ العروض",mkt_channel:"القنوات",
+   mkt_disc:"📣 يتبع التسويق المقيّد بالعمر قواعد FDA/FTC: لا محتوى يجذب القاصرين، جمهور مُقيّد بالعمر فقط، وتستثني عروض التبغ الخصومات المحظورة (مثل العينات المجانية / الكوبونات لمن دون ٢١).",
+   d_qa:"إجراءات سريعة",d_kpi:"مؤشرات تنفيذية",d_trend:"اتجاه المبيعات",d_revprofit:"الإيرادات مقابل الربح",d_hourly:"المبيعات بالساعة",d_brands:"أفضل العلامات",d_stores:"نظرة عامة على الفروع",d_viewall:"عرض الكل →",d_more:"المزيد →",d_ai:"توصيات الذكاء الاصطناعي",d_timeline:"النشاط المباشر",d_notes:"مركز الإشعارات",d_invh:"صحة المخزون",d_empperf:"أداء الموظفين",d_vendor:"توريدات المورّدين",d_renew:"تجديدات الامتثال",d_auto:"تلقائي",search_ph:"ابحث عن أي شيء…",
+   nav_pay:"صندوق المدفوعات",pay_sub:"كشف المدفوعات الفوري · بنك / المصرفية المفتوحة / ويب هوك / بريد / SMS / iMessage",pay_sim:"⚡ محاكاة دفعة واردة",pay_live:"مباشر · الوكيل متصل",pay_inbox:"الصندوق",pay_match:"شرح المطابقة التلقائية",pay_audit:"سجل التدقيق",
+   pay_disc:"💳 يُخزَّن كل حدث دفع بكامل تاريخه ومفتاح إزالة تكرار (تُعلَّم النسخ المكررة ولا تُحتسب مرتين). تُقيّم المطابقة التلقائية المبلغ والمرجع والعميل والمذكرة والتاريخ؛ وتُحال الدفعات منخفضة الثقة إلى الموافقة اليدوية. يرسل وكيل iMessage الحقول المُحلَّلة فقط عبر واجهة موقّعة بـ HMAC — دون محتوى الرسائل.",
+   imp_title:"مركز الاستيراد بالذكاء الاصطناعي",imp_new:"استيراد جديد",imp_hist:"السجل"}
+};
+let lang="en";
+function setLang(l){
+  lang=l;
+  document.getElementById('lang-en').classList.toggle('on',l==='en');
+  document.getElementById('lang-ar').classList.toggle('on',l==='ar');
+  const html=document.getElementById('html');
+  html.setAttribute('dir',l==='ar'?'rtl':'ltr'); html.setAttribute('lang',l);
+  document.querySelectorAll('[data-i]').forEach(el=>{const k=el.getAttribute('data-i');if(T[l][k]!==undefined)el.innerHTML=T[l][k];});
+  document.querySelectorAll('[data-ph]').forEach(el=>{const k=el.getAttribute('data-ph');if(T[l][k])el.placeholder=T[l][k];});
+  renderAll();
+}
+
+// ---------- Data ----------
+const LOCS=[{n:"Austin, TX",k1:"$3,482",k2:"147",k3:"41.3%",k4:"$612",skus:142},
+            {n:"Houston, TX",k1:"$5,910",k2:"233",k3:"39.8%",k4:"$1,034",skus:187},
+            {n:"Dallas, TX",k1:"$4,120",k2:"176",k3:"42.1%",k4:"$740",skus:158}];
+let curLoc=0;
+const PRODUCTS=[
+  {id:1,nm:"Marlboro Gold",br:"Marlboro",cat:"Cigarettes",pr:9.25,age:21,tax:"cig",stock:120},
+  {id:2,nm:"Newport Menthol",br:"Newport",cat:"Cigarettes",pr:9.80,age:21,tax:"cig",stock:8},
+  {id:3,nm:"Zyn Cool Mint 6mg",br:"Zyn",cat:"Nicotine Pouch",pr:5.50,age:21,tax:"otp",stock:64},
+  {id:4,nm:"Elf Bar (FDA authorized)",br:"Elf Bar",cat:"Vape",pr:17.99,age:21,tax:"vape",stock:22},
+  {id:5,nm:"Geek Bar Watermelon",br:"Geek Bar",cat:"Vape",pr:16.99,age:21,tax:"vape",stock:0,block:"Not on the Texas e-cigarette directory (SB 2024) and this flavored disposable lacks FDA authorization."},
+  {id:6,nm:"RAW Classic King",br:"RAW",cat:"Accessories",pr:2.99,age:0,tax:"none",stock:200},
+  {id:7,nm:"Clipper Lighter",br:"Clipper",cat:"Accessories",pr:1.99,age:0,tax:"none",stock:150},
+  {id:8,nm:"Backwoods Honey",br:"Backwoods",cat:"Cigars",pr:12.49,age:21,tax:"otp",stock:4},
+  {id:9,nm:"Glass Pipe 4\"",br:"House",cat:"Accessories",pr:24.99,age:21,tax:"none",stock:11},
+  {id:10,nm:"Juul Pods (authorized)",br:"Juul",cat:"Vape",pr:19.99,age:21,tax:"vape",stock:33},
+  {id:11,nm:"Grinder 2pc",br:"House",cat:"Accessories",pr:9.99,age:0,tax:"none",stock:40},
+  {id:12,nm:"Kratom Extract Shot",br:"OPMS",cat:"Vape",pr:14.99,age:21,tax:"none",stock:0,block:"Contains kratom — products with kratom are prohibited under Texas SB 2024."},
+];
+const CATSK=["All","Cigarettes","Vape","Nicotine Pouch","Cigars","Accessories"];
+const POS=[{s:"Altria Distribution",items:14,cost:"$4,820",eta:"Jul 3",st:"sent"},
+           {s:"Republic Brands (RAW)",items:6,cost:"$1,240",eta:"Jul 5",st:"partial"},
+           {s:"Local Vape Wholesale",items:9,cost:"$2,110",eta:"—",st:"draft"}];
+const CUST=[{n:"Mike R.",p:"512-•••-4021",pts:640,tier:"Gold",sp:"$2,140"},
+            {n:"Ana G.",p:"512-•••-8830",pts:120,tier:"Silver",sp:"$410"},
+            {n:"Dev P.",p:"713-•••-2299",pts:980,tier:"Gold",sp:"$3,020"},
+            {n:"Sara K.",p:"214-•••-7745",pts:60,tier:"Bronze",sp:"$150"}];
+const TAXRATE=0.0825;
+let cart=[],activeCat="All",ageVerified=false;
+
+// ---------- Nav ----------
+document.getElementById('nav').addEventListener('click',e=>{const a=e.target.closest('a');if(!a)return;
+  document.querySelectorAll('#nav a').forEach(x=>x.classList.remove('active'));a.classList.add('active');
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));document.getElementById('v-'+a.dataset.v).classList.add('on');});
+
+function switchLoc(){curLoc=+document.getElementById('locsel').value;renderDash();
+  document.getElementById('invsub').textContent=LOCS[curLoc].skus+" SKUs · "+LOCS[curLoc].n;
+  document.getElementById('dashloc').textContent=LOCS[curLoc].n;}
+
+// ---------- Renderers ----------
+// ===== Executive Dashboard engine =====
+const MULT=[1,1.70,1.18];              // Austin, Houston, Dallas
+let range='today', role='owner';
+function money(n){return '$'+Math.round(n).toLocaleString();}
+function money2(n){return '$'+(+n).toFixed(2);}
+const AR_NUM={0:'٠',1:'١',2:'٢',3:'٣',4:'٤',5:'٥',6:'٦',7:'٧',8:'٨',9:'٩'};
+function L(en,ar){return lang==='ar'?ar:en;}
+
+// KPI definitions: [en,ar,type,base,nav,filterEn,filterAr,roles]
+const KDEF=[
+ ["Today's Revenue","إيرادات اليوم","m0",3482,"rep","Today's invoices","فواتير اليوم","*"],
+ ["Net Profit","صافي الربح","m0",1180,"acct","P&L breakdown","تفصيل الأرباح","owner,manager,accountant"],
+ ["Gross Profit","إجمالي الربح","m0",1438,"acct","Gross profit","إجمالي الربح","owner,manager,accountant"],
+ ["Avg Basket","متوسط السلة","m2",23.69,"rep","Basket analysis","تحليل السلة","*"],
+ ["Avg Margin","متوسط الهامش","p",41.3,"rep","Margin report","تقرير الهامش","owner,manager,accountant"],
+ ["Cash Sales","مبيعات نقدية","m0",1220,"acct","Cash tenders","مدفوعات نقدية","owner,manager,accountant,cashier"],
+ ["Card Sales","مبيعات بطاقة","m0",2262,"acct","Card tenders","مدفوعات بطاقة","owner,manager,accountant,cashier"],
+ ["Refunds","المستردات","i",3,"pos","Refund history","سجل الاسترداد","owner,manager,cashier"],
+ ["Returns","المرتجعات","i",2,"pos","Returns log","سجل المرتجعات","owner,manager,cashier"],
+ ["Inventory Value","قيمة المخزون","m0",18240,"inv","Inventory valuation","تقييم المخزون","owner,manager,warehouse"],
+ ["Inventory Cost","تكلفة المخزون","m0",12100,"inv","Cost basis","أساس التكلفة","owner,manager,warehouse,accountant"],
+ ["Inventory Profit","ربح المخزون","m0",6140,"inv","Potential margin","الهامش المحتمل","owner,manager,warehouse"],
+ ["Active Customers","عملاء نشطون","i",214,"cust","Customer list","قائمة العملاء","owner,manager"],
+ ["Loyalty Redemptions","استبدالات الولاء","i",42,"cust","Loyalty activity","نشاط الولاء","owner,manager"],
+ ["Pending POs","أوامر معلّقة","i",3,"po","Open purchase orders","أوامر شراء مفتوحة","owner,manager,warehouse"],
+ ["Open Transfers","تحويلات مفتوحة","i",2,"stores","Stock transfers","تحويلات المخزون","owner,manager,warehouse"],
+ ["Cash Drawer","درج النقد","m0",200,"emp","Drawer sessions","جلسات الدرج","owner,manager,cashier"],
+ ["Customers Served","عملاء خُدموا","i",147,"cust","Traffic today","حركة اليوم","*"],
+ ["Employee Productivity","إنتاجية الموظفين","p",96,"emp","Staff performance","أداء الطاقم","owner,manager"],
+ ["Rebates (MTD)","الحسومات (الشهر)","m0",612,"rep","Rebate detail","تفاصيل الحسومات","owner,manager,accountant"]
+];
+const QA=[["📂","Import Data","استيراد بيانات","__import"],["🛒","New Sale","بيع جديد","pos"],["➕","New Product","منتج جديد","inv"],["📥","Receive Inventory","استلام مخزون","po"],["🚚","New Purchase Order","أمر شراء","po"],["🧑","New Customer","عميل جديد","cust"],["🏭","Create Vendor","مورّد جديد","po"],["🔁","Transfer Inventory","تحويل مخزون","stores"],["🖨️","Print Reports","طباعة تقارير","rep"],["👥","Add Employee","إضافة موظف","emp"],["🔢","Inventory Count","جرد المخزون","inv"]];
+const ROLEW={owner:"Owner view",manager:"Manager view",cashier:"Cashier view",warehouse:"Warehouse view",accountant:"Accountant view"};
+const ROLEWAR={owner:"عرض المالك",manager:"عرض المدير",cashier:"عرض الكاشير",warehouse:"عرض المستودع",accountant:"عرض المحاسب"};
+
+function roleOk(tags){return tags==="*"||tags.split(",").includes(role);}
+function renderKPIs(){
+  const m=MULT[curLoc];
+  document.getElementById('kpis').innerHTML=KDEF.filter(k=>roleOk(k[7])).map(k=>{
+    let v=k[3]; const scale=(k[2]==='p')?1:(k[0]==='Cash Drawer'?1:m);
+    v=v*scale; let disp=k[2]==='m0'?money(v):k[2]==='m2'?money2(v):k[2]==='p'?(v.toFixed(1)+'%'):Math.round(v).toString();
+    const fil=L(k[5],k[6]).replace(/["']/g,'’');
+    return `<div class="card kpi clk" onclick="nav('${k[4]}','${fil}')"><div class="lbl">${L(k[0],k[1])}</div><div class="val">${disp}</div><div class="sub" style="color:var(--muted)">${L('Tap to drill in','اضغط للتفصيل')}</div></div>`;
+  }).join('');
+  document.getElementById('kpiUpdWrap')&&0;
+}
+function renderQA(){document.getElementById('qa').innerHTML=QA.map(q=>{const act=q[3]==='__import'?'openImport()':`nav('${q[3]}','${L(q[1],q[2])}')`;const style=q[3]==='__import'?' style="border-color:var(--brand);background:var(--panel2)"':'';return `<button onclick="${act}"${style}><span class="qi">${q[0]}</span>${L(q[1],q[2])}</button>`;}).join('');}
+
+// ----- charts -----
+function lineSVG(data){const w=460,h=150,pad=26;const vals=data.map(d=>d[1]);const max=Math.max(...vals),min=Math.min(...vals,0);
+  const X=i=>pad+i*((w-pad*2)/(data.length-1)),Y=v=>h-pad-((v-min)/((max-min)||1))*(h-pad*2);
+  const pts=data.map((d,i)=>[X(i),Y(d[1])]);
+  const path=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
+  const area=`M${pts[0][0]} ${h-pad} `+pts.map(p=>'L'+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ')+` L${pts[pts.length-1][0]} ${h-pad} Z`;
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%">
+    <defs><linearGradient id="ga" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="var(--brand)" stop-opacity=".35"/><stop offset="1" stop-color="var(--brand)" stop-opacity="0"/></linearGradient></defs>
+    <path d="${area}" fill="url(#ga)"/><path d="${path}" fill="none" stroke="var(--brand)" stroke-width="2.5"/>
+    ${pts.map((p,i)=>`<circle class="pt" cx="${p[0]}" cy="${p[1]}" r="4.5" fill="var(--brand)" data-l="${data[i][0]}" data-v="${data[i][1]}" onmousemove="chartHover(event)" onmouseleave="hideTip()"/>`).join('')}
+    ${data.map((d,i)=>`<text x="${X(i)}" y="${h-7}" font-size="9" fill="var(--muted)" text-anchor="middle">${d[0]}</text>`).join('')}</svg>`;}
+function barSVG(data,color){const w=460,h=150,pad=24;const max=Math.max(...data.map(d=>d[1]));const step=(w-pad*2)/data.length,bw=step*0.6;
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%">`+data.map((d,i)=>{const x=pad+i*step+(step-bw)/2,bh=(d[1]/max)*(h-pad*2),y=h-pad-bh;
+    return `<rect class="bar" x="${x}" y="${y}" width="${bw}" height="${bh}" rx="3" fill="${color||'var(--brand)'}" data-l="${d[0]}" data-v="${d[1]}" onmousemove="chartHover(event)" onmouseleave="hideTip()"/><text x="${x+bw/2}" y="${h-7}" font-size="8" fill="var(--muted)" text-anchor="middle">${d[0]}</text>`;}).join('')+`</svg>`;}
+function pairBarSVG(data){const w=460,h=150,pad=24;const max=Math.max(...data.flatMap(d=>[d[1],d[2]]));const step=(w-pad*2)/data.length,bw=step*0.28;
+  let s=`<svg viewBox="0 0 ${w} ${h}" width="100%"><text x="${pad}" y="11" font-size="9" fill="var(--accent)">■ ${L('Revenue','إيراد')}</text><text x="${pad+70}" y="11" font-size="9" fill="var(--brand)">■ ${L('Profit','ربح')}</text>`;
+  data.forEach((d,i)=>{const x0=pad+i*step+step*0.12;[[d[1],'var(--accent)',L('Revenue','إيراد')],[d[2],'var(--brand)',L('Profit','ربح')]].forEach((b,j)=>{const bh=b[0]/max*(h-pad*2-8),x=x0+j*(bw+3);s+=`<rect class="bar" x="${x}" y="${h-pad-bh}" width="${bw}" height="${bh}" rx="2" fill="${b[1]}" data-l="${d[0]} ${b[2]}" data-v="${b[0]}" onmousemove="chartHover(event)" onmouseleave="hideTip()"/>`;});s+=`<text x="${x0+bw}" y="${h-7}" font-size="8" fill="var(--muted)" text-anchor="middle">${d[0]}</text>`;});
+  return s+`</svg>`;}
+function chartHover(e){const t=e.target;if(t&&t.dataset&&t.dataset.v!==undefined){const v=t.dataset.v;const disp=(+v>=1000)?money(+v):v;showTip(e.clientX,e.clientY,t.dataset.l+': '+(isNaN(v)?v:disp));}}
+function showTip(x,y,txt){const tp=document.getElementById('tip');tp.textContent=txt;tp.style.left=(x+12)+'px';tp.style.top=(y-14)+'px';tp.style.opacity=1;}
+function hideTip(){document.getElementById('tip').style.opacity=0;}
+const TREND={today:[["9a",180],["11a",320],["1p",410],["3p",520],["5p",690],["7p",560],["9p",300]],
+             week:[["Mon",2600],["Tue",2950],["Wed",3100],["Thu",3480],["Fri",4200],["Sat",5100],["Sun",3600]],
+             month:[["W1",18400],["W2",21200],["W3",19800],["W4",24600]]};
+const REVPROF=[["W1",18400,7600],["W2",21200,8800],["W3",19800,8100],["W4",24600,10400]];
+function scaleData(d){const m=MULT[curLoc];return d.map(x=>x.length===3?[x[0],Math.round(x[1]*m),Math.round(x[2]*m)]:[x[0],Math.round(x[1]*m)]);}
+function renderCharts(){
+  document.getElementById('trendChart').innerHTML=lineSVG(scaleData(TREND[range]));
+  document.getElementById('revChart').innerHTML=pairBarSVG(scaleData(REVPROF));
+  document.getElementById('hourChart').innerHTML=barSVG(scaleData(TREND.today),'var(--accent)');
+  document.getElementById('catChart2').innerHTML=barSVG([["Vape",1420],["Cig",980],["Acc",640],["Pouch",290],["Cigar",152]].map(x=>[x[0],Math.round(x[1]*MULT[curLoc])]),'var(--brand2)');
+  const brands=[["Marlboro",42],["Zyn",31],["RAW",28],["Elf Bar",24],["Juul",18]];const bm=42;
+  document.getElementById('brandChart').innerHTML=brands.map(b=>`<div style="margin-bottom:9px"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px"><span>${b[0]}</span><b>${b[1]}</b></div><div style="height:7px;background:var(--panel2);border-radius:4px"><div style="height:100%;width:${b[1]/bm*100}%;background:linear-gradient(90deg,var(--brand),var(--brand2));border-radius:4px"></div></div></div>`).join('');
+}
+function renderRangeTogs(){
+  const opt=[["today",L('Today','اليوم')],["week",L('Week','أسبوع')],["month",L('Month','شهر')]];
+  const html=opt.map(o=>`<button class="${range===o[0]?'on':''}" onclick="setRange('${o[0]}')">${o[1]}</button>`).join('');
+  document.getElementById('rangeTog').innerHTML=html;document.getElementById('trendTog').innerHTML=html;}
+function setRange(r){range=r;renderRangeTogs();renderCharts();toast('📅 '+L('Range: ','النطاق: ')+r,'info');}
+
+// ----- store status -----
+function renderStoreStatus(){
+  const S=[{n:"Austin",sales:3482,profit:1180,emp:3,low:4,po:3,drawer:200,st:"green"},
+           {n:"Houston",sales:5910,profit:2010,emp:5,low:2,po:1,drawer:350,st:"green"},
+           {n:"Dallas",sales:4120,profit:1490,emp:4,low:9,po:5,drawer:180,st:"yellow"}];
+  document.getElementById('storeStatus').innerHTML=S.map((s,i)=>`<div class="storecard ${s.st}" onclick="curLoc=${i};document.getElementById('locsel').value=${i};switchLoc();nav('stores','${s.n}')">
+    <div class="sn">${s.n}, TX <span class="stled ${s.st}"></span></div>
+    <div class="row"><span>${L('Sales','مبيعات')}</span><b style="color:var(--txt)">${money(s.sales)}</b></div>
+    <div class="row"><span>${L('Profit','ربح')}</span><b style="color:var(--txt)">${money(s.profit)}</b></div>
+    <div class="row"><span>${L('Staff working','طاقم يعمل')}</span><b style="color:var(--txt)">${s.emp}</b></div>
+    <div class="row"><span>${L('Low stock','مخزون منخفض')}</span><b style="color:${s.low>5?'var(--warn)':'var(--txt)'}">${s.low}</b></div>
+    <div class="row"><span>${L('Pending orders','أوامر معلّقة')}</span><b style="color:var(--txt)">${s.po}</b></div>
+    <div class="row"><span>${L('Cash drawer','درج النقد')}</span><b style="color:var(--txt)">${money(s.drawer)}</b></div></div>`).join('');
+}
+// ----- intelligence widgets -----
+function renderDashAI(){
+  const en=["📈 Sales are <b>18% higher</b> than last Tuesday.","⚠️ <b>Geek Bar</b> will likely run out tomorrow — reorder.","🔼 Increase stock of <b>Marlboro Gold</b> (2.1× velocity).","🏅 Employee <b>John</b> has the highest average sale ($31).","🔗 Customers buying <b>ZYN</b> usually buy <b>RAW</b> papers.","📉 Gross margin dipped <b>1.2pts</b> from discounting.","⏰ Texas compliance renewal due in <b>9 days</b>."];
+  const ar=["📈 المبيعات <b>أعلى ١٨٪</b> من الثلاثاء الماضي.","⚠️ <b>Geek Bar</b> سينفد غالباً غداً — أعد الطلب.","🔼 زد مخزون <b>Marlboro Gold</b> (سرعة ٢.١×).","🏅 الموظف <b>جون</b> صاحب أعلى متوسط بيع (٣١$).","🔗 مشترو <b>ZYN</b> عادةً يشترون ورق <b>RAW</b>.","📉 انخفض الهامش <b>١.٢ نقطة</b> بسبب الخصومات.","⏰ تجديد امتثال تكساس خلال <b>٩ أيام</b>."];
+  document.getElementById('dashAI').innerHTML=(lang==='ar'?ar:en).map(x=>'• '+x).join('<br>');
+}
+function renderTimeline(){
+  const ev=[["Invoice #INV-2043 created","إنشاء فاتورة #INV-2043","2m","pos"],["Inventory received (Altria PO)","استلام مخزون (أمر Altria)","14m","po"],["Ana G. clocked in","تسجيل دخول Ana G.","31m","emp"],["Refund issued #RF-118","استرداد #RF-118","48m","pos"],["Customer registered","تسجيل عميل جديد","1h","cust"],["PO #PO-77 approved","اعتماد أمر #PO-77","2h","po"],["Transfer Dallas→Austin","تحويل دالاس→أوستن","3h","stores"],["⚠ Compliance: ID check missed→blocked","⚠ امتثال: فحص هوية مفقود→حظر","3h","comp"]];
+  document.getElementById('timeline').innerHTML=ev.map(e=>`<div class="tli" onclick="nav('${e[3]}')"><div>${L(e[0],e[1])}</div><div class="tt">${e[2]} ${L('ago','مضت')}</div></div>`).join('');
+}
+function renderNotes(){
+  const n=[["crit","🚫","Illegal product blocked","Kratom vape scan blocked at Dallas","comp"],
+           ["warn","📉","9 SKUs dead stock","Tied up $2,140 in capital","inv"],
+           ["warn","⏰","Permit renewal in 9 days","TX e-cig permit — renew to avoid $50 late fee","comp"],
+           ["info","🚚","Delivery arriving today","Altria PO — 14 items ETA 3pm","po"],
+           ["ok","💰","Rebate posted","+$612 scan-data captured MTD","rep"]];
+  const nAr={ "Illegal product blocked":"حظر منتج غير قانوني","Kratom vape scan blocked at Dallas":"حظر مسح فيب كراتوم في دالاس","9 SKUs dead stock":"٩ أصناف راكدة","Tied up $2,140 in capital":"يحجز ٢٬١٤٠$ من رأس المال","Permit renewal in 9 days":"تجديد تصريح خلال ٩ أيام","TX e-cig permit — renew to avoid $50 late fee":"تصريح تكساس — جدّد لتجنّب غرامة ٥٠$","Delivery arriving today":"توريد يصل اليوم","Altria PO — 14 items ETA 3pm":"أمر Altria — ١٤ صنفاً الوصول ٣م","Rebate posted":"تم ترحيل الحسم","+$612 scan-data captured MTD":"+٦١٢$ حسومات محصّلة"};
+  document.getElementById('notes').innerHTML=n.map(x=>`<div class="note ${x[0]}" onclick="nav('${x[4]}')"><div class="nb"></div><div style="font-size:16px">${x[1]}</div><div class="nt"><div class="h">${L(x[2],nAr[x[2]]||x[2])}</div><div class="d">${L(x[3],nAr[x[3]]||x[3])}</div></div></div>`).join('');
+}
+function renderOps(){
+  document.getElementById('invHealth').innerHTML=`<div style="display:flex;justify-content:space-between"><span>${L('In stock SKUs','أصناف متوفرة')}</span><b>128</b></div><div style="display:flex;justify-content:space-between"><span style="color:var(--warn)">${L('Low stock','مخزون منخفض')}</span><b style="color:var(--warn)">4</b></div><div style="display:flex;justify-content:space-between"><span style="color:var(--bad)">${L('Dead stock','راكد')}</span><b style="color:var(--bad)">7</b></div><div style="display:flex;justify-content:space-between"><span>${L('Value','القيمة')}</span><b>${money(18240*MULT[curLoc])}</b></div>`;
+  document.getElementById('empPerf').innerHTML=[["John R.","$31.2","96%"],["Ana G.","$24.8","88%"],["Dev P.","$27.5","91%"]].map(e=>`<div style="display:flex;justify-content:space-between;margin-bottom:6px"><b>${e[0]}</b><span style="color:var(--muted)">${L('avg','متوسط')} ${e[1]} · ${e[2]}</span></div>`).join('');
+  document.getElementById('vendorDel').innerHTML=[["Altria","14 items","3pm","c-sent"],["Republic","6 items","Jul 5","c-low"],["Local Vape","9 items","—","c-block"]].map(v=>`<div style="display:flex;justify-content:space-between;margin-bottom:6px"><b>${v[0]}</b><span class="chip ${v[3]}">${v[1]} · ${v[2]}</span></div>`).join('');
+  document.getElementById('compRenew').innerHTML=`<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span>${L('TX E-Cig permit','تصريح السجائر الإلكترونية')}</span><b style="color:var(--warn)">9 ${L('days','أيام')}</b></div><div style="display:flex;justify-content:space-between;margin-bottom:6px"><span>${L('TX Tobacco permit','تصريح التبغ')}</span><b>320 ${L('days','يوم')}</b></div><div style="display:flex;justify-content:space-between"><span>${L('SB 2024 directory check','فحص دليل SB 2024')}</span><b style="color:var(--ok)">${L('current','محدّث')}</b></div>`;
+}
+function renderDash(){renderQA();renderRangeTogs();renderKPIs();renderCharts();renderStoreStatus();renderDashAI();renderTimeline();renderNotes();renderOps();stampUpdated();}
+
+// ----- role personalization -----
+function setRole(){role=document.getElementById('roleSel').value;document.getElementById('roleLbl').textContent=L(ROLEW[role],ROLEWAR[role]);
+  const fin=document.querySelector('#v-dash .g2');if(fin)fin.style.display=(role==='cashier')?'none':'';
+  renderKPIs();toast('👤 '+L(ROLEW[role],ROLEWAR[role]),'info');}
+
+// ----- refresh / auto / time / theme / fullscreen -----
+let autoTimer=null;
+function stampUpdated(){const d=new Date();document.getElementById('lastUpd').textContent=L('Updated ','آخر تحديث ')+d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});}
+function refreshDash(){const ids=['kpis','trendChart','revChart','storeStatus'];ids.forEach(id=>{const el=document.getElementById(id);if(el){el.style.opacity='.35';}});
+  setTimeout(()=>{renderDash();ids.forEach(id=>{const el=document.getElementById(id);if(el)el.style.opacity='1';});toast('↻ '+L('Dashboard refreshed','تم تحديث اللوحة'),'ok');},220);}
+function toggleAuto(){const b=document.getElementById('autoBtn');if(autoTimer){clearInterval(autoTimer);autoTimer=null;b.classList.remove('on');toast(L('Auto-refresh off','الإيقاف التلقائي'),'info');}
+  else{autoTimer=setInterval(refreshDash,15000);b.classList.add('on');toast(L('Auto-refresh on (15s)','التحديث التلقائي (١٥ث)'),'ok');}}
+function toggleTheme(){document.body.classList.toggle('light');document.getElementById('themeBtn').textContent=document.body.classList.contains('light')?'☀️':'🌙';try{localStorage.setItem('ss_theme',document.body.classList.contains('light')?'light':'dark');}catch(e){}}
+function toggleFS(){document.body.classList.toggle('fs-on');if(!document.fullscreenElement){document.documentElement.requestFullscreen?.().catch(()=>{});}else{document.exitFullscreen?.();}}
+
+// ----- CSV export -----
+function exportCSV(kind){let rows=[];if(kind==='trend')rows=[['Period','Sales'],...scaleData(TREND[range])];
+  else if(kind==='revprofit')rows=[['Period','Revenue','Profit'],...scaleData(REVPROF)];
+  else if(kind==='hourly')rows=[['Hour','Sales'],...scaleData(TREND.today)];
+  const csv=rows.map(r=>r.join(',')).join('\n');const b=new Blob([csv],{type:'text/csv'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download='smokestack_'+kind+'.csv';a.click();URL.revokeObjectURL(u);toast('⬇ '+L('Exported CSV','تم التصدير'),'ok');}
+
+// ----- global nav with filter -----
+function nav(v,msg){document.querySelectorAll('#nav a').forEach(x=>x.classList.toggle('active',x.dataset.v===v));
+  document.querySelectorAll('.view').forEach(s=>s.classList.remove('on'));const el=document.getElementById('v-'+v);
+  if(el){el.classList.add('on','fade');setTimeout(()=>el.classList.remove('fade'),200);}
+  window.scrollTo(0,0);closeSearch();if(msg)toast('🔎 '+L('Filtered: ','مُرشّح: ')+msg,'info');}
+
+// ----- universal search -----
+function searchIndex(){const idx=[];
+  PRODUCTS.forEach(p=>idx.push([p.nm,L('Product','منتج'),'inv']));
+  ["INV-2043","INV-2042","INV-2041"].forEach(i=>idx.push([i,L('Invoice','فاتورة'),'pos']));
+  CUST.forEach(c=>idx.push([c.n,L('Customer','عميل'),'cust']));
+  EMP.forEach(e=>idx.push([e[0],L('Employee','موظف'),'emp']));
+  POS.forEach(o=>idx.push([o.s,L('Purchase Order','أمر شراء'),'po']));
+  ["Altria Distribution","Republic Brands","Local Vape Wholesale"].forEach(s=>idx.push([s,L('Supplier','مورّد'),'po']));
+  ["Marlboro","Zyn","RAW","Elf Bar","Juul","Newport"].forEach(b=>idx.push([b,L('Brand','علامة'),'inv']));
+  [["TX SB 2024 directory","comp"],["Age verification log","comp"],["Permit renewals","comp"]].forEach(x=>idx.push([x[0],L('Compliance','امتثال'),x[1]]));
+  [["Tax settings","acct"],["Loyalty rules","cust"],["Marketing campaigns","mkt"],["Payment processor","acct"]].forEach(x=>idx.push([x[0],L('Settings','إعدادات'),x[1]]));
+  return idx;}
+let searchSel=0,searchHits=[];
+function openSearch(){document.getElementById('searchModal').classList.add('show');const i=document.getElementById('searchInput');i.value='';runSearch('');setTimeout(()=>i.focus(),40);}
+function closeSearch(){document.getElementById('searchModal').classList.remove('show');}
+function runSearch(q){const idx=searchIndex();searchHits=(q?idx.filter(x=>x[0].toLowerCase().includes(q.toLowerCase())):idx).slice(0,12);searchSel=0;
+  const box=document.getElementById('searchRes');
+  if(!searchHits.length){box.innerHTML=`<div class="cathd">${L('No results','لا نتائج')}</div>`;return;}
+  box.innerHTML=searchHits.map((h,i)=>`<div class="sr ${i===0?'sel':''}" onclick="nav('${h[2]}','${h[0].replace(/'/g,'')}')"><span>🔹</span><span>${h[0]}</span><span class="ty">${h[1]}</span></div>`).join('');}
+function searchKey(e){if(e.key==='Escape')return closeSearch();
+  if(e.key==='ArrowDown'){e.preventDefault();searchSel=Math.min(searchSel+1,searchHits.length-1);}
+  else if(e.key==='ArrowUp'){e.preventDefault();searchSel=Math.max(searchSel-1,0);}
+  else if(e.key==='Enter'){const h=searchHits[searchSel];if(h)nav(h[2],h[0]);return;}
+  document.querySelectorAll('#searchRes .sr').forEach((el,i)=>el.classList.toggle('sel',i===searchSel));}
+document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openSearch();}});
+try{if(localStorage.getItem('ss_theme')==='light'){document.body.classList.add('light');document.getElementById('themeBtn').textContent='☀️';}}catch(e){}
+function renderCats(){document.getElementById('cats').innerHTML=CATSK.map(c=>`<button class="${c===activeCat?'on':''}" onclick="setCat('${c}')">${c==='All'?(lang==='ar'?'الكل':'All'):c}</button>`).join('');}
+function setCat(c){activeCat=c;renderCats();renderProds();}
+function renderProds(){const list=PRODUCTS.filter(p=>activeCat==='All'||p.cat===activeCat);
+  document.getElementById('prods').innerHTML=list.map(p=>`<div class="prod" onclick="add(${p.id})">
+    ${p.block?'<span class="badge bblock">'+(lang==='ar'?'محظور':'BLOCKED')+'</span>':(p.age>0?'<span class="badge b21">21+</span>':'')}
+    <div class="nm">${p.nm}</div><div class="br">${p.br}</div><div class="pr">$${p.pr.toFixed(2)}</div><div class="tag">${p.cat}</div></div>`).join('');}
+function renderCart(){const el=document.getElementById('items');
+  if(!cart.length){el.innerHTML='<div class="empty">'+T[lang].empty+'</div>';}
+  else{el.innerHTML=cart.map(c=>`<div class="ci"><div><div>${c.nm} ${c.age>0?'🔞':''}</div><div class="qn">$${c.pr.toFixed(2)} × ${c.qty}</div></div><div style="display:flex;align-items:center;gap:8px"><b>$${(c.pr*c.qty).toFixed(2)}</b><span class="x" onclick="rm(${c.id})">×</span></div></div>`).join('');}
+  const sub=cart.reduce((s,c)=>s+c.pr*c.qty,0),taxv=cart.reduce((s,c)=>s+(c.tax!=='none'?c.pr*c.qty*TAXRATE:0),0);
+  document.getElementById('sub').textContent='$'+sub.toFixed(2);document.getElementById('taxv').textContent='$'+taxv.toFixed(2);
+  document.getElementById('tot').textContent='$'+(sub+taxv).toFixed(2);document.getElementById('ccount').textContent=cart.reduce((s,c)=>s+c.qty,0);
+  const pay=document.getElementById('pay');pay.disabled=!cart.length;
+  pay.textContent=cart.length?(needsAge()&&!ageVerified?'🔞 '+(lang==='ar'?'تحقق من العمر':'Verify age'):T[lang].charge+' $'+(sub+taxv).toFixed(2)):T[lang].charge;}
+function needsAge(){return cart.some(c=>c.age>=21);}
+function renderInv(){const rows=PRODUCTS.map(p=>{let st=p.block?`<span class="chip c-block">${T[lang].st_cannot}</span>`:(p.stock===0?`<span class="chip c-block">${T[lang].st_out}</span>`:p.stock<10?`<span class="chip c-low">${T[lang].st_low}</span>`:`<span class="chip c-ok">${T[lang].st_instock}</span>`);
+  return `<tr><td><b>${p.nm}</b></td><td>${p.br}</td><td>${p.cat}</td><td>$${p.pr.toFixed(2)}</td><td>${p.stock}</td><td>${p.age>0?p.age+'+':'—'}</td><td>${st}</td></tr>`;}).join('');
+  const t=T[lang];document.getElementById('invtable').innerHTML=`<thead><tr><th>${t.th_prod}</th><th>${t.th_brand}</th><th>${t.th_cat}</th><th>${t.th_price}</th><th>${t.th_qty}</th><th>${t.th_age}</th><th>${t.th_status}</th></tr></thead><tbody>${rows}</tbody>`;}
+function renderPO(){const t=T[lang];const map={sent:`<span class="chip c-sent">${t.st_sent}</span>`,partial:`<span class="chip c-low">${t.st_partial}</span>`,draft:`<span class="chip">${t.st_draft}</span>`};
+  const rows=POS.map((o,i)=>`<tr><td><b>${o.s}</b></td><td>${o.items}</td><td>${o.cost}</td><td>${o.eta}</td><td>${map[o.st]}</td><td>${o.st!=='draft'?`<button class="minibtn" onclick="toast(T[lang].po_received,'ok')">${t.receive}</button>`:`<button class="minibtn gh" onclick="toast(T[lang].po_created,'warn')">${t.st_draft}</button>`}</td></tr>`).join('');
+  document.getElementById('potable').innerHTML=`<thead><tr><th>${t.th_supplier}</th><th>${t.th_items}</th><th>${t.th_cost}</th><th>${t.th_eta}</th><th>${t.th_status}</th><th>${t.th_action}</th></tr></thead><tbody>${rows}</tbody>`;}
+function renderCust(){const t=T[lang];const rows=CUST.map(c=>`<tr><td><b>${c.n}</b></td><td>${c.p}</td><td>${c.pts}</td><td><span class="chip ${c.tier==='Gold'?'c-low':'c-ok'}">${c.tier}</span></td><td>${c.sp}</td></tr>`).join('');
+  document.getElementById('custtable').innerHTML=`<thead><tr><th>${t.th_cust}</th><th>${t.th_phone}</th><th>${t.th_pts}</th><th>${t.th_tier}</th><th>${t.th_spend}</th></tr></thead><tbody>${rows}</tbody>`;}
+function renderBranch(){const t=T[lang];const rows=LOCS.map(l=>`<tr><td><b>${l.n}</b></td><td>${l.k1}</td><td>${l.k3}</td><td style="color:var(--brand2)">${l.k4}</td></tr>`).join('');
+  document.getElementById('branchtable').innerHTML=`<thead><tr><th>${t.th_branch}</th><th>${t.th_dsales}</th><th>${t.th_dmargin}</th><th>${t.th_dreb}</th></tr></thead><tbody>${rows}</tbody>`;}
+function renderBars(){const data=[["Vape",1420],["Cigarettes",980],["Accessories",640],["Pouches",290],["Cigars",152]];const max=1420;
+  document.getElementById('bars').innerHTML=data.map(([k,v])=>`<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span>${k}</span><b>$${v}</b></div><div style="height:8px;background:var(--panel2);border-radius:5px;overflow:hidden"><div style="height:100%;width:${v/max*100}%;background:linear-gradient(90deg,var(--brand),var(--brand2))"></div></div></div>`).join('');}
+// ---------- AI module ----------
+const AI={
+ rec:{en:["📈 Raise <b>Zyn</b> facings in Houston — selling 2.3× forecast.","💰 <b>Glass pipes</b> margin 71% but low visibility — feature at register.","🕐 Staff Austin 4–7pm: 38% of sales, understaffed.","🔁 Bundle <b>RAW + Clipper</b> — 44% attach rate."],
+      ar:["📈 زد عرض <b>Zyn</b> في هيوستن — يبيع ٢.٣× التوقع.","💰 هامش <b>غلايين الزجاج</b> ٧١٪ لكن ظهوره منخفض — اعرضه عند الصندوق.","🕐 عزّز طاقم أوستن ٤–٧م: ٣٨٪ من المبيعات.","🔁 اربط <b>RAW + Clipper</b> — معدل إرفاق ٤٤٪."]},
+ anom:{en:["⚠️ Dallas voids up <b>3×</b> vs avg — review register 2.","🚨 <b>Newport</b> shrink: 12 units unaccounted this week.","📉 Cigar sales down 22% — check <b>Backwoods</b> stockout."],
+      ar:["⚠️ إلغاءات دالاس أعلى <b>٣×</b> — راجع الصندوق ٢.","🚨 عجز <b>Newport</b>: ١٢ وحدة غير محتسبة هذا الأسبوع.","📉 مبيعات السيجار ↓٢٢٪ — تحقق من نفاد <b>Backwoods</b>."]},
+ reorder:[["Marlboro Gold","Austin",12,"Altria"],["Zyn Cool Mint","Houston",30,"Altria"],["Backwoods Honey","Dallas",8,"ITG"],["RAW King","Austin",20,"Republic"]],
+ qs:{en:["Best seller this week?","Which store has highest margin?","What's about to run out?"],ar:["الأكثر مبيعاً هذا الأسبوع؟","أي فرع لديه أعلى هامش؟","ما الذي سينفد قريباً؟"]},
+ ans:{en:["🤖 <b>Marlboro Gold</b> — 289 units across 3 stores, ▲14% WoW.","🤖 <b>Dallas</b> at 42.1% gross margin, led by accessories & pipes.","🤖 Reorder now: Backwoods (8 left), Newport (Austin 8 left)."],
+      ar:["🤖 <b>Marlboro Gold</b> — ٢٨٩ وحدة عبر ٣ فروع، ▲١٤٪.","🤖 <b>دالاس</b> بهامش ٤٢.١٪، بقيادة الإكسسوارات والغلايين.","🤖 أعد الطلب الآن: Backwoods (٨ متبقٍ)، Newport (أوستن ٨)."]}
+};
+function renderAI(){
+  document.getElementById('airec').innerHTML=AI.rec[lang].map(x=>'• '+x).join('<br>');
+  document.getElementById('aianom').innerHTML=AI.anom[lang].map(x=>x).join('<br>');
+  const fc=[["Mon",60],["Tue",72],["Wed",81],["Thu",95],["Fri",120],["Sat",134],["Sun",88]];const mx=134;
+  document.getElementById('aifc').innerHTML=fc.map(([d,v])=>`<div style="margin-bottom:7px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px"><span>${d}</span><b>${v}</b></div><div style="height:7px;background:var(--panel2);border-radius:4px;overflow:hidden"><div style="height:100%;width:${v/mx*100}%;background:linear-gradient(90deg,var(--accent),var(--brand))"></div></div></div>`).join('');
+  const t=T[lang];document.getElementById('aitable').innerHTML=`<thead><tr><th>${t.th_prod}</th><th>${t.th_branch}</th><th>${t.th_qty}</th><th>${t.th_supplier}</th><th></th></tr></thead><tbody>`+AI.reorder.map(r=>`<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td><button class="minibtn" onclick="toast(T[lang].po_created,'ok')">${t.st_draft==='Draft'?'Order':'طلب'}</button></td></tr>`).join('')+`</tbody>`;
+  document.getElementById('aiqs').innerHTML=AI.qs[lang].map((q,i)=>`<button class="cats-q minibtn gh" style="font-size:11px" onclick="aiAsk(${i})">${q}</button>`).join('');
+  document.getElementById('aichat').innerHTML='<span style="color:var(--muted)">'+(lang==='ar'?'اختر سؤالاً بالأسفل…':'Pick a question below…')+'</span>';
+}
+function aiAsk(i){document.getElementById('aichat').innerHTML=AI.ans[lang][i];}
+
+// ---------- Multi-store ----------
+function renderStores(){const t=T[lang];
+  const rows=LOCS.map((l,i)=>`<tr><td><b>${l.n}</b></td><td>${l.skus}</td><td>${l.k1}</td><td>${l.k3}</td><td style="color:var(--brand2)">${l.k4}</td><td><span class="chip c-ok">${lang==='ar'?'متصل':'Online'}</span></td></tr>`).join('');
+  document.getElementById('storetable').innerHTML=`<thead><tr><th>${t.th_branch}</th><th>SKUs</th><th>${t.th_dsales}</th><th>${t.th_dmargin}</th><th>${t.th_dreb}</th><th>${t.th_status}</th></tr></thead><tbody>${rows}</tbody>`;
+  const tr=[["Austin → Houston","Zyn ×40","In transit","partial"],["Dallas → Austin","RAW ×100","In transit","sent"],["Houston → Dallas","Juul ×24","Delivered","ok"]];
+  const map={partial:`<span class="chip c-low">${t.st_intransit}</span>`,sent:`<span class="chip c-sent">${t.st_intransit}</span>`,ok:`<span class="chip c-ok">${lang==='ar'?'تم':'Delivered'}</span>`};
+  document.getElementById('transfertable').innerHTML=`<thead><tr><th>${lang==='ar'?'المسار':'Route'}</th><th>${t.th_items}</th><th>${t.th_status}</th><th></th></tr></thead><tbody>`+tr.map(r=>`<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td>${map[r[3]]}</td><td>${r[3]!=='ok'?`<button class="minibtn" onclick="toast(T[lang].po_received,'ok')">${t.receive}</button>`:''}</td></tr>`).join('')+`</tbody>`;
+}
+
+// ---------- Employees ----------
+const EMP=[["Sam Rivera","Manager","Austin","$14,200"],["Ana Gomez","Cashier","Austin","$8,900"],["Dev Patel","Cashier","Houston","$11,300"],["Lee Wong","Manager","Dallas","$12,050"]];
+const PERM=[["Ring sales / age verify","✓","✓","✓"],["Refund / void","✓","✓","—"],["Manager override","✓","✓","✕"],["Edit products / prices","✓","✓","✕"],["View reports","✓","scope","✕"],["Manage users","✓","✕","✕"],["Compliance settings","✓","✕","✕"]];
+function renderEmp(){const t=T[lang];
+  document.getElementById('emptable').innerHTML=`<thead><tr><th>${t.th_cust}</th><th>${lang==='ar'?'الدور':'Role'}</th><th>${t.th_branch}</th><th>${lang==='ar'?'مبيعات الشهر':'Sales MTD'}</th></tr></thead><tbody>`+EMP.map(e=>`<tr><td><b>${e[0]}</b></td><td><span class="chip ${e[1]==='Manager'?'c-sent':'c-ok'}">${e[1]}</span></td><td>${e[2]}</td><td>${e[3]}</td></tr>`).join('')+`</tbody>`;
+  document.getElementById('permtable').innerHTML=`<thead><tr><th>${lang==='ar'?'القدرة':'Capability'}</th><th>Owner</th><th>Mgr</th><th>Cashier</th></tr></thead><tbody>`+PERM.map(p=>`<tr><td>${p[0]}</td><td>${p[1]}</td><td>${p[2]}</td><td>${p[3]}</td></tr>`).join('')+`</tbody>`;
+  const sh=[["Sam Rivera","Austin","08:02","$200.00","$0.00"],["Dev Patel","Houston","09:15","$150.00","-$2.10"]];
+  document.getElementById('shifttable').innerHTML=`<thead><tr><th>${lang==='ar'?'الموظف':'Employee'}</th><th>${t.th_branch}</th><th>${lang==='ar'?'فتح':'Opened'}</th><th>${lang==='ar'?'الدرج':'Float'}</th><th>+/-</th></tr></thead><tbody>`+sh.map(s=>`<tr><td><b>${s[0]}</b></td><td>${s[1]}</td><td>${s[2]}</td><td>${s[3]}</td><td style="color:${s[4].includes('-')?'var(--bad)':'var(--ok)'}">${s[4]}</td></tr>`).join('')+`</tbody>`;
+}
+
+// ---------- Accounting ----------
+function renderAcct(){
+  const pl=[["Revenue","$128,400"],["– COGS","$75,300"],["Gross Profit","$53,100"],["– Payroll","$18,600"],["– Rent & Utilities","$7,900"],["– Card & Processing Fees","$3,850"],["– Other OpEx","$4,100"],["Net Profit","$18,650"]];
+  document.getElementById('pltable').innerHTML='<tbody>'+pl.map((r,i)=>`<tr><td style="${i===2||i===7?'font-weight:800':''}">${lang==='ar'&&i===0?'الإيرادات':lang==='ar'&&i===2?'إجمالي الربح':lang==='ar'&&i===7?'صافي الربح':r[0]}</td><td style="text-align:end;${i===7?'color:var(--ok);font-weight:800':i===2?'font-weight:700':''}">${r[1]}</td></tr>`).join('')+'</tbody>';
+  const qb= lang==='ar'
+   ? "✅ خريطة الحسابات مرتبطة<br>✅ ٤٨٧ عملية بيع مُزامَنة اليوم<br>✅ ضريبة المبيعات → حساب الالتزام<br>⏳ ٣ استرجاعات بانتظار المراجعة<br>🔒 قيود ضريبة التبغ منفصلة للتقديم"
+   : "✅ Chart of accounts mapped<br>✅ 487 sales synced today<br>✅ Sales tax → liability account<br>⏳ 3 refunds pending review<br>🔒 Tobacco-excise entries separated for filing";
+  document.getElementById('qbsync').innerHTML=qb;
+}
+
+// ---------- Marketing ----------
+function renderMkt(){const t=T[lang];
+  const c=[["Summer Vape Bundle","Promo · BOGO","1,204","112","Active","ok"],["Loyalty Double Points","Email","842","— ","Active","ok"],["Win-back 30d","SMS","210","40","Scheduled","sent"]];
+  const map={ok:`<span class="chip c-ok">${lang==='ar'?'نشط':'Active'}</span>`,sent:`<span class="chip c-sent">${lang==='ar'?'مجدول':'Scheduled'}</span>`};
+  document.getElementById('mkttable').innerHTML=`<thead><tr><th>${lang==='ar'?'الحملة':'Campaign'}</th><th>${lang==='ar'?'النوع':'Type'}</th><th>${lang==='ar'?'الوصول':'Reach'}</th><th>${lang==='ar'?'مستبدل':'Redeemed'}</th><th>${t.th_status}</th></tr></thead><tbody>`+c.map(r=>`<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${map[r[5]]}</td></tr>`).join('')+`</tbody>`;
+  document.getElementById('promobuild').innerHTML= lang==='ar'
+   ? "النوع: <b>اشترِ واحداً واحصل على واحد</b><br>ينطبق على: <b>فئة السجائر الإلكترونية</b><br>الجمهور: <b>٢١+ فقط (مُقيّد بالعمر)</b><br>الجدول: <b>١–٣١ يوليو</b><br>حد الاستخدام: <b>١ لكل عميل/يوم</b>"
+   : "Type: <b>Buy-One-Get-One</b><br>Applies to: <b>Vape category</b><br>Audience: <b>21+ only (age-gated)</b><br>Schedule: <b>Jul 1–31</b><br>Usage cap: <b>1 / customer / day</b>";
+  document.getElementById('mktchan').innerHTML= lang==='ar'
+   ? "📱 SMS: <b>مُفعّل</b> (موافقة + إلغاش اشتراك)<br>✉️ البريد: <b>مُفعّل</b> (Klaviyo)<br>🎯 الجمهور: <b>أعضاء الولاء ٢١+</b><br>🚫 استبعاد: <b>من دون ٢١، عروض محظورة</b>"
+   : "📱 SMS: <b>Enabled</b> (consent + opt-out)<br>✉️ Email: <b>Enabled</b> (Klaviyo)<br>🎯 Audience: <b>21+ loyalty members</b><br>🚫 Excludes: <b>under-21, prohibited discounts</b>";
+}
+
+// ===== Payments Inbox (mirrors payment-monitoring backend logic) =====
+let PAYMENTS=[
+ {id:'PM-1',prov:'iMessage',sender:'Bank of America',amt:240.00,ref:'INV-1042',memo:'deposit posted ref INV-1042 John Smith',status:'MATCHED',inv:'INV-1042',conf:97,bd:{amount:40,reference:25,customer:20,memo:10,date:2},time:'09:12'},
+ {id:'PM-2',prov:'Webhook',sender:'Chase',amt:1299.99,ref:'8837A2',memo:'received txn 8837A2',status:'UNMATCHED',inv:null,conf:0,bd:null,time:'10:03'},
+ {id:'PM-3',prov:'SMS',sender:'Wells Fargo',amt:75.00,ref:'INV-2099',memo:'zelle from John Smith INV2099',status:'REVIEW',inv:'INV-2099',conf:68,bd:{amount:28,reference:25,customer:12,memo:3,date:0},time:'10:41'},
+ {id:'PM-4',prov:'iMessage',sender:'Bank of America',amt:240.00,ref:'INV-1042',memo:'duplicate iMessage guid',status:'DUPLICATE',inv:null,conf:0,bd:null,time:'10:42'},
+];
+let PAYAUDIT=[['INGESTED','PM-1','system','09:12'],['MATCHED','PM-1','system','09:12'],['INGESTED','PM-2','system','10:03'],['INGESTED','PM-3','agent','10:41'],['FLAGGED_DUPLICATE','PM-4','system','10:42']];
+let payFilter='ALL',paySel=null,payCounter=5;
+const PAYCHIP={MATCHED:'c-ok',REVIEW:'c-low',UNMATCHED:'c-block',DUPLICATE:'chip',APPROVED:'c-sent'};
+function payStatusLabel(s){const m={MATCHED:['Matched','مطابق'],REVIEW:['Review','مراجعة'],UNMATCHED:['Unmatched','غير مطابق'],DUPLICATE:['Duplicate','مكرر'],APPROVED:['Approved','معتمد']};return L(m[s][0],m[s][1]);}
+function renderPayKpis(){
+  const c=s=>PAYMENTS.filter(p=>p.status===s).length;
+  const total=PAYMENTS.filter(p=>p.status!=='DUPLICATE').reduce((a,p)=>a+p.amt,0);
+  const K=[[L('Matched','مطابقة'),c('MATCHED'),'var(--ok)','MATCHED'],[L('Needs Review','بحاجة مراجعة'),c('REVIEW'),'var(--warn)','REVIEW'],[L('Unmatched','غير مطابقة'),c('UNMATCHED'),'var(--bad)','UNMATCHED'],[L('Duplicates','مكررة'),c('DUPLICATE'),'var(--muted)','DUPLICATE'],[L('Received Today','مستلمة اليوم'),money(total),'var(--brand2)','ALL']];
+  document.getElementById('payKpis').innerHTML=K.map(k=>`<div class="card kpi clk" onclick="setPayFilter('${k[3]}')"><div class="lbl">${k[0]}</div><div class="val" style="color:${k[2]}">${k[1]}</div><div class="sub" style="color:var(--muted)">${L('Filter','تصفية')}</div></div>`).join('');
+}
+function renderPayFilter(){const opt=[['ALL',L('All','الكل')],['MATCHED',L('Matched','مطابق')],['REVIEW',L('Review','مراجعة')],['UNMATCHED',L('Unmatched','غير مطابق')],['DUPLICATE',L('Duplicate','مكرر')]];
+  document.getElementById('payFilter').innerHTML=opt.map(o=>`<button class="${payFilter===o[0]?'on':''}" onclick="setPayFilter('${o[0]}')">${o[1]}</button>`).join('');}
+function setPayFilter(f){payFilter=f;renderPayFilter();renderPayTable();}
+function renderPayTable(){const q=(document.getElementById('paySearch')?.value||'').toLowerCase();
+  const rows=PAYMENTS.filter(p=>(payFilter==='ALL'||p.status===payFilter)&&(!q||(p.sender+p.ref+p.memo).toLowerCase().includes(q)));
+  const t=T[lang];
+  const head=`<thead><tr><th>${L('Time','الوقت')}</th><th>${L('Source','المصدر')}</th><th>${L('Sender','المُرسِل')}</th><th>${L('Amount','المبلغ')}</th><th>${L('Reference','المرجع')}</th><th>${t.th_status}</th><th>${L('Match','المطابقة')}</th><th></th></tr></thead>`;
+  const body=rows.map(p=>`<tr style="cursor:pointer" onclick="showMatch('${p.id}')"><td>${p.time}</td><td><span class="chip c-sent">${p.prov}</span></td><td><b>${p.sender}</b></td><td><b>${money2(p.amt)}</b></td><td>${p.ref||'—'}</td><td><span class="chip ${PAYCHIP[p.status]}">${payStatusLabel(p.status)}</span></td><td>${p.inv?p.inv+' · '+p.conf+'%':'—'}</td><td>${(p.status==='REVIEW'||p.status==='UNMATCHED')?`<button class="minibtn" onclick="event.stopPropagation();approvePay('${p.id}')">${L('Approve','اعتماد')}</button>`:(p.status==='MATCHED'?'✅':'')}</td></tr>`).join('');
+  document.getElementById('payTable').innerHTML=head+'<tbody>'+(rows.length?body:`<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:26px">${L('No payments match this filter.','لا مدفوعات تطابق التصفية.')}</td></tr>`)+'</tbody>';
+}
+function showMatch(id){paySel=id;const p=PAYMENTS.find(x=>x.id===id);const el=document.getElementById('payMatch');
+  if(!p.bd){el.innerHTML=L('No candidate invoice found — routed to manual approval / unmatched.','لم يُعثر على فاتورة مرشحة — أُحيلت للموافقة اليدوية.');return;}
+  el.innerHTML=`<b>${p.id}</b> → <b>${p.inv}</b> · ${L('confidence','الثقة')} <b>${p.conf}%</b><br>`+
+   `${L('Amount','المبلغ')}: <b>${p.bd.amount}</b>/40 · ${L('Reference','المرجع')}: <b>${p.bd.reference}</b>/25 · ${L('Customer','العميل')}: <b>${p.bd.customer}</b>/20 · ${L('Memo','المذكرة')}: <b>${p.bd.memo}</b>/10 · ${L('Date','التاريخ')}: <b>${p.bd.date}</b>/5`;
+}
+function renderPayAudit(){document.getElementById('payAudit').innerHTML=PAYAUDIT.slice().reverse().map(a=>`<div class="logrow"><span><b>${a[0]}</b> · ${a[1]} · ${a[2]}</span><span class="t">${a[3]}</span></div>`).join('');}
+function approvePay(id){const p=PAYMENTS.find(x=>x.id===id);p.status='APPROVED';if(!p.inv&&p.ref)p.inv=p.ref;PAYAUDIT.push(['APPROVED',id,'user',nowHM()]);renderPay();toast('✅ '+L('Payment approved & invoice settled','تم اعتماد الدفعة وتسوية الفاتورة'),'ok');}
+function nowHM(){return new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});}
+function simulatePayment(){payCounter++;const id='PM-'+payCounter;
+  const scen=[
+   {prov:'iMessage',sender:'Bank of America',amt:412.50,ref:'INV-1088',memo:'deposit posted ref INV-1088',status:'MATCHED',inv:'INV-1088',conf:96,bd:{amount:40,reference:25,customer:19,memo:10,date:2}},
+   {prov:'Open Banking',sender:'Capital One',amt:58.20,ref:null,memo:'card settlement',status:'UNMATCHED',inv:null,conf:0,bd:null},
+   {prov:'SMS',sender:'Wells Fargo',amt:120.00,ref:'INV-2100',memo:'zelle 120 memo INV2100',status:'REVIEW',inv:'INV-2100',conf:64,bd:{amount:28,reference:25,customer:8,memo:3,date:0}}
+  ][Math.floor(Math.random()*3)];
+  const p={id,...scen,time:nowHM()};PAYMENTS.unshift(p);
+  PAYAUDIT.push(['INGESTED',id,p.prov==='iMessage'?'agent':'system',p.time]);
+  if(p.status==='MATCHED')PAYAUDIT.push(['MATCHED',id,'system',p.time]);
+  renderPay();
+  const msg=p.status==='MATCHED'?L('auto-matched to ','طُوبقت تلقائياً مع ')+p.inv:p.status==='REVIEW'?L('needs review','بحاجة مراجعة'):L('unmatched','غير مطابقة');
+  toast('🔔 '+L('New payment ','دفعة جديدة ')+money2(p.amt)+' · '+msg,p.status==='MATCHED'?'ok':p.status==='REVIEW'?'warn':'bad');
+}
+function renderPay(){renderPayKpis();renderPayFilter();renderPayTable();renderPayAudit();if(paySel)showMatch(paySel);}
+
+function renderAll(){renderDash();renderCats();renderProds();renderCart();renderInv();renderPO();renderCust();renderBranch();renderBars();renderAI();renderStores();renderEmp();renderAcct();renderMkt();renderPay();}
+
+// ---------- Cart / checkout ----------
+function add(id){const p=PRODUCTS.find(x=>x.id===id);
+  if(p.block){document.getElementById('blockReason').textContent=p.block;show('blockModal');logLegality(p);return;}
+  const ex=cart.find(x=>x.id===id);if(ex)ex.qty++;else cart.push({...p,qty:1});ageVerified=false;renderCart();toast(T[lang].added+' '+p.nm,'ok');}
+function rm(id){cart=cart.filter(x=>x.id!==id);ageVerified=false;renderCart();}
+function clearCart(){cart=[];ageVerified=false;renderCart();}
+function checkout(){if(needsAge()&&!ageVerified){show('ageModal');return;}complete();}
+function verify(res){hide('ageModal');if(res==='pass'){ageVerified=true;logSale('pass');complete();}
+  else{cart=cart.filter(c=>c.age<21);logSale('fail');renderCart();toast(T[lang].blocked_under,'bad');}}
+function complete(){const tot=document.getElementById('tot').textContent;toast(T[lang].sale_done+' '+tot+' · '+T[lang].receipt,'ok');cart=[];ageVerified=false;renderCart();}
+function closeAge(){hide('ageModal');}
+
+// ---------- Logs ----------
+function tstamp(){return new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});}
+function clearNoLog(){const log=document.getElementById('log');if(log.children.length===1&&log.querySelector('[data-i="c_nolog"]'))log.innerHTML='';}
+function logSale(res){const log=document.getElementById('log');clearNoLog();const ok=res==='pass';const row=document.createElement('div');row.className='logrow';
+  const txt=lang==='ar'?`${ok?'✅':'⛔'} بيع مقيّد بالعمر · <b>${ok?'ناجح ٢١+':'محظور دون ٢١'}</b> · الهوية: رخصة قيادة · الطريقة: يدوي · الكاشير: سام`:`${ok?'✅':'⛔'} Age-restricted sale · <b>${ok?'PASS 21+':'BLOCKED under-21'}</b> · ID: Driver License · method: manual · cashier: Sam`;
+  row.innerHTML=`<span>${txt}</span><span class="t">${tstamp()}</span>`;log.prepend(row);}
+function logLegality(p){const log=document.getElementById('log');clearNoLog();const row=document.createElement('div');row.className='logrow';
+  const txt=lang==='ar'?`🚫 حَظَر حارس القانونية <b>${p.nm}</b> · السبب: ${p.block}`:`🚫 Legality guard blocked <b>${p.nm}</b> · reason: ${p.block}`;
+  row.innerHTML=`<span>${txt}</span><span class="t">${tstamp()}</span>`;log.prepend(row);}
+
+// ---------- utils ----------
+function show(id){document.getElementById(id).classList.add('show');}
+function hide(id){document.getElementById(id).classList.remove('show');}
+let tt;function toast(msg,type){const t=document.getElementById('toast');t.className='toast show '+(type||'');t.innerHTML=msg;clearTimeout(tt);tt=setTimeout(()=>t.className='toast '+(type||''),2600);}
+
+// =====================================================================
+//  AI IMPORT CENTER  (drop → detect → map → validate → preview → import)
+// =====================================================================
+const IMP_TYPES=['Inventory','Products','Customers','Suppliers','Purchase Orders','Sales','Employees','Accounting Entries','Payments','Expenses','Bank Statement','Vendor Bills','Stock Count','Inventory Adjustment','Price List','Loyalty Members','Gift Cards','Taxes','Opening Balances','Transfers','Branches'];
+const IMP_FORMATS=['XLSX','CSV','XML','TXT','PDF','OFX','QBO','QIF','CAMT.053','MT940','ZIP'];
+const SYN={
+  sku:['sku','item number','itemno','item no','oem','part number','part no','code','product code','mpn'],
+  barcode:['barcode','upc','ean','gtin','scan code','bar code'],
+  name:['name','product','product name','description','item','title','desc'],
+  qty:['qty','quantity','stock','inventory','on hand','onhand','count','units','stock qty'],
+  cost:['cost','purchase price','buy price','unit cost','wholesale','cost price'],
+  price:['price','selling price','retail','sale price','msrp','unit price','sell price'],
+  supplier:['supplier','vendor','vendor name','distributor','manufacturer'],
+  branch:['branch','warehouse','location','store','site','dept','department'],
+  category:['category','type','group','class'],
+  date:['date','txn date','transaction date','posted','invoice date','trans date'],
+  amount:['amount','total','value','paid','debit','credit'],
+  balance:['balance','running balance','bal'],
+  customer:['customer','client','buyer','member','account name'],
+  invoice:['invoice','invoice #','invoice no','inv','inv #','doc no','reference','ref'],
+  payment_method:['payment method','tender','method','pay type','payment'],
+  phone:['phone','mobile','tel','contact','phone number','cell'],
+  email:['email','e-mail','mail'],
+  tax:['tax','vat','tax amount','sales tax']
+};
+const CANON_LABEL={sku:'SKU',barcode:'Barcode',name:'Name',qty:'Quantity',cost:'Cost',price:'Selling Price',supplier:'Supplier',branch:'Branch',category:'Category',date:'Date',amount:'Amount',balance:'Balance',customer:'Customer',invoice:'Invoice #',payment_method:'Payment Method',phone:'Phone',email:'Email',tax:'Tax'};
+function normH(h){return (h||'').toLowerCase().replace(/[^a-z0-9 ]/g,'').trim();}
+function mapHeader(h){const n=normH(h);for(const c in SYN){if(SYN[c].includes(n))return c;}for(const c in SYN){if(SYN[c].some(s=>n===s||n.replace(/ /g,'')===s.replace(/ /g,'')))return c;}for(const c in SYN){if(SYN[c].some(s=>n.includes(s)||s.includes(n)&&n.length>2))return c;}return null;}
+
+// Learned bank categorization rules (grows as the user corrects — requirement: smarter over time)
+let BANK_RULES={amazon:'Inventory Purchase',shell:'Fuel Expense',chevron:'Fuel Expense',stripe:'Card Sales',square:'Card Sales',payroll:'Payroll',salary:'Payroll',adp:'Payroll','bank fee':'Bank Charges',nsf:'Bank Charges',electric:'Utilities',utility:'Utilities',altria:'Inventory Purchase','irs':'Taxes','comptroller':'Taxes',rent:'Rent',refund:'Refund',interest:'Interest Income'};
+function categorize(desc){const d=(desc||'').toLowerCase();for(const k in BANK_RULES){if(d.includes(k))return BANK_RULES[k];}return 'Uncategorized';}
+function bankTxnType(amt,desc){const d=(desc||'').toLowerCase();if(/transfer/.test(d))return 'Transfer';if(/fee|charge/.test(d))return 'Fees';if(/refund/.test(d))return 'Refund';if(/wire/.test(d))return 'Wire';if(/ach/.test(d))return 'ACH';if(/check|chk/.test(d))return 'Check';if(/interest/.test(d))return 'Interest';if(/card|pos|stripe|square/.test(d))return 'Card Payment';return amt>=0?'Deposit':'Withdrawal';}
+
+// Sample datasets (used for one-click demo + when binary formats can't be parsed in-browser)
+const SAMPLES={
+ Inventory:{fmt:'XLSX',name:'inventory_july.xlsx',headers:['Item Number','UPC','Description','Qty','Purchase Price','Retail','Vendor','Warehouse'],
+   rows:[['MRL-100','012300456789','Marlboro Gold Pack','120','7.10','9.25','Altria','Austin'],
+     ['ZYN-06','300456111','Zyn Cool Mint 6mg','64','3.90','5.50','Altria','Austin'],
+     ['ELF-BC','40080123','Elf Bar (authorized)','22','12.10','17.99','Local Vape','Houston'],
+     ['','300999','Unknown Item','5','1.00','2.00','','Austin'],
+     ['RAW-KS','716165176','RAW Classic King','-4','1.80','2.99','Republic','Dallas'],
+     ['MRL-100','012300456789','Marlboro Gold Pack','120','7.10','9.25','Altria','Austin'],
+     ['GRD-2P','850002','Grinder 2pc','40','5.00','9.99','House','Austin'],
+     ['ZYN-06','300456111','zyn  cool mint 6MG','30','3.90','5.50','altria','austin']]},
+ 'Bank Statement':{fmt:'MT940',name:'bofa_statement_june.mt940',headers:['Date','Description','Amount','Balance'],
+   rows:[['2026-06-28','AMAZON MKTPLACE PURCHASE','-1240.55','8120.10'],
+     ['2026-06-28','STRIPE TRANSFER PAYOUT','2260.00','10380.10'],
+     ['2026-06-29','SHELL OIL 574','-64.20','10315.90'],
+     ['2026-06-29','ALTRIA GROUP INV','-4820.00','5495.90'],
+     ['2026-06-30','PAYROLL ADP WAGES','-3600.00','1895.90'],
+     ['2026-06-30','BANK FEE MONTHLY','-25.00','1870.90'],
+     ['2026-07-01','CITY ELECTRIC UTILITY','-410.00','1460.90'],
+     ['2026-07-01','DEPOSIT CASH SALES','1980.00','3440.90']]},
+ Customers:{fmt:'CSV',name:'customers.csv',headers:['Name','Phone','Email','Loyalty Points'],
+   rows:[['  john smith ','512-555-4021','JOHN@Email.com','640'],['Ana Gomez','(512)5558830','ana@mail.com','120'],['Dev Patel','713.555.2299','dev@x.com','980'],['john smith','5125554021','john@email.com','640']]}
+};
+
+let IMP={tab:'new',step:0,fmt:null,fname:null,type:null,conf:0,headers:[],rows:[],map:{},dup:'skip',stats:null,cancel:false,importing:false};
+let IMPHIST=[{file:'price_list_q2.xlsx',user:'Owner',date:'Jun 28',rows:412,failed:3,warn:11,dur:'4.2s',rolled:false},
+             {file:'chase_may.ofx',user:'Owner',date:'Jun 05',rows:188,failed:0,warn:2,dur:'2.1s',rolled:false}];
+
+function openImport(){IMP={tab:'new',step:0,fmt:null,fname:null,type:null,conf:0,headers:[],rows:[],map:{},dup:'skip',stats:null,cancel:false,importing:false};document.getElementById('importCenter').classList.add('show');impRender();}
+function closeImport(){document.getElementById('importCenter').classList.remove('show');}
+function impTab(t){IMP.tab=t;document.getElementById('impTabNew').classList.toggle('on',t==='new');document.getElementById('impTabHist').classList.toggle('on',t==='hist');impRender();}
+
+const IMP_STEPS=[['Upload','رفع'],['Detect','كشف'],['Map','ربط'],['Validate','تحقق'],['Preview','معاينة'],['Import','استيراد'],['Done','تم']];
+function impStepper(){if(IMP.tab==='hist'){document.getElementById('impStepper').innerHTML='';return;}
+  document.getElementById('impStepper').innerHTML=IMP_STEPS.map((s,i)=>`<div class="st ${i===IMP.step?'on':i<IMP.step?'done':''}"><span class="n">${i<IMP.step?'✓':i+1}</span>${L(s[0],s[1])}</div>`+(i<IMP_STEPS.length-1?'<span class="sep"></span>':'')).join('');}
+
+function impRender(){impStepper();const b=document.getElementById('impBody'),f=document.getElementById('impFoot');
+  if(IMP.tab==='hist'){b.innerHTML=impHistHTML();f.innerHTML=`<span></span><button class="minibtn gh" onclick="closeImport()">${L('Close','إغلاق')}</button>`;return;}
+  const S=IMP.step;
+  if(S===0){b.innerHTML=`
+    <div class="dz" id="impDz" onclick="document.getElementById('impFile').click()" ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')" ondrop="impDrop(event)">
+      <div class="big">📂</div><div style="font-weight:700">${L('Drop a file here or click to browse','أفلت ملفاً هنا أو انقر للاستعراض')}</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:6px">${L('The AI detects the type, maps columns, validates, and previews before anything is written.','يكشف الذكاء الاصطناعي النوع ويربط الأعمدة ويتحقق ويعاين قبل أي كتابة.')}</div>
+      <div class="fmts">${IMP_FORMATS.map(x=>`<span>${x}</span>`).join('')}</div>
+    </div>
+    <div style="text-align:center;font-size:12px;color:var(--muted);margin-top:14px">${L('Or try a sample:','أو جرّب عينة:')}</div>
+    <div class="samples">${Object.keys(SAMPLES).map(k=>`<button class="minibtn gh" onclick="impLoadSample('${k}')">📄 ${k}</button>`).join('')}</div>`;
+    f.innerHTML=`<button class="minibtn gh" onclick="closeImport()">${L('Cancel','إلغاء')}</button><span style="font-size:11px;color:var(--muted);align-self:center">${L('Step 1 of 7','خطوة ١ من ٧')}</span>`;
+  }
+  else if(S===1){const t=IMP.type;b.innerHTML=`
+    <div class="detbox"><div class="ic">${impIcon(t)}</div><div style="flex:1">
+      <div style="font-size:12px;color:var(--muted)">${L('Detected file type','نوع الملف المكتشف')}</div>
+      <div style="font-size:19px;font-weight:800">${t}</div>
+      <div class="conf"><div style="width:${IMP.conf}%"></div></div>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px">${L('Confidence','الثقة')} ${IMP.conf}% · ${IMP.fname} · ${IMP.rows.length} ${L('rows','صف')}</div>
+    </div></div>
+    <div style="margin-top:14px;font-size:12.5px">${L('Wrong? Override the type:','خطأ؟ غيّر النوع:')}
+      <select onchange="IMP.type=this.value;impRender()" style="background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:7px;font-size:12px;margin-inline-start:8px">
+        ${IMP_TYPES.map(x=>`<option ${x===t?'selected':''}>${x}</option>`).join('')}</select></div>`;
+    impFoot2();
+  }
+  else if(S===2){const rows=IMP.headers.map(h=>{const c=IMP.map[h];return `<div class="maprow"><div><b>${h}</b><div style="font-size:10px;color:var(--muted)">${(IMP.rows[0]&&IMP.rows[0][IMP.headers.indexOf(h)])||''}</div></div><div style="text-align:center;color:var(--muted)">→</div>
+    <select onchange="IMP.map['${h.replace(/'/g,'')}']=this.value===' '?null:this.value">
+      <option value=" ">${L('— skip —','— تجاهل —')}</option>
+      ${Object.keys(CANON_LABEL).map(k=>`<option value="${k}" ${c===k?'selected':''}>${CANON_LABEL[k]}</option>`).join('')}</select>
+    <span class="maptag ${c?'c-ok':'c-block'}">${c?L('auto','تلقائي'):L('none','لا')}</span></div>`;}).join('');
+    const auto=IMP.headers.filter(h=>IMP.map[h]).length;
+    b.innerHTML=`<div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">${L('AI mapped','ربط الذكاء')} <b style="color:var(--txt)">${auto}/${IMP.headers.length}</b> ${L('columns automatically. Adjust any if needed.','عموداً تلقائياً. عدّل عند الحاجة.')}</div>${rows}`;
+    impFoot2();
+  }
+  else if(S===3){const v=impValidate();b.innerHTML=`
+    <div class="statgrid"><div class="s"><div class="n">${IMP.rows.length}</div><div class="l">${L('Total rows','إجمالي الصفوف')}</div></div>
+    <div class="s"><div class="n" style="color:var(--ok)">${v.ok}</div><div class="l">${L('Valid','صالح')}</div></div>
+    <div class="s"><div class="n" style="color:var(--bad)">${v.errs.length}</div><div class="l">${L('Errors','أخطاء')}</div></div>
+    <div class="s"><div class="n" style="color:var(--warn)">${v.warns.length}</div><div class="l">${L('Warnings','تحذيرات')}</div></div>
+    <div class="s"><div class="n" style="color:var(--accent)">${v.dups}</div><div class="l">${L('Duplicates','مكرر')}</div></div></div>
+    <div style="margin-top:14px;font-size:12.5px;max-height:180px;overflow:auto">${[...v.errs.map(e=>`<div class="logrow"><span>❌ ${e}</span></div>`),...v.warns.map(w=>`<div class="logrow"><span>⚠️ ${w}</span></div>`)].join('')||`<div style="color:var(--ok)">✅ ${L('No problems found — clean data.','لا مشاكل — بيانات نظيفة.')}</div>`}</div>
+    ${v.dups>0?`<div style="margin-top:12px;font-size:12.5px">${L('Duplicate handling:','معالجة التكرار:')} <span class="segtog">${['skip','replace','merge','create new'].map(m=>`<button class="${IMP.dup===m?'on':''}" onclick="IMP.dup='${m}';impRender()">${L(m,{skip:'تجاهل',replace:'استبدال',merge:'دمج','create new':'إنشاء جديد'}[m])}</button>`).join('')}</span></div>`:''}
+    <div style="margin-top:12px;font-size:11.5px;color:var(--muted)">🧹 ${L('AI data cleaning applied','تنظيف البيانات بالذكاء')}: ${v.cleaned} ${L('fields normalized (spacing, case, phone, dates).','حقلاً طُبّع (مسافات، أحرف، هواتف، تواريخ).')}</div>`;
+    impFoot2(v.errs.length===0||IMP.dup!=='');
+  }
+  else if(S===4){const st=impStats();IMP.stats=st;b.innerHTML=`
+    <div class="statgrid"><div class="s"><div class="n">${st.total}</div><div class="l">${L('Total','الإجمالي')}</div></div>
+    <div class="s"><div class="n" style="color:var(--ok)">${st.success}</div><div class="l">${L('Will import','سيُستورد')}</div></div>
+    <div class="s"><div class="n" style="color:var(--bad)">${st.failed}</div><div class="l">${L('Skipped','متخطى')}</div></div>
+    <div class="s"><div class="n" style="color:var(--accent)">${st.dups}</div><div class="l">${L('Duplicates','مكرر')}</div></div>
+    <div class="s"><div class="n" style="color:var(--brand2)">${st.changes}</div><div class="l">${L('Changes','تغييرات')}</div></div></div>
+    <div style="margin-top:14px;font-size:12.5px"><b>${L('Estimated effect','الأثر المقدّر')} — ${IMP.type}:</b><br>${st.effect}</div>
+    ${IMP.type==='Bank Statement'?impBankPreview():impTablePreview()}`;
+    impFoot2(true,L('Confirm & Import','تأكيد واستيراد'));
+  }
+  else if(S===5){b.innerHTML=`
+    <div style="text-align:center;padding:10px 0"><div style="font-size:13px;font-weight:700;margin-bottom:12px" id="impProgTxt">${L('Importing…','جارٍ الاستيراد…')}</div>
+    <div class="prog"><div id="impProgBar"></div></div>
+    <div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--muted);margin-top:8px"><span id="impProgPct">0%</span><span id="impProgEta">ETA —</span></div>
+    <div style="font-size:11px;color:var(--muted);margin-top:16px">${L('Running as a background job in batches — the UI stays responsive.','يعمل كمهمة خلفية على دفعات — الواجهة تبقى مستجيبة.')}</div></div>`;
+    f.innerHTML=`<button class="minibtn gh" onclick="impCancel()">${L('Cancel','إلغاء')}</button><span></span>`;
+    startImport();
+  }
+  else if(S===6){const st=IMP.stats||{success:0,failed:0,dups:0};b.innerHTML=`
+    <div style="text-align:center;padding:6px 0"><div style="font-size:44px">✅</div><div style="font-size:18px;font-weight:800;margin:6px 0">${L('Import complete','اكتمل الاستيراد')}</div>
+    <div style="font-size:13px;color:var(--muted)">${st.success} ${L('records imported','سجلاً مستورداً')} · ${st.failed} ${L('skipped','متخطى')} · ${st.dups} ${L('duplicates handled','مكرر عولج')}</div></div>
+    <div class="card" style="margin-top:14px;font-size:12.5px;background:var(--panel2)">🔄 ${L('Synced to','تمت المزامنة مع')}: ${L('Inventory · General Ledger · P&L · AP/AR · Dashboard KPIs · AI Insights · Global Search','المخزون · الأستاذ العام · الأرباح · الذمم · مؤشرات اللوحة · رؤى الذكاء · البحث')}. ${L('Everything updated automatically.','تحدّث كل شيء تلقائياً.')}</div>
+    <div style="font-size:11.5px;color:var(--muted);margin-top:10px">↩️ ${L('This import can be fully rolled back from History.','يمكن التراجع الكامل عن هذا الاستيراد من السجل.')}</div>`;
+    f.innerHTML=`<button class="minibtn gh" onclick="impTab('hist')">${L('View History','عرض السجل')}</button><button class="minibtn" onclick="closeImport()">${L('Done','تم')}</button>`;
+  }
+}
+function impIcon(t){return t==='Bank Statement'?'🏦':t==='Inventory'||t==='Stock Count'?'📦':t==='Customers'||t==='Loyalty Members'?'🧑':t==='Sales'?'🧾':t==='Suppliers'?'🏭':t==='Payments'?'💳':'📄';}
+function impFoot2(nextOk=true,nextLabel){const f=document.getElementById('impFoot');
+  f.innerHTML=`<button class="minibtn gh" onclick="impBack()">${L('Back','رجوع')}</button>
+   <button class="minibtn" ${nextOk?'':'disabled style="opacity:.4"'} onclick="impNext()">${nextLabel||L('Next','التالي')} →</button>`;}
+function impBack(){if(IMP.step>0){IMP.step--;impRender();}}
+function impNext(){if(IMP.step===4){IMP.step=5;impRender();return;}if(IMP.step<6){IMP.step++;impRender();}}
+
+// ---- file handling ----
+function impDrop(e){e.preventDefault();e.currentTarget.classList.remove('drag');const f=e.dataTransfer.files;impFilePicked(f);}
+function impFilePicked(files){if(!files||!files.length)return;const file=files[0];const ext=(file.name.split('.').pop()||'').toUpperCase();
+  IMP.fname=file.name;IMP.fmt=ext;
+  if(ext==='CSV'||ext==='TXT'){const r=new FileReader();r.onload=()=>{try{const p=parseCSV(r.result);IMP.headers=p.headers;IMP.rows=p.rows;afterParse();}catch(err){toast('⚠️ '+L('Could not parse file','تعذّر تحليل الملف'),'bad');}};r.readAsText(file);}
+  else{ // binary formats: use the closest sample as a stand-in (real parsing happens server-side)
+    const guess=/mt940|camt|ofx|qbo|qif|statement|bank/i.test(file.name)?'Bank Statement':/cust|member|client/i.test(file.name)?'Customers':'Inventory';
+    const s=SAMPLES[guess];IMP.headers=s.headers.slice();IMP.rows=s.rows.map(r=>r.slice());toast('🤖 '+L('Binary format — parsed by AI engine (demo uses sample rows)','صيغة ثنائية — حُلّلت بمحرّك الذكاء (العرض يستخدم عينة)'),'info');afterParse();}
+}
+function impLoadSample(kind){const s=SAMPLES[kind];IMP.fname=s.name;IMP.fmt=s.fmt;IMP.headers=s.headers.slice();IMP.rows=s.rows.map(r=>r.slice());afterParse();}
+function parseCSV(text){const lines=text.replace(/\r/g,'').split('\n').filter(l=>l.trim().length);const headers=splitCSVLine(lines[0]);const rows=lines.slice(1).map(splitCSVLine);return {headers,rows};}
+function splitCSVLine(l){const out=[];let cur='',q=false;for(let i=0;i<l.length;i++){const c=l[i];if(c==='"'){q=!q;}else if(c===','&&!q){out.push(cur);cur='';}else cur+=c;}out.push(cur);return out.map(s=>s.trim());}
+function afterParse(){runDetect();IMP.map={};IMP.headers.forEach(h=>IMP.map[h]=mapHeader(h));IMP.step=1;impRender();}
+function runDetect(){const cols=IMP.headers.map(mapHeader);const has=k=>cols.includes(k);const ext=(IMP.fmt||'').toUpperCase();
+  let type='Products',conf=62;
+  if(['OFX','QBO','QIF','MT940','CAMT.053','CAMT'].includes(ext)||(has('date')&&has('amount')&&has('balance'))||/bank|statement/i.test(IMP.fname||'')){type='Bank Statement';conf=97;}
+  else if(has('sku')&&has('qty')){type='Inventory';conf=94;}
+  else if(has('barcode')&&has('qty')){type='Inventory';conf=90;}
+  else if(has('customer')||(has('name')&&has('phone'))||(has('name')&&has('email'))){type='Customers';conf=88;}
+  else if(has('supplier')&&!has('qty')){type='Suppliers';conf=83;}
+  else if(has('invoice')&&has('amount')){type='Sales';conf=86;}
+  else if(has('sku')||has('price')){type='Price List';conf=74;}
+  IMP.type=type;IMP.conf=conf;}
+
+// ---- validation + cleaning ----
+function impValidate(){const errs=[],warns=[];let cleaned=0;const idx=h=>IMP.headers.findIndex(x=>IMP.map[x]===h);
+  const seen={};let dups=0;
+  const skuI=idx('sku'),qtyI=idx('qty'),bcI=idx('barcode'),nameI=idx('name'),dateI=idx('date'),amtI=idx('amount'),costI=idx('cost'),priceI=idx('price');
+  IMP.rows.forEach((r,i)=>{const rn=i+2;
+    if(r.every(c=>!String(c).trim())){warns.push(L('Row','صف')+' '+rn+': '+L('empty row removed','صف فارغ أُزيل'));return;}
+    if(IMP.type==='Inventory'||IMP.type==='Products'||IMP.type==='Price List'||IMP.type==='Stock Count'){
+      if(skuI>=0&&!String(r[skuI]||'').trim())errs.push(L('Row','صف')+' '+rn+': '+L('missing SKU','SKU مفقود'));
+      if(qtyI>=0&&Number(r[qtyI])<0)errs.push(L('Row','صف')+' '+rn+': '+L('negative inventory','مخزون سالب')+' ('+r[qtyI]+')');
+      if(bcI>=0&&r[bcI]&&!/^\d{8,14}$/.test(String(r[bcI]).trim()))warns.push(L('Row','صف')+' '+rn+': '+L('barcode looks invalid','باركود غير صالح')+' ('+r[bcI]+')');
+      if(costI>=0&&priceI>=0&&Number(r[priceI])<Number(r[costI]))warns.push(L('Row','صف')+' '+rn+': '+L('price below cost','السعر أقل من التكلفة'));
+      const key=String(r[skuI]||r[nameI]||'').toLowerCase().trim();if(key){if(seen[key])dups++;seen[key]=1;}
+    }
+    if(IMP.type==='Bank Statement'){
+      if(dateI>=0&&isNaN(Date.parse(r[dateI])))errs.push(L('Row','صف')+' '+rn+': '+L('invalid date','تاريخ غير صالح'));
+      if(amtI>=0&&isNaN(Number(r[amtI])))errs.push(L('Row','صف')+' '+rn+': '+L('non-numeric amount','مبلغ غير رقمي'));
+    }
+    // cleaning counts
+    if(nameI>=0&&r[nameI]&&r[nameI]!==r[nameI].trim().replace(/\s+/g,' '))cleaned++;
+  });
+  return {errs,warns,dups,ok:IMP.rows.length-errs.length,cleaned:cleaned+Math.round(IMP.rows.length*0.3)};}
+function impStats(){const v=impValidate();const success=IMP.rows.length-v.errs.length-(IMP.dup==='skip'?v.dups:0);
+  let effect='';const n=success;
+  if(IMP.type==='Inventory'||IMP.type==='Products')effect=`+${Math.max(0,n-2)} ${L('new products','منتج جديد')}, ~2 ${L('updated; inventory value +','محدّث؛ قيمة المخزون +')}${money(n*140)}; ${L('avg cost & reorder levels recalculated.','متوسط التكلفة ومستويات إعادة الطلب أُعيد حسابها.')}`;
+  else if(IMP.type==='Bank Statement')effect=`${n} ${L('transactions categorized & matched; GL, cash flow, AP/AR updated.','معاملة صُنّفت وطوبقت؛ حُدّث الأستاذ والتدفق النقدي والذمم.')}`;
+  else if(IMP.type==='Customers')effect=`+${Math.max(0,n-1)} ${L('customers; loyalty balances merged.','عميل؛ دُمجت أرصدة الولاء.')}`;
+  else effect=`${n} ${L('records posted to the ledger and indexed for search.','سجلاً رُحّل وفُهرس للبحث.')}`;
+  return {total:IMP.rows.length,success,failed:v.errs.length,dups:v.dups,changes:n,effect};}
+function impTablePreview(){const cols=IMP.headers.slice(0,6);const rows=IMP.rows.slice(0,5);
+  return `<div style="margin-top:12px;overflow:auto"><table><thead><tr>${cols.map(h=>`<th>${h}${IMP.map[h]?' <span style="color:var(--ok)">•</span>':''}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map((h,i)=>`<td>${r[i]??''}</td>`).join('')}</tr>`).join('')}</tbody></table><div style="font-size:11px;color:var(--muted);margin-top:6px">${L('Showing first 5 rows','عرض أول ٥ صفوف')}</div></div>`;}
+function impBankPreview(){const dI=IMP.headers.findIndex(h=>IMP.map[h]==='date'),desc=IMP.headers.findIndex(h=>{const n=normH(h);return n.includes('desc')||n.includes('narration')||n==='description';}),aI=IMP.headers.findIndex(h=>IMP.map[h]==='amount');
+  const rows=IMP.rows.slice(0,8).map(r=>{const amt=Number(r[aI]);const cat=categorize(r[desc]);const typ=bankTxnType(amt,r[desc]);const matched=cat!=='Uncategorized';
+    return `<tr><td>${r[dI]||''}</td><td style="max-width:160px">${r[desc]||''}</td><td style="color:${amt<0?'var(--bad)':'var(--ok)'}"><b>${money2(Math.abs(amt))}</b></td><td><span class="chip c-sent">${typ}</span></td><td>${matched?`<span class="chip c-ok">${cat}</span>`:`<span class="chip c-low">${L('review','مراجعة')}</span>`}</td></tr>`;}).join('');
+  return `<div style="margin-top:12px;overflow:auto"><table><thead><tr><th>${L('Date','التاريخ')}</th><th>${L('Description','الوصف')}</th><th>${L('Amount','المبلغ')}</th><th>${L('Type','النوع')}</th><th>${L('AI Category → Match','فئة الذكاء → مطابقة')}</th></tr></thead><tbody>${rows}</tbody></table><div style="font-size:11px;color:var(--muted);margin-top:6px">🧠 ${L('Categories learned from your history; corrections make it smarter.','الفئات مُتعلّمة من سجلك؛ التصحيحات تجعلها أذكى.')}</div></div>`;}
+
+// ---- background import ----
+let impTimer=null;
+function startImport(){IMP.importing=true;IMP.cancel=false;const total=IMP.rows.length;const t0=Date.now();let done=0;const batch=Math.max(1,Math.round(total/12));
+  impTimer=setInterval(()=>{if(IMP.cancel){clearInterval(impTimer);return;}
+    done=Math.min(total,done+batch);const pct=Math.round(done/total*100);const el=Date.now()-t0;const eta=done?Math.max(0,Math.round((el/done)*(total-done)/1000*10)/10):0;
+    const bar=document.getElementById('impProgBar'),pctEl=document.getElementById('impProgPct'),etaEl=document.getElementById('impProgEta'),txt=document.getElementById('impProgTxt');
+    if(bar)bar.style.width=pct+'%';if(pctEl)pctEl.textContent=pct+'% · '+done+'/'+total;if(etaEl)etaEl.textContent='ETA '+eta+'s';if(txt)txt.textContent=L('Importing…','جارٍ الاستيراد…')+' '+L('batch','دفعة')+' '+Math.ceil(done/batch);
+    if(done>=total){clearInterval(impTimer);setTimeout(applyImport,250);}
+  },200);
+}
+function impCancel(){IMP.cancel=true;clearInterval(impTimer);IMP.importing=false;toast('✋ '+L('Import cancelled — nothing was written','أُلغي الاستيراد — لم يُكتب شيء'),'warn');IMP.step=4;impRender();}
+function applyImport(){const st=IMP.stats||impStats();
+  // reflect into the app: add to history, refresh dashboard + search index conceptually
+  IMPHIST.unshift({file:IMP.fname||'import',user:(document.getElementById('roleSel')?.value||'owner'),date:'Jul 1',rows:st.success,failed:st.failed,warn:0,dur:((IMP.rows.length/50+1.5).toFixed(1))+'s',rolled:false});
+  IMP.importing=false;IMP.step=6;impRender();renderDash();
+  toast('✅ '+L('Imported','استُورد')+' '+st.success+' '+L('records · dashboard updated','سجلاً · حُدّثت اللوحة'),'ok');
+}
+// ---- history + rollback ----
+function impHistHTML(){if(!IMPHIST.length)return `<div style="text-align:center;color:var(--muted);padding:40px">${L('No imports yet.','لا استيرادات بعد.')}</div>`;
+  return `<table><thead><tr><th>${L('File','الملف')}</th><th>${L('User','المستخدم')}</th><th>${L('Date','التاريخ')}</th><th>${L('Rows','صفوف')}</th><th>${L('Failed','فشل')}</th><th>${L('Duration','المدة')}</th><th></th></tr></thead><tbody>${IMPHIST.map((h,i)=>`<tr><td><b>${h.file}</b></td><td>${h.user}</td><td>${h.date}</td><td style="color:var(--ok)">${h.rows}</td><td style="color:${h.failed?'var(--bad)':'var(--muted)'}">${h.failed}</td><td>${h.dur}</td><td>${h.rolled?`<span class="chip c-block">${L('rolled back','متراجع')}</span>`:`<button class="minibtn gh" onclick="impRollback(${i})">↩️ ${L('Rollback','تراجع')}</button>`}</td></tr>`).join('')}</tbody></table>
+  <div style="font-size:11px;color:var(--muted);margin-top:10px">${L('Each import is atomic and fully reversible — rollback restores the exact previous state and writes an audit entry.','كل استيراد ذرّي وقابل للتراجع الكامل — يعيد الحالة السابقة بدقة ويكتب قيد تدقيق.')}</div>`;}
+function impRollback(i){IMPHIST[i].rolled=true;impRender();renderDash();toast('↩️ '+L('Rolled back — previous state restored & audit logged','تم التراجع — استُعيدت الحالة السابقة وسُجّل التدقيق'),'ok');}
+
+renderAll();
+</script>
+</body>
+</html>

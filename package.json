@@ -1,0 +1,12 @@
+{
+  "name": "smokestack",
+  "version": "1.0.0",
+  "description": "SmokeStack — accounting-first ERP for U.S. smoke shops",
+  "private": true,
+  "engines": { "node": ">=18 <23" },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": { "express": "^4.19.2" }
+}
