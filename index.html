@@ -539,14 +539,15 @@ function repSeed(){let s=42;const rnd=()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul
   const dow=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];const tx=[];let id=1;
   for(let dd=200;dd>=0;dd--){const date=daysAgo(dd);const wd=dow[new Date(date).getDay()];const we=(wd==='Fri'||wd==='Sat')?1.3:1;
     STORES.forEach((store,si)=>{const sf=[1,1.6,1.15][si]||1;
-      for(let k=0;k<2+Math.floor(rnd()*3);k++){const p=pick(products);const qty=1+Math.floor(rnd()*3);const base=p[3]*qty;const hour=9+Math.floor(rnd()*12);const amt=+(base*sf*we).toFixed(0);
+      for(let k=0;k<9+Math.floor(rnd()*8);k++){const p=pick(products);const qty=1+Math.floor(rnd()*4);const base=p[3]*qty;const hour=9+Math.floor(rnd()*12);const amt=+(base*sf*we).toFixed(0);
         tx.push({id:id++,date,store,employee:pick(EMPLOYEES).name,account:pick(['Cash','Cash','Checking','Credit Card']),type:'sale',amount:amt,tax:+(amt*0.0825/1.0825).toFixed(2),product:p[0],prodCat:p[1],category:'Sales',hour,weekday:wd,discount:rnd()<0.15?Math.round(amt*0.1):0,void:rnd()<0.02,customer:pick(custs),vendor:null});}
-      if(rnd()<0.5){const c=pick(['Utilities','Rent','Supplies','Marketing','Bank Charges']);tx.push({id:id++,date,store,account:'Checking',type:'expense',amount:c==='Rent'?2500:Math.round(60+rnd()*400),category:c,weekday:wd,tax:0});}
-      if(rnd()<0.35)tx.push({id:id++,date,store,account:'Business Bank',type:'purchase',amount:Math.round(500+rnd()*4500),vendor:pick(VENDORS),category:'Inventory Purchase',weekday:wd,tax:0});
+      if(rnd()<0.22){const c=pick(['Utilities','Supplies','Marketing','Bank Charges']);tx.push({id:id++,date,store,account:'Checking',type:'expense',amount:Math.round(60+rnd()*340),category:c,weekday:wd,tax:0});}
+      if(dd%30===0)tx.push({id:id++,date,store,account:'Checking',type:'expense',amount:2500,category:'Rent',weekday:wd,tax:0});
+      if(rnd()<0.16)tx.push({id:id++,date,store,account:'Business Bank',type:'purchase',amount:Math.round(300+rnd()*1400),vendor:pick(VENDORS),category:'Inventory Purchase',weekday:wd,tax:0});
       if(rnd()<0.2)tx.push({id:id++,date,store,account:'Business Bank',type:'deposit',amount:Math.round(1000+rnd()*4000),category:'Cash Deposit',weekday:wd,tax:0});
       if(rnd()<0.06)tx.push({id:id++,date,store,employee:pick(EMPLOYEES).name,account:'Cash',type:'refund',amount:Math.round(20+rnd()*120),category:'Refund',product:pick(products)[0],weekday:wd,tax:0});
     });
-    if(dd%14===0)STORES.forEach(store=>tx.push({id:id++,date,store,account:'Checking',type:'payroll',amount:2500,category:'Payroll',weekday:wd,tax:0}));
+    if(dd%14===0)STORES.forEach(store=>tx.push({id:id++,date,store,account:'Checking',type:'payroll',amount:1500,category:'Payroll',weekday:wd,tax:0}));
   }
   REP.tx=tx;
   REP.products=products.map(p=>{const sold=tx.filter(x=>x.type==='sale'&&x.product===p[0]).length;const rev=tx.filter(x=>x.type==='sale'&&x.product===p[0]).reduce((a,x)=>a+x.amount,0);const stock=Math.max(0,Math.round(rnd()*200)-25);return {name:p[0],cat:p[1],cost:p[2],price:p[3],sold,rev,stock,reorder:25,value:Math.round(stock*p[2]),adj:Math.round((rnd()-0.5)*12),turnover:+(sold/(stock+10)).toFixed(2)};});
