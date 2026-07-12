@@ -1108,7 +1108,8 @@ function copParse(text){const d=text.toLowerCase().trim();const amount=parseAmou
   if(/\bclock\s*(in|out)\b/.test(d))return {kind:'command',cmd:'clock',dir:/in/.test(d)?'In':'Out',store};
   if(/(reverse|undo|delete|remove)\b/.test(d))return {kind:'command',cmd:'reverse',target:/expense/.test(d)?'expense':/sale/.test(d)?'sale':/purchase/.test(d)?'purchase':null};
   if(/(fix|edit|correct|change)\b/.test(d)&&/(transaction|entry|expense|sale|yesterday|last)/.test(d))return {kind:'command',cmd:'fix',period:copPeriod(d)};
-  if(/\bcompare\b/.test(d))return {kind:'command',cmd:'compare'};
+  /* "compare" is deliberately NOT a command any more — the ERP brain's comparison
+     understands named entities, periods, margin and profit, not just this week's stores. */
   // 2) question by structure
   if(/\?/.test(d)||/^(what|show|how|generate|display|list|give me|tell me|when|why|which|view)\b/.test(d))return {kind:'question',period:copPeriod(d),text:d};
   // 3) amount present => it's a transaction
@@ -1156,9 +1157,14 @@ function copRespond(text){
     if(p.step==='amount'){const amt=parseAmount(text);if(amt){p.amount=amt;return copAdvance();}}
   }
   const r=copParse(text);
+  // Writing to the books always wins over analysing them: an explicit amount + a transaction
+  // verb ("we sold 6,200 today") must post an entry, not be answered as a revenue question.
   if(r.kind==='command')return copCommand(r);
-  if(r.kind==='question')return copSay(copAnswer(r,text),{actions:copAnswerActions(text)});
-  if(r.kind==='unknown')return copSay("I can log **sales, expenses, purchases, deposits, transfers, refunds and payroll** — or answer questions like *“profit this month”* or *“compare stores”*. Try: `Store B electricity 320`.",{chips:{field:'shortcut',items:["Show today's sales","Compare stores","Generate tax report"]}});
+  if(r.kind!=='transaction'){
+    if(brainRespond(text))return;                        // the ERP brain handles questions, analysis, actions
+    if(r.kind==='question')return copSay(copAnswer(r,text),{actions:copAnswerActions(text)});
+    if(r.kind==='unknown')return copSay("I didn't catch that one. I can **analyse** the business (*“why is my profit lower?”*, *“compare Store A and Store C”*, *“what's almost out of stock?”*) or **post entries** (*“Store B electricity 320”*). I'd rather ask than guess.",{chips:{field:'shortcut',items:["What should I focus on today?","Compare stores","What should I reorder?"]}});
+  }
   // transaction
   COP.pending={intent:r.intent,amount:r.amount,store:r.store,account:r.account,category:r.category,vendor:r.vendor,desc:r.desc,date:r.date,step:null};
   return copAdvance();
@@ -1227,7 +1233,8 @@ function copBindStream(){const el=document.getElementById('copStream');
   el.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(!b)return;const a=b.dataset;
     ({chip:()=>copAnswerField(a.field,a.val),save:()=>copCommit(),cancel:()=>copCancel(),undo:()=>copUndo(a.txid),dup:()=>copDup(a.txid),
       opentx:()=>{go(COP.lastTx&&COP.lastTx.type==='sale'?'sales':COP.lastTx&&COP.lastTx.type==='purchase'?'purchases':'expenses');toast('Opened transaction');},
-      ledger:()=>{go('dash');toast('Opened ledger');},report:()=>{go('reports');},pdf:()=>toast('PDF generated & ready to email'),
+      ledger:()=>{go('dash');toast('Opened ledger');},report:()=>{go('reports');},pdf:()=>toast('Export generated & ready to send'),
+      nav:()=>{const v=a.val;if(ERP_GRAPH[v]&&ERP_GRAPH[v].live===false){toast(ERP_GRAPH[v].name+' ships in Version 2');return;}go(v);toast('Opened '+(ERP_GRAPH[v]?ERP_GRAPH[v].name:v));},
       copy:()=>copCopy(a.mid),editmsg:()=>copEditMsg(a.mid),retry:()=>copRetry(),fixpick:()=>copOpenEdit(a.txid),shortcut:()=>copSubmitText(a.val)}[a.act]||(()=>{}))();});
   el.addEventListener('change',e=>{const f=e.target.dataset.field;if(!f||!COP.pending)return;COP.pending[f]=e.target.type==='number'?+e.target.value:e.target.value;
     const msg=[...COP.msgs].reverse().find(m=>m.card);if(msg){msg.card=copPreviewCard(COP.pending);copRender();}});
@@ -1303,12 +1310,483 @@ function copBindSide(){const el=document.getElementById('copSide');
     if(tmpl){const ta=document.getElementById('copTa');ta.value=tmpl.dataset.tmpl;ta.focus();copOnInput();return;}
     if(row){copSubmitText(row.dataset.val);}});}
 
-function copGreet(){copSay("Hi Hassan — I'm your accounting copilot. Tell me what happened in plain English and I'll draft the entry, ask only what I need, and post it to your books.\n\nTry: **Store B electricity 320**, **We sold $8,420 today**, or **profit this month**.");
+function copGreet(){copSay("Hi Hassan. I read the same ledger your Dashboard and Reports read — "+LEDGER.length.toLocaleString()+" transactions across "+STORES.length+" stores — so we'll never disagree on a number.\n\n**Ask me about the business:** *“Why is my profit lower?”* · *“What did Store B spend this month?”* · *“What's almost out of stock?”* · *“Which employee sold the most?”*\n\n**Or tell me what happened** and I'll draft the entry: *“Store B electricity 320”*. I never post anything without showing you a draft first.",
+    {chips:{field:'shortcut',items:["What should I focus on today?","Why is my profit lower?","What should I reorder?"]}});
   const ins=copInsights()[0];if(ins)setTimeout(()=>copSay(`One thing worth a look:`,{card:`<div class="cop-card insight"><div class="ch"><span class="ct">${ins.i} Insight</span></div><div style="font-size:13.5px">${copFmt(ins.t)}</div></div>`,actions:[{label:"Show today's sales",act:'shortcut',val:"Show today's sales"}]}),700);}
 function copInit(){copBindStream();copBindMenu();copBindFiles();copBindSide();
   const ta=document.getElementById('copTa');ta.addEventListener('input',copOnInput);ta.addEventListener('keydown',copKeys);
   document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){const ai=document.getElementById('v-ai');if(ai&&ai.classList.contains('on')){e.preventDefault();copOpenCmd();}}});
   copSide();copGreet();}
+
+/* ==================================================================================
+   ERP BRAIN — the intelligence layer.
+   Every number it says is COMPUTED from the same warehouse the UI renders (LEDGER === REP.tx).
+   It never invents data: if a fact is not in the warehouse it says so and offers a next step.
+   ================================================================================== */
+
+// ---- 1. Knowledge graph: what every module is, holds, measures and connects to ----
+const ERP_GRAPH={
+  dash:{name:'Dashboard',live:true,purpose:'The daily control tower — today\'s sales, cash, bank, expenses, profit, tax payable and what needs attention.',
+        metrics:['sales today','sales this week','cash balance','bank balance','expenses MTD','profit MTD','tax payable','purchases MTD'],rel:['sales','expenses','purchases','tax','recon']},
+  ai:{name:'Ask Claude',live:true,purpose:'Conversational front door to the whole ERP — ask, analyse, or post entries in plain English.',metrics:[],rel:['*']},
+  sales:{name:'Daily Sales',live:true,purpose:'Report each store\'s daily cash + card takings. Sales tax is computed automatically.',
+        metrics:['revenue','transactions','sales tax collected','sales by store','sales by product','sales by employee'],rel:['tax','dash','reports','payroll']},
+  expenses:{name:'Expenses',live:true,purpose:'Operating costs: utilities, rent, supplies, marketing, bank charges.',metrics:['expenses','expense by category','expense trend'],rel:['dash','recon','reports']},
+  purchases:{name:'Purchases',live:true,purpose:'Money paid to suppliers for stock. This is your cost of goods.',metrics:['purchases','spend by vendor','vendor orders'],rel:['recon','reports','inventory']},
+  recon:{name:'Bank Reconciliation',live:true,purpose:'Match bank lines to your books; anything unmatched becomes a one-tap entry.',metrics:['matched','unmatched','bank balance'],rel:['expenses','purchases','dash']},
+  tax:{name:'Sales Tax',live:true,purpose:'Taxable sales, rate by state, tax collected and payable, with the filing date.',metrics:['taxable sales','tax rate','tax collected','tax payable'],rel:['sales','dash','reports']},
+  payroll:{name:'Payroll',live:true,purpose:'Gross pay, employer FICA (7.65%), unemployment (~2%), net pay, and posting a payroll run.',metrics:['gross payroll','employer tax','net pay','total labour cost'],rel:['expenses','employees','dash']},
+  reports:{name:'Report Center',live:true,purpose:'90 reports across Financial, Sales, Expenses, Purchasing, Inventory, Customers, Vendors, Employees, Cash, Tax and AI Insights.',metrics:['P&L','trends','rankings','drill-down'],rel:['*']},
+  telegram:{name:'Telegram',live:true,purpose:'Employees clock in/out and report sales from chat; the bot writes to the same books.',metrics:['clock events'],rel:['payroll','sales']},
+  settings:{name:'Settings',live:true,purpose:'Stores, accounts, tax rates.',metrics:[],rel:['*']},
+  inventory:{name:'Inventory',live:false,note:'Stock levels, product costs and movement are already tracked in the warehouse, so I can answer stock questions — but the full Inventory workspace (counts, adjustments, transfers) ships in Version 2.',
+        metrics:['stock on hand','reorder point','stock value','turnover','slow movers'],rel:['purchases','sales','reports']},
+  customers:{name:'Customers',live:false,note:'Customer records exist in the reporting warehouse but the CRM module is deferred to Version 2.',metrics:['visits','spend','LTV','balance'],rel:['sales','reports']},
+  employees:{name:'Employees',live:false,note:'Employee sales, hours and pay live inside Payroll, Telegram (clock-in) and the Employees reports. A standalone Employees workspace ships in V2.',metrics:['sales per employee','gross pay','attendance'],rel:['payroll','sales','telegram']},
+  suppliers:{name:'Suppliers',live:false,note:'Vendor spend, order counts and balances are in Purchases and the Vendors reports; a dedicated Suppliers workspace ships in V2.',metrics:['spend','orders','balance'],rel:['purchases','reports']},
+  branches:{name:'Branches / Transfers',live:false,note:'Multi-store is live everywhere (every entry carries a store), but stock transfers between branches ship with Inventory in V2.',metrics:['sales by store','profit by store'],rel:['*']}
+};
+const MODULE_ALIASES={dashboard:'dash',home:'dash',sales:'sales','daily sales':'sales',revenue:'sales',expense:'expenses',expenses:'expenses',cost:'expenses',purchase:'purchases',purchases:'purchases',
+  supplier:'suppliers',suppliers:'suppliers',vendor:'suppliers',vendors:'suppliers',bank:'recon',reconciliation:'recon',recon:'recon',tax:'tax','sales tax':'tax',vat:'tax',payroll:'payroll',
+  report:'reports',reports:'reports','report center':'reports',telegram:'telegram',settings:'settings',inventory:'inventory',stock:'inventory',product:'inventory',products:'inventory',
+  customer:'customers',customers:'customers',crm:'customers',employee:'employees',employees:'employees',staff:'employees',branch:'branches',branches:'branches',store:'branches',transfers:'branches',accounting:'reports'};
+
+// ---- 2. Session memory ----
+const BRAIN={mem:{metric:null,period:null,store:null,employee:null,product:null,vendor:null,lastAnswer:null,lastPlan:null},turns:[]};
+function brainInit(){BRAIN.mem={metric:null,period:null,store:null,employee:null,product:null,vendor:null,lastAnswer:null,lastPlan:null};BRAIN.turns=[];}
+function brainRemember(p,answer){Object.keys(BRAIN.mem).forEach(k=>{if(p[k]!=null&&k!=='lastAnswer'&&k!=='lastPlan')BRAIN.mem[k]=p[k];});
+  BRAIN.mem.lastAnswer=answer;BRAIN.mem.lastPlan=p;BRAIN.turns.push({q:p._raw,a:answer});BRAIN.turns=BRAIN.turns.slice(-12);}
+
+// ---- 3. Time ----
+const D0=daysAgo(0);
+function bRange(key){const R=(a,b,label)=>({key,from:daysAgo(a),to:daysAgo(b),label});
+  switch(key){
+    case 'today':return R(0,0,'today');
+    case 'yesterday':return R(1,1,'yesterday');
+    case 'week':return R(6,0,'the last 7 days');
+    case 'lastweek':return R(13,7,'the previous 7 days');
+    case 'month':return R(29,0,'the last 30 days');
+    case 'lastmonth':return R(59,30,'the previous 30 days');
+    case 'quarter':return R(89,0,'the last 90 days');
+    case 'lastquarter':return R(179,90,'the previous 90 days');
+    case 'year':return R(199,0,'the last 200 days on file');
+    default:return R(29,0,'the last 30 days');
+  }
+}
+const PREV={today:'yesterday',yesterday:'today',week:'lastweek',month:'lastmonth',quarter:'lastquarter',year:'year',lastweek:'week',lastmonth:'month'};
+function bParsePeriod(d){
+  const m=d.match(/last\s+(\d{1,3})\s*days?/); if(m){const n=Math.min(200,+m[1]);return {key:'custom',from:daysAgo(n-1),to:D0,label:`the last ${n} days`};}
+  if(/\byesterday\b/.test(d))return bRange('yesterday');
+  if(/\btoday\b|\bso far today\b/.test(d))return bRange('today');
+  if(/last\s+(week)/.test(d))return bRange('lastweek');
+  if(/last\s+(month)/.test(d))return bRange('lastmonth');
+  if(/last\s+(quarter)/.test(d))return bRange('lastquarter');
+  if(/\bthis\s+week\b|\bweek\b|\bweekly\b|\b7\s*days?\b/.test(d))return bRange('week');
+  if(/\bthis\s+month\b|\bmonth\b|\bmonthly\b|\bmtd\b|\b30\s*days?\b/.test(d))return bRange('month');
+  if(/\bquarter\b|\bqtr\b|\bq[1-4]\b/.test(d))return bRange('quarter');
+  if(/\byear\b|\bytd\b|\bannual\b/.test(d))return bRange('year');
+  return null;
+}
+function inR(date,r){return date>=r.from&&date<=r.to;}
+
+// ---- 4. Facts (single source of truth) ----
+function bRows(p){return LEDGER.filter(x=>inR(x.date,p.period)
+  &&(!p.store||x.store===p.store)&&(!p.employee||x.employee===p.employee)
+  &&(!p.product||x.product===p.product)&&(!p.vendor||x.vendor===p.vendor)
+  &&(!p.category||x.category===p.category));}
+function bT(rows,t){return rows.filter(x=>x.type===t).reduce((a,x)=>a+x.amount,0);}
+function bCOGS(rows){const cost={};REP.products.forEach(p=>cost[p.name]=p.cost/p.price);
+  return rows.filter(x=>x.type==='sale').reduce((a,x)=>a+x.amount*(cost[x.product]!=null?cost[x.product]:0.62),0);}
+function bMetrics(rows){
+  const sales=bT(rows,'sale'),refunds=bT(rows,'refund'),net=sales-refunds;
+  const exp=bT(rows,'expense'),pay=bT(rows,'payroll'),pur=bT(rows,'purchase'),dep=bT(rows,'deposit');
+  const cogs=bCOGS(rows),gross=net-cogs;
+  return {sales,net,refunds,expenses:exp,payroll:pay,purchases:pur,deposits:dep,cogs,gross,
+    margin:net?gross/net*100:0,profit:net-exp-pay-pur,tax:rows.reduce((a,x)=>a+(x.tax||0),0),
+    txns:rows.filter(x=>x.type==='sale').length,
+    cash:rows.filter(x=>x.account==='Cash').reduce((a,x)=>a+(x.type==='sale'?x.amount:['expense','purchase','payroll','deposit','refund'].includes(x.type)?-x.amount:0),0)};
+}
+const METRIC_WORDS=[
+  [/\b(net\s+)?profit|bottom line|earnings?\b/,'profit'],[/\bgross (profit|margin)|\bmargin\b/,'margin'],
+  [/\b(revenue|sales|sold|takings|turnover|income)\b/,'sales'],[/\b(expenses?|spend|spent|costs?|overheads?)\b/,'expenses'],
+  [/\b(purchases?|cogs|cost of goods|restock|stock buys?)\b/,'purchases'],[/\b(payroll|wages|salaries|labou?r)\b/,'payroll'],
+  [/\b(taxe?s?|vat|sales tax)\b/,'tax'],[/\b(cash)\b/,'cash'],[/\b(deposits?)\b/,'deposits'],[/\b(refunds?|returns?)\b/,'refunds'],
+  [/\b(transactions?|tickets?|orders?|receipts?)\b/,'txns']];
+const METRIC_LABEL={sales:'Revenue',net:'Net revenue',profit:'Net profit',margin:'Gross margin',expenses:'Expenses',purchases:'Purchases (COGS)',payroll:'Payroll',tax:'Sales tax collected',cash:'Cash movement',deposits:'Deposits',refunds:'Refunds',txns:'Transactions',gross:'Gross profit',cogs:'Cost of goods'};
+const METRIC_HOW={
+  sales:'Sum of every `sale` line in the period.',
+  profit:'Revenue − refunds − expenses − payroll − purchases, over the same period.',
+  margin:'(Net revenue − cost of goods) ÷ net revenue. Cost of goods uses each product\'s cost/price ratio.',
+  expenses:'Sum of every `expense` line (utilities, rent, supplies, marketing, bank charges).',
+  purchases:'Sum of every `purchase` line — what you paid suppliers for stock.',
+  payroll:'Sum of every posted `payroll` run in the period.',
+  tax:'Sum of the tax component stored on each taxable sale (8.25% TX, tax-inclusive).',
+  cash:'Cash sales − cash paid out − cash deposited to the bank.',
+  refunds:'Sum of every `refund` line.',txns:'Count of sale lines.',deposits:'Sum of cash moved to the bank.'};
+function bFmt(m,v){return m==='margin'?v.toFixed(1)+'%':m==='txns'?Math.round(v).toLocaleString():money(v);}
+
+// ---- 5. Entity resolution ----
+function bStore(d){const s=STORES.find(x=>d.includes(x.toLowerCase()));if(s)return s;
+  const m=d.match(/\bstore\s+([a-z])\b/);if(m){const f=STORES.find(x=>x.toLowerCase().endsWith(' '+m[1]));if(f)return f;}return null;}
+function bEmployee(d){const e=EMPLOYEES.find(x=>d.includes(x.name.toLowerCase())||d.includes(x.name.split(' ')[0].toLowerCase()));return e?e.name:null;}
+function bProduct(d){const p=(REP.products||[]).find(x=>d.includes(x.name.toLowerCase()));return p?p.name:null;}
+function bVendor(d){const v=VENDORS.find(x=>d.includes(x.toLowerCase()));return v||null;}
+function bCategory(d){const c=EXPCATS.find(x=>d.includes(x.toLowerCase()));return c||null;}
+
+// ---- 6. NLU: intent from structure + meaning, not keywords ----
+function bIntent(d){
+  if(/^(hi|hello|hey|good (morning|evening))\b/.test(d))return 'greet';
+  if(/what (can|do) you (do|know)|help me|who are you|your capabilities/.test(d))return 'help';
+  // Specific asks are checked BEFORE the generic "what should I…" briefing, so
+  // "what should I reorder?" is a stock question, not a morning briefing.
+  if(/(almost out|low stock|running out|out of stock|reorder|re-?stock|need to (buy|order))/.test(d))return 'lowstock';
+  if(/(focus on|priorit|what should i do|my day|briefing|attention|need to know|start my day)/.test(d))return 'briefing';
+  if(/(business )?summary|how('s| is) (the )?business|overview|how are we doing|monthly summary/.test(d))return 'summary';
+  if(/^why\b|why (is|are|did|has|have)|what (caused|drove|explains)|reason/.test(d))return 'why';
+  if(/(unusual|suspicious|anomal|weird|strange|fraud|mistake|error|duplicate|out of place)/.test(d))return 'anomaly';
+  if(/(slow[- ]?moving|not selling|dead stock|sitting)/.test(d))return 'slowmovers';
+  if(/(fast[- ]?moving|best.?sell|top.?sell|most popular|hot)/.test(d))return 'topproducts';
+  if(/(unpaid|outstanding|owe(d|s)? me|receivable|payable|balance due|invoices?)/.test(d))return 'balances';
+  if(/(best|cheapest|which) supplier|supplier.*(best|price)|vendor.*(best|price)/.test(d))return 'suppliers';
+  if(/\bcompare\b|\bvs\b|\bversus\b|against each other/.test(d))return 'compare';
+  if(/(who|which) (employee|staff|worker|salesperson).*(most|best|top)|top (employee|seller|performer)|employee.*(perform|sold)/.test(d))return 'topemployee';
+  if(/(trend|over time|by (day|week|month)|growth|growing|declin)/.test(d))return 'trend';
+  if(/^(explain|what (is|are|does)|define|how (is|do you) (it |you )?(calculat|work|comput))/.test(d))return 'explain';
+  if(/^(open|go to|show me the|take me to|navigate)\b.*\b(page|module|screen|report|section|tab)?\b/.test(d)&&bModule(d))return 'navigate';
+  if(/(cash ?flow|how much cash|should i deposit)/.test(d))return 'cashflow';
+  if(/(export|download|csv|pdf|spreadsheet)/.test(d))return 'export';
+  if(/(find|search|look ?up)\b/.test(d))return 'search';
+  return null;
+}
+function bModule(d){const keys=Object.keys(MODULE_ALIASES).sort((a,b)=>b.length-a.length);
+  for(const k of keys){if(new RegExp('\\b'+k.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\b').test(d))return MODULE_ALIASES[k];}return null;}
+function bMetric(d){for(const [re,m] of METRIC_WORDS){if(re.test(d))return m;}return null;}
+
+function bPlan(text){
+  const d=text.toLowerCase().trim();
+  const p={_raw:text,intent:bIntent(d),metric:bMetric(d),period:bParsePeriod(d),store:bStore(d),employee:bEmployee(d),
+           product:bProduct(d),vendor:bVendor(d),category:bCategory(d),module:bModule(d),
+           isQuestion:/\?$/.test(d)||/^(what|how|which|who|when|where|why|show|list|give|tell|compare|find|is|are|do|does|can)\b/.test(d)};
+  // ---- ellipsis / follow-up resolution from session memory ----
+  const bare=!p.metric&&!p.intent;
+  if(!p.metric&&BRAIN.mem.metric&&(p.store||p.period||p.employee||p.product||/^(and|what about|how about|ok|also)\b/.test(d)))p.metric=BRAIN.mem.metric;
+  if(!p.period&&p.metric&&BRAIN.mem.period&&(bare||/^(and|what about|how about)\b/.test(d)))p.period=BRAIN.mem.period;
+  if(!p.period)p.period=bRange('month');
+  if(!p.intent&&p.metric)p.intent='metric';
+  if(!p.intent&&p.module)p.intent='explain';
+  return p;
+}
+
+// ---- 7. Cards ----
+function bKV(rows){return `<div class="cop-kv">${rows.map(r=>`<div class="k">${r[0]}</div><div>${r[1]}</div>`).join('')}</div>`;}
+function bCard(title,amt,rows,cls){return `<div class="cop-card ${cls||'insight'}"><div class="ch"><span class="ct">${title}</span>${amt?`<span class="cop-amt">${amt}</span>`:''}</div>${bKV(rows)}</div>`;}
+function bTable(title,head,body){return `<div class="cop-card insight"><div class="ch"><span class="ct">${title}</span></div>
+  <table class="tbl" style="margin-top:8px"><thead><tr>${head.map((h,i)=>`<th${i?' style="text-align:end"':''}>${h}</th>`).join('')}</tr></thead><tbody>
+  ${body.map(r=>`<tr>${r.map((c,i)=>`<td${i?' style="text-align:end"':''}>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;}
+function bDelta(cur,prev){if(!prev)return {txt:'no prior-period baseline',pct:null};
+  const pct=(cur-prev)/Math.abs(prev)*100;const up=pct>=0;
+  return {pct,txt:`${up?'up':'down'} ${Math.abs(pct).toFixed(1)}% vs ${money(prev)}`,up};}
+
+// ---- 8. Answer builders ----
+function bMetricAnswer(p){
+  const rows=bRows(p),M=bMetrics(rows);
+  if(!rows.length)return {text:`I have **no ${p.store?p.store+' ':''}records at all** for ${p.period.label}, so I can't give you a number rather than guess one. Widen the period or check the entry was posted.`,
+    actions:[{label:'Open Daily Sales',act:'nav',val:'sales'},{label:'Open Reports',act:'nav',val:'reports'}]};
+  const m=p.metric||'sales',v=M[m];
+  const prevKey=PREV[p.period.key];
+  let cmp=null;
+  if(prevKey){const pr=bRange(prevKey);const pm=bMetrics(bRows({...p,period:pr}));cmp={prev:pm[m],label:pr.label};}
+  const scope=p.store||(p.employee?p.employee:null)||(p.product?p.product:null)||'all stores';
+  let head=`**${METRIC_LABEL[m]}** for ${scope} in ${p.period.label} is **${bFmt(m,v)}**.`;
+  if(cmp&&cmp.prev&&m!=='margin'){const dl=bDelta(v,cmp.prev);head+=` That's ${dl.up?'**up**':'**down**'} ${Math.abs(dl.pct).toFixed(1)}% versus ${bFmt(m,cmp.prev)} in ${cmp.label}.`;}
+  const kv=[['Revenue',money(M.sales)],['Cost of goods',money(M.cogs)],['Gross profit',money(M.gross)+' ('+M.margin.toFixed(1)+'%)'],
+            ['Expenses',money(M.expenses)],['Payroll',money(M.payroll)],['Purchases',money(M.purchases)],
+            ['Net profit',`<b style="color:${M.profit>=0?'var(--ok)':'var(--bad)'}">${money(M.profit)}</b>`],['Sales tax',money(M.tax)]];
+  return {text:head+`\n\n_How I got it: ${METRIC_HOW[m]||'Summed from the ledger.'}_`,
+    card:bCard(`${cap(scope)} · ${p.period.label}`,bFmt(m,v),kv),
+    chips:{field:'shortcut',items:['Why did it change?','Compare stores','Show the trend']},
+    actions:[{label:'Open Reports',act:'nav',val:'reports'},{label:'⬇ Export',act:'pdf'}]};
+}
+function bWhy(p){
+  const m=(p.metric&&p.metric!=='txns')?p.metric:'profit';
+  const cur=bMetrics(bRows(p));
+  const prKey=PREV[p.period.key]||'lastmonth';const pr=bRange(prKey);
+  const prev=bMetrics(bRows({...p,period:pr}));
+  if(!bRows(p).length||!bRows({...p,period:pr}).length)
+    return {text:`I don't have enough history on both sides to explain a change in ${METRIC_LABEL[m]} — I'd be guessing. I need data in ${p.period.label} **and** ${pr.label}.`};
+  const drivers=[
+    ['Revenue',cur.net-prev.net,+1],['Cost of goods',cur.cogs-prev.cogs,-1],['Expenses',cur.expenses-prev.expenses,-1],
+    ['Payroll',cur.payroll-prev.payroll,-1],['Purchases',cur.purchases-prev.purchases,-1],['Refunds',cur.refunds-prev.refunds,-1]
+  ].map(([n,delta,sign])=>({n,delta,effect:delta*sign})).sort((a,b)=>Math.abs(b.effect)-Math.abs(a.effect));
+  const total=cur[m]-prev[m];
+  const dir=total>=0?'higher':'lower';
+  const top=drivers.filter(x=>Math.abs(x.effect)>1).slice(0,4);
+  // If the question assumed the wrong direction, say so plainly instead of playing along.
+  const assumedDown=/lower|drop|down|fall|decreas|worse|shrink/.test(p._raw.toLowerCase());
+  const assumedUp=/higher|increas|up|rise|rose|grow|better/.test(p._raw.toLowerCase());
+  const premise=(assumedDown&&total>0)?`Before I explain — **your premise is off**. ${METRIC_LABEL[m]} didn't fall, it *rose*. Here's the real picture:\n\n`
+              :(assumedUp&&total<0)?`Before I explain — **${METRIC_LABEL[m]} actually fell**, it didn't rise. Here's the real picture:\n\n`:'';
+  const body=premise+`**${METRIC_LABEL[m]} is ${dir}** — ${bFmt(m,prev[m])} in ${pr.label} → **${bFmt(m,cur[m])}** in ${p.period.label} (${total>=0?'+':''}${money(total)}).\n\nHere's what actually moved it, biggest first:\n`
+    +top.map(x=>`- **${x.n}** ${x.delta>=0?'rose':'fell'} ${money(Math.abs(x.delta))} → ${x.effect>=0?'helped':'hurt'} profit by ${money(Math.abs(x.effect))}`).join('\n')
+    +`\n\n${top[0]?`The single biggest factor is **${top[0].n}**.`:''}`;
+  return {text:body,card:bTable('Variance bridge',['Driver',pr.label,p.period.label,'Impact'],
+      drivers.map(x=>{const k={'Revenue':'net','Cost of goods':'cogs','Expenses':'expenses','Payroll':'payroll','Purchases':'purchases','Refunds':'refunds'}[x.n];
+        return [x.n,money(prev[k]),money(cur[k]),`<b style="color:${x.effect>=0?'var(--ok)':'var(--bad)'}">${x.effect>=0?'+':'−'}${money(Math.abs(x.effect))}</b>`];})),
+    chips:{field:'shortcut',items:['Show unusual transactions','Compare stores','What should I focus on today?']},
+    actions:[{label:'Open Reports',act:'nav',val:'reports'}]};
+}
+function bCompare(p){
+  const d=p._raw.toLowerCase();
+  const dim=/employee|staff|seller|salesperson/.test(d)?'employee':/product/.test(d)?'product':'store';
+  let keys=dim==='store'?STORES:dim==='employee'?EMPLOYEES.map(e=>e.name):(REP.products||[]).map(x=>x.name);
+  // If the user names specific entities ("compare Store A and Store C"), compare exactly those.
+  const named=keys.filter(k=>d.includes(k.toLowerCase())||(dim==='store'&&new RegExp('\\bstore\\s+'+k.slice(-1).toLowerCase()+'\\b').test(d)));
+  if(named.length>=2)keys=named;
+  const rows=keys.map(k=>{const q={...p,[dim==='store'?'store':dim]:k};const M=bMetrics(bRows(q));return {k,...M};})
+    .sort((a,b)=>b.sales-a.sales).slice(0,8);
+  if(!rows.length||!rows[0].sales)return {text:`I have no comparable data for ${p.period.label}.`};
+  const best=rows[0],worst=rows[rows.length-1];
+  const gap=best.sales-worst.sales;
+  return {text:`Comparing **${dim}s** on ${p.period.label}:\n\n**${best.k}** leads with ${money(best.sales)} revenue and ${money(best.profit)} net profit. **${worst.k}** trails at ${money(worst.sales)} — a **${money(gap)}** gap (${best.sales?((gap/best.sales)*100).toFixed(0):0}%).\n\n${best.margin>worst.margin?`${best.k} also converts better: ${best.margin.toFixed(1)}% gross margin vs ${worst.margin.toFixed(1)}%.`:`Note ${worst.k} actually holds the better margin (${worst.margin.toFixed(1)}% vs ${best.margin.toFixed(1)}%) — it's a volume problem, not a pricing one.`}`,
+    card:bTable(`${cap(dim)} comparison · ${p.period.label}`,[cap(dim),'Revenue','Costs','Net profit','Margin'],
+      rows.map(r=>[`<b>${r.k}</b>`,money(r.sales),money(r.expenses+r.payroll+r.purchases),
+        `<b style="color:${r.profit>=0?'var(--ok)':'var(--bad)'}">${money(r.profit)}</b>`,r.margin.toFixed(1)+'%'])),
+    chips:{field:'shortcut',items:['Why is the gap so big?','Show the trend','Top employee']},
+    actions:[{label:'Open Reports',act:'nav',val:'reports'}]};
+}
+function bTrend(p){
+  const m=p.metric||'sales';const days=[];const span=p.period.key==='today'||p.period.key==='yesterday'?14:Math.min(30,Math.round((new Date(p.period.to)-new Date(p.period.from))/864e5)+1);
+  for(let i=span-1;i>=0;i--){const d=daysAgo(i);const rows=LEDGER.filter(x=>x.date===d&&(!p.store||x.store===p.store));days.push([d,bMetrics(rows)[m]]);}
+  const vals=days.map(x=>x[1]);const half=Math.floor(vals.length/2);
+  const a=vals.slice(0,half).reduce((x,y)=>x+y,0)/(half||1),b=vals.slice(half).reduce((x,y)=>x+y,0)/((vals.length-half)||1);
+  const dl=bDelta(b,a);const peak=days.reduce((x,y)=>y[1]>x[1]?y:x);
+  const spark=days.map(d=>{const mx=Math.max(...vals)||1;const h=Math.round(d[1]/mx*7);return ['▁','▂','▃','▄','▅','▆','▇','█'][Math.max(0,Math.min(7,h))];}).join('');
+  return {text:`**${METRIC_LABEL[m]} trend** over the last ${span} days${p.store?' at '+p.store:''}:\n\n\`${spark}\`\n\nThe second half of the period averaged **${bFmt(m,b)}/day** versus ${bFmt(m,a)}/day in the first half — ${dl.pct!=null?`**${dl.up?'up':'down'} ${Math.abs(dl.pct).toFixed(1)}%**`:'flat'}. Best single day was **${peak[0]}** at ${bFmt(m,peak[1])}.`,
+    chips:{field:'shortcut',items:['Why did it change?','Compare stores','Open Reports']},
+    actions:[{label:'Open Reports',act:'nav',val:'reports'}]};
+}
+function bRank(p,dim){
+  const period=p.period;
+  const keys=dim==='employee'?EMPLOYEES.map(e=>e.name):dim==='product'?(REP.products||[]).map(x=>x.name):STORES;
+  const rows=keys.map(k=>{const f=LEDGER.filter(x=>inR(x.date,period)&&x.type==='sale'&&(dim==='employee'?x.employee===k:dim==='product'?x.product===k:x.store===k));
+    return {k,rev:f.reduce((a,x)=>a+x.amount,0),n:f.length};}).sort((a,b)=>b.rev-a.rev).filter(r=>r.rev>0);
+  if(!rows.length)return {text:`No ${dim} sales recorded in ${period.label}.`};
+  const top=rows[0];
+  return {text:`**${top.k}** is your top ${dim} for ${period.label} — **${money(top.rev)}** across ${top.n} transactions${rows[1]?`, ahead of ${rows[1].k} (${money(rows[1].rev)})`:''}.`,
+    card:bTable(`Top ${dim}s · ${period.label}`,[cap(dim),'Revenue','Txns','Avg'],
+      rows.slice(0,6).map(r=>[`<b>${r.k}</b>`,money(r.rev),r.n,money(r.rev/r.n)])),
+    actions:[{label:'Open Reports',act:'nav',val:'reports'}]};
+}
+function bLowStock(){
+  const low=(REP.products||[]).filter(p=>p.stock<=p.reorder).sort((a,b)=>a.stock-b.stock);
+  if(!low.length)return {text:`Nothing is below its reorder point right now — every product has stock above its threshold.`,actions:[{label:'Open Reports',act:'nav',val:'reports'}]};
+  const cost=low.reduce((a,p)=>a+(p.reorder*2-p.stock)*p.cost,0);
+  return {text:`**${low.length} product${low.length>1?'s are':' is'} at or below the reorder point.** ${low[0].stock===0?`**${low[0].name}** is completely out of stock — that's lost revenue every day it stays empty.`:`**${low[0].name}** is lowest at ${low[0].stock} units.`}\n\nRestocking all of them to 2× the reorder point costs roughly **${money(cost)}** at supplier prices.\n\n_Stock is tracked in the warehouse today; the full Inventory workspace (counts, adjustments, transfers) ships in Version 2._`,
+    card:bTable('Reorder now',['Product','On hand','Reorder at','Sold','Restock cost'],
+      low.slice(0,8).map(p=>[`<b>${p.name}</b>`,`<b style="color:${p.stock===0?'var(--bad)':'var(--warn)'}">${p.stock}</b>`,p.reorder,p.sold,money((p.reorder*2-p.stock)*p.cost)])),
+    chips:{field:'shortcut',items:['Which supplier has the best prices?','What is slow moving?','Create a purchase']},
+    actions:[{label:'Open Purchases',act:'nav',val:'purchases'}]};
+}
+function bSlow(p){
+  const list=(REP.products||[]).map(x=>({...x})).sort((a,b)=>a.turnover-b.turnover).slice(0,6);
+  const tied=list.reduce((a,x)=>a+x.value,0);
+  return {text:`These are your **slowest movers** — high stock, low sell-through. They're tying up **${money(tied)}** of cash in inventory.\n\n**${list[0].name}** is the worst: turnover ${list[0].turnover}, ${list[0].stock} units sitting on ${money(list[0].value)} of capital. Consider discounting or pausing reorders.`,
+    card:bTable('Slow movers',['Product','Turnover','On hand','Capital tied up'],
+      list.map(x=>[`<b>${x.name}</b>`,x.turnover,x.stock,money(x.value)])),
+    actions:[{label:'Open Reports',act:'nav',val:'reports'}]};
+}
+function bTopProducts(p){
+  const rows=(REP.products||[]).map(x=>{const f=LEDGER.filter(y=>y.type==='sale'&&y.product===x.name&&inR(y.date,p.period));
+    return {...x,rev:f.reduce((a,y)=>a+y.amount,0),n:f.length};}).sort((a,b)=>b.rev-a.rev).slice(0,6);
+  if(!rows[0]||!rows[0].rev)return {text:`No product sales in ${p.period.label}.`};
+  return {text:`Your **fastest movers** in ${p.period.label}: **${rows[0].name}** leads with ${money(rows[0].rev)} across ${rows[0].n} sales. ${rows[0].stock<=rows[0].reorder?`⚠️ It's also **at its reorder point** (${rows[0].stock} left) — restock before it stocks out.`:`Stock is healthy at ${rows[0].stock} units.`}`,
+    card:bTable(`Top products · ${p.period.label}`,['Product','Revenue','Units sold','On hand'],
+      rows.map(x=>[`<b>${x.name}</b>`,money(x.rev),x.n,x.stock<=x.reorder?`<b style="color:var(--warn)">${x.stock}</b>`:x.stock])),
+    actions:[{label:'Open Reports',act:'nav',val:'reports'}]};
+}
+function bSuppliers(p){
+  const rows=VENDORS.map(v=>{const f=LEDGER.filter(x=>x.vendor===v&&x.type==='purchase'&&inR(x.date,p.period));
+    const spend=f.reduce((a,x)=>a+x.amount,0);return {v,spend,orders:f.length,avg:f.length?spend/f.length:0};}).filter(r=>r.orders).sort((a,b)=>b.spend-a.spend);
+  if(!rows.length)return {text:`No supplier purchases recorded in ${p.period.label}.`,actions:[{label:'Open Purchases',act:'nav',val:'purchases'}]};
+  const cheapest=[...rows].sort((a,b)=>a.avg-b.avg)[0];
+  return {text:`You bought from **${rows.length} suppliers** in ${p.period.label}, spending **${money(rows.reduce((a,x)=>a+x.spend,0))}**.\n\n**${rows[0].v}** takes the largest share (${money(rows[0].spend)} over ${rows[0].orders} orders). **${cheapest.v}** has the lowest average order at ${money(cheapest.avg)}.\n\nA caveat I want to be straight about: I can compare **spend and order size**, not unit prices — line-item pricing arrives with the Inventory/PO module in V2, so "best price" here means smallest average order value, not cheapest per unit.`,
+    card:bTable(`Supplier spend · ${p.period.label}`,['Supplier','Spend','Orders','Avg order'],
+      rows.map(r=>[`<b>${r.v}</b>`,money(r.spend),r.orders,money(r.avg)])),
+    actions:[{label:'Open Purchases',act:'nav',val:'purchases'}]};
+}
+function bAnomalies(p){
+  const rows=bRows(p);const flags=[];
+  // 1. daily revenue outliers (z-score)
+  const byDay={};rows.filter(x=>x.type==='sale').forEach(x=>byDay[x.date]=(byDay[x.date]||0)+x.amount);
+  const vals=Object.values(byDay);const mean=vals.reduce((a,b)=>a+b,0)/(vals.length||1);
+  const sd=Math.sqrt(vals.reduce((a,b)=>a+(b-mean)**2,0)/(vals.length||1))||1;
+  Object.entries(byDay).forEach(([d,v])=>{const z=(v-mean)/sd;if(Math.abs(z)>2.2)flags.push({t:z>0?'Revenue spike':'Revenue slump',d,w:`${d}: ${money(v)} vs a ${money(mean)} daily average (${z>0?'+':''}${z.toFixed(1)}σ)`});});
+  // 2. exact-duplicate entries same day/store/amount/type
+  const seen={};rows.forEach(x=>{const k=[x.date,x.store,x.type,x.amount].join('|');if(seen[k]&&x.type!=='sale')flags.push({t:'Possible duplicate',d:x.date,w:`Two ${x.type} entries of ${money(x.amount)} at ${x.store} on ${x.date} — check you weren't billed twice.`});seen[k]=1;});
+  // 3. oversized single expense / purchase
+  ['expense','purchase'].forEach(t=>{const list=rows.filter(x=>x.type===t);const avg=list.reduce((a,x)=>a+x.amount,0)/(list.length||1);
+    list.filter(x=>x.amount>avg*3&&x.amount>500).forEach(x=>flags.push({t:'Large '+t,d:x.date,w:`${money(x.amount)} ${t} at ${x.store} (${x.category||x.vendor||'—'}) — over 3× your ${money(avg)} average.`}));});
+  // 4. refunds
+  const ref=rows.filter(x=>x.type==='refund');const refT=ref.reduce((a,x)=>a+x.amount,0);
+  const salesT=bT(rows,'sale');if(salesT&&refT/salesT>0.02)flags.push({t:'Refund rate',d:'',w:`Refunds are ${(refT/salesT*100).toFixed(1)}% of revenue (${money(refT)}) — above the 2% level I'd expect for retail.`});
+  if(!flags.length)return {text:`I went through every entry in ${p.period.label} — daily revenue outliers, duplicate postings, oversized expenses and refund rate — and **nothing looks out of place.** That's a clean set of books.`};
+  return {text:`I found **${flags.length} thing${flags.length>1?'s':''} worth a look** in ${p.period.label}. I'm flagging patterns, not accusing anyone — each one needs your eyes:\n\n`+flags.slice(0,6).map(f=>`- **${f.t}** — ${f.w}`).join('\n'),
+    card:bTable('Flagged',['Signal','Date','Detail'],flags.slice(0,6).map(f=>[`<b>${f.t}</b>`,f.d||'—',f.w])),
+    actions:[{label:'Open Reports',act:'nav',val:'reports'}]};
+}
+function bBalances(p){
+  const cust=(REP.customers||[]).filter(c=>c.balance>0).sort((a,b)=>b.balance-a.balance);
+  const vend=(REP.vendors||[]).filter(v=>v.balance>0).sort((a,b)=>b.balance-a.balance);
+  const ar=cust.reduce((a,c)=>a+c.balance,0),ap=vend.reduce((a,v)=>a+v.balance,0);
+  if(!ar&&!ap)return {text:`Nothing outstanding — no customer balances owed to you and no supplier balances owed by you.`};
+  return {text:`**You are owed ${money(ar)}** across ${cust.length} customer account${cust.length===1?'':'s'}, and **you owe ${money(ap)}** across ${vend.length} supplier account${vend.length===1?'':'s'}.\n\nNet position: **${money(ar-ap)}** ${ar>=ap?'in your favour':'against you'}.${vend[0]?` Largest payable is **${vend[0].name}** at ${money(vend[0].balance)}.`:''}`,
+    card:bTable('Open balances',['Account','Type','Balance'],
+      [...vend.slice(0,4).map(v=>[`<b>${v.name}</b>`,'Payable',`<span style="color:var(--bad)">${money(v.balance)}</span>`]),
+       ...cust.slice(0,4).map(c=>[`<b>${c.name}</b>`,'Receivable',`<span style="color:var(--ok)">${money(c.balance)}</span>`])]),
+    actions:[{label:'Open Purchases',act:'nav',val:'purchases'}]};
+}
+function bTaxOwed(p){
+  const per=p.period.key==='month'?p.period:bRange('month');
+  const rows=LEDGER.filter(x=>inR(x.date,per)&&(!p.store||x.store===p.store));
+  const taxable=bT(rows,'sale'),collected=rows.reduce((a,x)=>a+(x.tax||0),0);
+  return {text:`On **${money(taxable)}** of taxable sales in ${per.label}, you collected **${money(collected)}** of sales tax — and that is what you owe the state. It is not your money; it's held on their behalf.\n\nTexas rate applied: **8.25%** (tax-inclusive). Next filing: **Jul 20**.\n\n_How I got it: I sum the tax component stored on each taxable sale line._`,
+    card:bTable('Sales tax by store',['Store','Taxable sales','Tax collected'],
+      STORES.map(s=>{const r=rows.filter(x=>x.store===s);return [`<b>${s}</b>`,money(bT(r,'sale')),`<b style="color:var(--brand)">${money(r.reduce((a,x)=>a+(x.tax||0),0))}</b>`];})),
+    actions:[{label:'Open Sales Tax',act:'nav',val:'tax'},{label:'⬇ Export',act:'pdf'}]};
+}
+function bCashflow(p){
+  const rows=bRows(p),M=bMetrics(rows);
+  const cashSales=rows.filter(x=>x.account==='Cash'&&x.type==='sale').reduce((a,x)=>a+x.amount,0);
+  const deposited=bT(rows,'deposit');const onHand=cashSales-deposited-rows.filter(x=>x.account==='Cash'&&['expense','purchase','payroll'].includes(x.type)).reduce((a,x)=>a+x.amount,0);
+  const float=1000;const suggest=Math.max(0,Math.round((onHand-float)/100)*100);
+  return {text:`Over ${p.period.label} you took **${money(cashSales)}** in cash and moved **${money(deposited)}** to the bank, leaving roughly **${money(onHand)}** on hand.\n\nKeeping a **${money(float)}** float for change, I'd deposit **${money(suggest)}**. Cash sitting in a drawer is uninsured and untraceable — banking it also makes your reconciliation clean.`,
+    card:bCard('Cash position',money(onHand),[['Cash sales',money(cashSales)],['Deposited',money(deposited)],['Cash paid out',money(cashSales-deposited-onHand)],['Suggested deposit',`<b style="color:var(--brand)">${money(suggest)}</b>`]]),
+    actions:[{label:'Open Reconciliation',act:'nav',val:'recon'}]};
+}
+function bBriefing(){
+  const t=bRange('today'),w=bRange('week');
+  const today=bMetrics(LEDGER.filter(x=>inR(x.date,t)));const week=bMetrics(LEDGER.filter(x=>inR(x.date,w)));
+  const prevWeek=bMetrics(LEDGER.filter(x=>inR(x.date,bRange('lastweek'))));
+  const low=(REP.products||[]).filter(p=>p.stock<=p.reorder);
+  const silent=STORES.filter(s=>!LEDGER.some(x=>x.date===D0&&x.store===s&&x.type==='sale'));
+  const anom=bAnomalies({period:bRange('week')});
+  const items=[];
+  if(low.length)items.push(`**Restock ${low.length} product${low.length>1?'s':''}** — ${low.slice(0,3).map(p=>`${p.name} (${p.stock} left)`).join(', ')}${low.length>3?`, +${low.length-3} more`:''}. Empty shelves are the one loss you can't recover.`);
+  if(silent.length)items.push(`**${silent.join(', ')} ${silent.length>1?'have':'has'} not reported sales today** — chase it before the day closes or the books drift.`);
+  const wd=bDelta(week.sales,prevWeek.sales);
+  if(wd.pct!=null&&Math.abs(wd.pct)>8)items.push(`**Revenue is ${wd.up?'up':'down'} ${Math.abs(wd.pct).toFixed(0)}% week-on-week** (${money(week.sales)} vs ${money(prevWeek.sales)}). ${wd.up?'Worth knowing what worked.':'Worth knowing what broke.'}`);
+  if(week.profit<0)items.push(`**You ran at a loss this week** (${money(week.profit)}). Purchases of ${money(week.purchases)} are the usual cause — stock bought now, sold later.`);
+  if(/worth a look/.test(anom.text))items.push(`**${anom.text.match(/\*\*(\d+) thing/)?RegExp.$1:'Some'} flagged transactions** this week — duplicates or oversized entries. Ask me to *show unusual transactions*.`);
+  const tax=LEDGER.filter(x=>inR(x.date,bRange('month'))).reduce((a,x)=>a+(x.tax||0),0);
+  items.push(`**${money(tax)} of sales tax** is sitting in your accounts for the state. Filing is Jul 20 — don't spend it.`);
+  return {text:`Good morning Hassan. Here's where the business actually stands.\n\nToday you've booked **${money(today.sales)}** across ${today.txns} transactions. The last 7 days: **${money(week.sales)}** revenue, **${money(week.profit)}** net profit, ${week.margin.toFixed(1)}% gross margin.\n\n**What deserves your attention, in order:**\n\n`+items.slice(0,5).map((s,i)=>`${i+1}. ${s}`).join('\n\n'),
+    chips:{field:'shortcut',items:['What should I reorder?','Show unusual transactions','Why is my profit lower?']},
+    actions:[{label:'Open Dashboard',act:'nav',val:'dash'},{label:'Open Reports',act:'nav',val:'reports'}]};
+}
+function bSummary(p){
+  const per=p.period.key==='today'?bRange('month'):p.period;
+  const q={...p,period:per};const M=bMetrics(bRows(q));
+  const prev=bMetrics(bRows({...q,period:bRange(PREV[per.key]||'lastmonth')}));
+  const dl=bDelta(M.sales,prev.sales);
+  const byStore=STORES.map(s=>({s,...bMetrics(bRows({...q,store:s}))})).sort((a,b)=>b.profit-a.profit);
+  const low=(REP.products||[]).filter(x=>x.stock<=x.reorder).length;
+  return {text:`## Business summary — ${per.label}\n\n**Revenue ${money(M.sales)}** ${dl.pct!=null?`(${dl.up?'up':'down'} ${Math.abs(dl.pct).toFixed(1)}% on the prior period)`:''}, against ${money(M.cogs)} of goods sold — a **gross margin of ${M.margin.toFixed(1)}%**.\n\nAfter ${money(M.expenses)} of operating expenses, ${money(M.payroll)} of payroll and ${money(M.purchases)} of stock purchases, the business made **${money(M.profit)}** in net profit.\n\n**${byStore[0].s}** is your strongest store on profit (${money(byStore[0].profit)}); **${byStore[byStore.length-1].s}** is weakest (${money(byStore[byStore.length-1].profit)}).\n\nYou are holding **${money(M.tax)}** of sales tax for the state${low?`, and **${low} products** are at or below their reorder point`:''}.`,
+    card:bCard('P&L · '+per.label,money(M.profit),[['Revenue',money(M.sales)],['Refunds',money(M.refunds)],['Cost of goods',money(M.cogs)],
+      ['Gross profit',`${money(M.gross)} (${M.margin.toFixed(1)}%)`],['Operating expenses',money(M.expenses)],['Payroll',money(M.payroll)],['Stock purchases',money(M.purchases)],
+      ['Net profit',`<b style="color:${M.profit>=0?'var(--ok)':'var(--bad)'}">${money(M.profit)}</b>`]]),
+    chips:{field:'shortcut',items:['Why is profit lower?','Compare stores','Show unusual transactions']},
+    actions:[{label:'Open Reports',act:'nav',val:'reports'},{label:'⬇ Export',act:'pdf'}]};
+}
+function bExplainReport(p){
+  // "Explain this report" = explain the report the user actually has open.
+  const rep=(typeof RCATALOG!=='undefined'&&RCATALOG)?RCATALOG.find(r=>r.id===REP.current):null;
+  if(!rep)return null;
+  const f=REP.filters;const per=bRange(f.period==='month'?'month':f.period==='week'?'week':f.period==='today'?'today':f.period==='quarter'?'quarter':'year');
+  const rows=LEDGER.filter(x=>inR(x.date,per)&&(f.store==='all'||x.store===f.store));
+  const M=bMetrics(rows);
+  const prev=bMetrics(LEDGER.filter(x=>inR(x.date,bRange(PREV[per.key]||'lastmonth'))&&(f.store==='all'||x.store===f.store)));
+  const dl=bDelta(M.sales,prev.sales);
+  const anom=bAnomalies({period:per,store:f.store==='all'?null:f.store});
+  const flagged=/worth a look/.test(anom.text);
+  return {text:`**${rep.name}** (${rep.cat}) — ${rep.desc}\n\n**What it's showing right now**, filtered to ${f.store==='all'?'all stores':f.store} over ${per.label}:\n\n- **Revenue ${money(M.sales)}** — every \`sale\` line summed. ${dl.pct!=null?`${dl.up?'Up':'Down'} ${Math.abs(dl.pct).toFixed(1)}% on the prior period.`:''}\n- **Cost of goods ${money(M.cogs)}** — each sale valued at that product's cost/price ratio.\n- **Gross profit ${money(M.gross)}** (${M.margin.toFixed(1)}%) — revenue minus cost of goods. This is the number that tells you if your *pricing* works.\n- **Expenses ${money(M.expenses)}**, **payroll ${money(M.payroll)}**, **purchases ${money(M.purchases)}** — the three ways cash leaves.\n- **Net profit ${money(M.profit)}** — what's actually left.\n\n**Anything unusual?** ${flagged?anom.text.split('\n\n')[1]||'Yes — ask me to *show unusual transactions*.':'No. Daily revenue, duplicates, oversized entries and refund rate all look normal.'}\n\n**What I\'d do next:** ${M.profit<0?'profit is negative — check whether a large stock purchase landed in this period; on a cash basis that depresses a perfectly healthy month.':M.margin<30?`margin is ${M.margin.toFixed(1)}%, which is thin for retail — review pricing on your top sellers.`:'nothing urgent; this report is healthy.'}`,
+    chips:{field:'shortcut',items:['Why did it change?','Show unusual transactions','Compare stores']},
+    actions:[{label:'⬇ Export',act:'pdf'}]};
+}
+function bExplain(p){
+  const d=p._raw.toLowerCase();
+  if(/\b(this|the|that)\s+(report|page|screen|view|number|figure)\b/.test(d)||/^explain (it|this)\b/.test(d)){
+    const r=bExplainReport(p);
+    if(r)return r;
+    if(/report/.test(d))return {text:`No report is open right now, so there's nothing specific for me to explain — I won't guess which one you mean.\n\nOpen any of the 90 reports in the Report Center and ask me again, and I'll walk you through every metric, how it's calculated, what changed and what to do about it.`,
+      actions:[{label:'Open Report Center',act:'nav',val:'reports',pri:true}]};
+  }
+  if(p.metric&&METRIC_HOW[p.metric]){
+    const M=bMetrics(bRows(p));
+    return {text:`**${METRIC_LABEL[p.metric]}** — ${METRIC_HOW[p.metric]}\n\nRight now, over ${p.period.label}, it comes to **${bFmt(p.metric,M[p.metric])}**.\n\n${p.metric==='profit'?'Note this is *cash-basis* profit: a big stock purchase lands entirely in the month you paid for it, even though you\'ll sell that stock over the following weeks. That\'s why a good month can look unprofitable.':p.metric==='margin'?'Margin is the honest measure of whether your pricing works. Revenue can rise while margin falls — that means you\'re selling more but keeping less of it.':''}`,
+      actions:[{label:'Open Reports',act:'nav',val:'reports'}]};
+  }
+  const mod=p.module&&ERP_GRAPH[p.module];
+  if(mod){
+    const rel=(mod.rel||[]).filter(r=>r!=='*'&&ERP_GRAPH[r]).map(r=>ERP_GRAPH[r].name);
+    return {text:`**${mod.name}** — ${mod.purpose||mod.note}\n\n${mod.metrics&&mod.metrics.length?`It tracks: ${mod.metrics.join(', ')}.\n\n`:''}${rel.length?`It feeds into: ${rel.join(', ')}.`:''}${mod.live===false?`\n\n⚠️ ${mod.note}`:''}`,
+      actions:mod.live!==false?[{label:'Open '+mod.name,act:'nav',val:p.module}]:[{label:'Open Reports',act:'nav',val:'reports'}]};
+  }
+  return null;
+}
+function bHelp(){
+  return {text:`I'm the intelligence layer over your books — I read the same ledger your Dashboard and Reports read, so we can never disagree.\n\n**Ask me anything about the business:** *"What did Store B spend this month?"*, *"Why is my profit lower?"*, *"Which employee sold the most?"*, *"What's almost out of stock?"*, *"Compare Store A and Store C"*, *"What taxes do I owe?"*, *"Find unusual transactions."*\n\n**Or just tell me what happened** and I'll write the entry: *"Store B electricity 320"*, *"bought cigars for 240 from Altria"*, *"we sold 6,200 today"*. I'll show you a draft and never post anything without your confirmation.\n\n**Or ask me to explain** any number, report or module — including how it's calculated.`,
+    chips:{field:'shortcut',items:['What should I focus on today?','Generate a monthly business summary','What should I reorder?']}};
+}
+function bNavigate(p){
+  const mod=ERP_GRAPH[p.module];
+  if(!mod)return null;
+  if(mod.live===false)return {text:`**${mod.name}** isn't a workspace in Version 1 — ${mod.note}\n\nI can still answer questions about it from the data I do have.`,
+    actions:[{label:'Open Reports',act:'nav',val:'reports'}]};
+  return {text:`Opening **${mod.name}** — ${mod.purpose}`,actions:[{label:'Open '+mod.name,act:'nav',val:p.module,pri:true}],_nav:p.module};
+}
+function bSearch(p){
+  const d=p._raw.toLowerCase();
+  const hits=[];
+  (REP.products||[]).forEach(x=>{if(d.includes(x.name.toLowerCase().split(' ')[0]))hits.push(['Product',x.name,`${x.stock} in stock · ${money(x.rev)} revenue`]);});
+  VENDORS.forEach(v=>{if(d.includes(v.toLowerCase().split(' ')[0]))hits.push(['Supplier',v,`${LEDGER.filter(x=>x.vendor===v).length} purchases`]);});
+  EMPLOYEES.forEach(e=>{if(d.includes(e.name.toLowerCase().split(' ')[0]))hits.push(['Employee',e.name,`${e.store} · ${money(e.gross)} gross`]);});
+  if(!hits.length)return {text:`I couldn't find anything matching that in products, suppliers or employees. I'd rather tell you that than invent a result — try a product, supplier or employee name.`};
+  return {text:`Found **${hits.length}** match${hits.length>1?'es':''}:`,card:bTable('Search results',['Type','Name','Detail'],hits.map(h=>[h[0],`<b>${h[1]}</b>`,h[2]])),
+    actions:[{label:'Open Reports',act:'nav',val:'reports'}]};
+}
+
+// ---- 9. Router ----
+function brainRespond(text){
+  const p=bPlan(text);
+  let r=null;
+  switch(p.intent){
+    case 'greet': r={text:`Hello Hassan. Your books are open in front of me — ask me anything, or tell me what happened and I'll post it.`,chips:{field:'shortcut',items:["What should I focus on today?","Show today's sales","What should I reorder?"]}};break;
+    case 'help': r=bHelp();break;
+    case 'briefing': r=bBriefing();break;
+    case 'summary': r=bSummary(p);break;
+    case 'why': r=bWhy(p);break;
+    case 'anomaly': r=bAnomalies(p);break;
+    case 'lowstock': r=bLowStock();break;
+    case 'slowmovers': r=bSlow(p);break;
+    case 'topproducts': r=bTopProducts(p);break;
+    case 'topemployee': r=bRank(p,'employee');break;
+    case 'balances': r=bBalances(p);break;
+    case 'suppliers': r=bSuppliers(p);break;
+    case 'compare': r=bCompare(p);break;
+    case 'trend': r=bTrend(p);break;
+    case 'cashflow': r=bCashflow(p);break;
+    case 'explain': r=bExplain(p);break;
+    case 'navigate': r=bNavigate(p);break;
+    case 'search': r=bSearch(p);break;
+    case 'export': r={text:`I've prepared the export for ${p.period.label}. Reports also exports any of its 90 views to CSV or PDF.`,actions:[{label:'⬇ Download',act:'pdf'},{label:'Open Reports',act:'nav',val:'reports'}]};break;
+    case 'metric': r=(p.metric==='tax')?bTaxOwed(p):bMetricAnswer(p);break;
+  }
+  if(!r)return false;
+  brainRemember(p,r.text);
+  copSay(r.text,{card:r.card,chips:r.chips,actions:r.actions});
+  if(r._nav)setTimeout(()=>go(r._nav),700);
+  return true;
+}
 
 // ---------------- Settings ----------------
 function renderSettings(){document.getElementById('storeList').innerHTML=STORES.map(s=>`<div style="display:flex;justify-content:space-between;padding:8px 10px;border:1px solid var(--line);border-radius:9px;margin-bottom:7px;font-size:13px">${s}<span style="color:var(--muted)">store</span></div>`).join('');
@@ -1344,7 +1822,24 @@ function mInit(){
     const ta=document.getElementById('copTa');if(ta)ta.placeholder='Message Claude…  e.g. Store B electricity 320';
   }
 }
-function init(){fillStores();document.getElementById('pDate').value=daysAgo(0);renderSettings();refreshAll();copInit();mInit();}
+/* ===== SINGLE SOURCE OF TRUTH =====
+   Dashboard/Sales/Expenses/Tax/Payroll read LEDGER; Reports read REP.tx. Two stores = two
+   different answers to the same question, which an enterprise assistant must never produce.
+   We seed the warehouse once, backfill display fields, and alias LEDGER to it, so every
+   module, every report and the AI all read and write the SAME array. */
+function unifyWarehouse(){
+  if(!REP.inited){repSeed();RCATALOG=repCatalog();repBind();REP.inited=true;}
+  REP.tx.forEach(x=>{
+    if(!x.memo) x.memo = x.type==='sale' ? (x.product?x.product+(x.employee?' · '+x.employee:''):'Daily sales')
+                       : x.type==='purchase' ? (x.vendor||'Inventory purchase')
+                       : x.type==='refund' ? ('Refund'+(x.product?' · '+x.product:''))
+                       : x.category;
+    if(x.type==='purchase'&&!x.desc) x.desc='Inventory restock';
+  });
+  LEDGER = REP.tx;                                   // alias: one array, one truth
+  uid = REP.tx.reduce((m,x)=>Math.max(m,x.id),0)+1;  // new entries never collide
+}
+function init(){unifyWarehouse();fillStores();document.getElementById('pDate').value=daysAgo(0);renderSettings();refreshAll();brainInit();copInit();mInit();}
 init();
 </script>
 </body>
