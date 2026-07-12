@@ -935,17 +935,17 @@ function repDetail(){const rep=RCATALOG.find(r=>r.id===REP.current);if(!rep)retu
        <div class="rep-exp"><button data-exp="pdf">⬇ PDF</button><button data-exp="excel">⬇ Excel</button><button data-exp="print">🖨 Print</button><button data-exp="share">🔗 Share</button><button data-exp="email">✉ Email</button></div></div>
      ${repFilterBar()}${kpis}${chart}${table}${insight}`;
 }
-function repFilterBar(){const opt=(items,val)=>['<option value="all">All</option>'].concat(items.map(i=>`<option ${i===val?'selected':''}>${i}</option>`)).join('');
+function repFilterBar(){const opt=(items,val,label)=>[`<option value="all">All ${label}</option>`].concat(items.map(i=>`<option ${i===val?'selected':''}>${i}</option>`)).join('');
   const f=REP.filters;
   return `<div class="rep-fbar">
     <select data-f="period"><option value="today" ${f.period==='today'?'selected':''}>Today</option><option value="week" ${f.period==='week'?'selected':''}>This week</option><option value="month" ${f.period==='month'?'selected':''}>This month</option><option value="quarter" ${f.period==='quarter'?'selected':''}>This quarter</option><option value="year" ${f.period==='year'?'selected':''}>This year</option><option value="all" ${f.period==='all'?'selected':''}>All time</option></select>
-    <select data-f="store">${opt(STORES,f.store)}</select>
-    <select data-f="account">${opt(ACCOUNTS,f.account)}</select>
-    <select data-f="category">${opt(['Utilities','Rent','Payroll','Supplies','Marketing','Bank Charges','Cigarettes','Vape','Pouches','Cigars','Accessories'],f.category)}</select>
-    <select data-f="vendor">${opt(VENDORS,f.vendor)}</select>
-    <select data-f="employee">${opt(EMPLOYEES.map(e=>e.name),f.employee)}</select>
-    <select data-f="product">${opt(REP.products.map(p=>p.name),f.product)}</select>
-    <select data-f="customer">${opt(REP.customers.map(c=>c.name),f.customer)}</select>
+    <select data-f="store">${opt(STORES,f.store,'stores')}</select>
+    <select data-f="account">${opt(ACCOUNTS,f.account,'accounts')}</select>
+    <select data-f="category">${opt(['Utilities','Rent','Payroll','Supplies','Marketing','Bank Charges','Cigarettes','Vape','Pouches','Cigars','Accessories'],f.category,'categories')}</select>
+    <select data-f="vendor">${opt(VENDORS,f.vendor,'vendors')}</select>
+    <select data-f="employee">${opt(EMPLOYEES.map(e=>e.name),f.employee,'employees')}</select>
+    <select data-f="product">${opt(REP.products.map(p=>p.name),f.product,'products')}</select>
+    <select data-f="customer">${opt(REP.customers.map(c=>c.name),f.customer,'customers')}</select>
   </div>`;}
 function repBackCat(){REP.current=null;renderReports();}
 function repBind(){const main=document.getElementById('repMain');const cats=document.getElementById('repCats');
