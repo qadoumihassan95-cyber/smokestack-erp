@@ -362,7 +362,7 @@
     <section class="view on" id="v-dash">
       <div class="top"><div><h1>Dashboard</h1><div class="sub" id="dashSub">All stores · today</div></div>
         <div style="display:flex;gap:9px;align-items:center">
-          <select id="storeSel" onchange="renderDash()"></select>
+          <select id="storeSel" aria-label="Filter by store" onchange="renderDash()"></select>
           <button class="askbtn" onclick="go('ai')">🤖 Ask Claude</button>
         </div>
       </div>
@@ -387,13 +387,13 @@
             <div class="cop-menu" id="copMenu"></div>
             <div class="cop-inbox" id="copInbox">
               <div class="cop-files" id="copFiles" style="display:none"></div>
-              <textarea class="cop-ta" id="copTa" rows="1" placeholder="Message Claude…  e.g. Store B electricity 320   (type @ to mention, / for commands)"></textarea>
+              <textarea class="cop-ta" id="copTa" aria-label="Message Claude" rows="1" placeholder="Message Claude…  e.g. Store B electricity 320   (type @ to mention, / for commands)"></textarea>
               <div class="cop-tools">
                 <button class="cop-tool" title="Attach receipt / statement (⌘U)" onclick="document.getElementById('copFile').click()">📎</button>
                 <button class="cop-tool" id="copDateBtn" title="Insert date" onclick="copToggleDate()">📅</button>
                 <button class="cop-tool" title="Voice input" onclick="copVoice()">🎙️</button>
                 <button class="cop-tool" title="Commands (/)" onclick="copOpenCmd()">⌘</button>
-                <input type="date" id="copDate" style="display:none" onchange="copInsertDate(this.value)">
+                <input type="date" id="copDate" aria-label="Insert date" style="display:none" onchange="copInsertDate(this.value)">
                 <span class="cop-kbd">↵ send</span><span class="cop-kbd">⇧↵ newline</span>
                 <button class="cop-send" id="copSend" onclick="copSubmit()">Send</button>
               </div>
@@ -402,7 +402,7 @@
         </div>
         <aside class="cop-side" id="copSide"></aside>
       </div>
-      <input type="file" id="copFile" multiple style="display:none" onchange="copFilesPicked(this.files)">
+      <input type="file" id="copFile" aria-label="Attach files" multiple style="display:none" onchange="copFilesPicked(this.files)">
     </section>
 
     <!-- DAILY SALES -->
@@ -410,10 +410,10 @@
       <div class="top"><div><h1>Daily Sales</h1><div class="sub">Report the day's totals — not every receipt.</div></div></div>
       <div class="grid g3">
         <div class="card"><h3>Report Today's Sales</h3>
-          <div class="field"><label>Store</label><select id="sStore"></select></div>
-          <div class="row2"><div class="field"><label>Cash sales ($)</label><input id="sCash" type="number" placeholder="0"></div>
-          <div class="field"><label>Card sales ($)</label><input id="sCard" type="number" placeholder="0"></div></div>
-          <div class="field"><label>Taxable? sales-tax auto-calculated</label><select id="sTaxable"><option value="1">Taxable</option><option value="0">Non-taxable</option></select></div>
+          <div class="field"><label for="sStore">Store</label><select id="sStore"></select></div>
+          <div class="row2"><div class="field"><label for="sCash">Cash sales ($)</label><input id="sCash" type="number" placeholder="0"></div>
+          <div class="field"><label for="sCard">Card sales ($)</label><input id="sCard" type="number" placeholder="0"></div></div>
+          <div class="field"><label for="sTaxable">Taxable? sales-tax auto-calculated</label><select id="sTaxable"><option value="1">Taxable</option><option value="0">Non-taxable</option></select></div>
           <button class="btn p" onclick="submitDailySales()">Save daily sales</button>
         </div>
         <div class="card" style="grid-column:span 2"><h3>Recent Daily Reports</h3><table id="salesTbl"></table></div>
@@ -425,11 +425,11 @@
       <div class="top"><div><h1>Expenses</h1><div class="sub">Fast entry — category, amount, done.</div></div></div>
       <div class="grid g3">
         <div class="card"><h3>Add Expense</h3>
-          <div class="field"><label>Store</label><select id="eStore"></select></div>
-          <div class="field"><label>Account</label><select id="eAcct"></select></div>
-          <div class="field"><label>Category</label><select id="eCat"><option>Utilities</option><option>Rent</option><option>Payroll</option><option>Supplies</option><option>Marketing</option><option>Bank Charges</option><option>Other</option></select></div>
-          <div class="row2"><div class="field"><label>Amount ($)</label><input id="eAmt" type="number" placeholder="0"></div>
-          <div class="field"><label>Vendor</label><input id="eVendor" placeholder="optional"></div></div>
+          <div class="field"><label for="eStore">Store</label><select id="eStore"></select></div>
+          <div class="field"><label for="eAcct">Account</label><select id="eAcct"></select></div>
+          <div class="field"><label for="eCat">Category</label><select id="eCat"><option>Utilities</option><option>Rent</option><option>Payroll</option><option>Supplies</option><option>Marketing</option><option>Bank Charges</option><option>Other</option></select></div>
+          <div class="row2"><div class="field"><label for="eAmt">Amount ($)</label><input id="eAmt" type="number" placeholder="0"></div>
+          <div class="field"><label for="eVendor">Vendor</label><input id="eVendor" placeholder="optional"></div></div>
           <button class="btn p" onclick="submitExpense()">Save expense</button>
         </div>
         <div class="card" style="grid-column:span 2"><h3>Recent Expenses</h3><table id="expTbl"></table></div>
@@ -441,13 +441,13 @@
       <div class="top"><div><h1>Purchases</h1><div class="sub">Simple: vendor, date, amount. Description optional.</div></div></div>
       <div class="grid g3">
         <div class="card"><h3>Add Purchase</h3>
-          <div class="field"><label>Store</label><select id="pStore"></select></div>
-          <div class="field"><label>Account</label><select id="pAcct"></select></div>
-          <div class="field"><label>Vendor</label><input id="pVendor" placeholder="e.g. Altria"></div>
-          <div class="row2"><div class="field"><label>Amount ($)</label><input id="pAmt" type="number" placeholder="0"></div>
-          <div class="field"><label>Date</label><input id="pDate" type="date"></div></div>
-          <div class="field"><label>Description (optional)</label><input id="pDesc" placeholder="e.g. cigars"></div>
-          <div class="field"><label>Notes (optional)</label><input id="pNotes" placeholder="optional"></div>
+          <div class="field"><label for="pStore">Store</label><select id="pStore"></select></div>
+          <div class="field"><label for="pAcct">Account</label><select id="pAcct"></select></div>
+          <div class="field"><label for="pVendor">Vendor</label><input id="pVendor" placeholder="e.g. Altria"></div>
+          <div class="row2"><div class="field"><label for="pAmt">Amount ($)</label><input id="pAmt" type="number" placeholder="0"></div>
+          <div class="field"><label for="pDate">Date</label><input id="pDate" type="date"></div></div>
+          <div class="field"><label for="pDesc">Description (optional)</label><input id="pDesc" placeholder="e.g. cigars"></div>
+          <div class="field"><label for="pNotes">Notes (optional)</label><input id="pNotes" placeholder="optional"></div>
           <button class="btn p" onclick="submitPurchase()">Save purchase</button>
         </div>
         <div class="card" style="grid-column:span 2"><h3>Recent Purchases</h3><table id="purTbl"></table></div>
@@ -469,7 +469,7 @@
       <div class="grid g2" style="margin-top:13px">
         <div class="card"><h3>Tax by Store</h3><table id="taxStoreTbl"></table></div>
         <div class="card"><h3>Settings & Filing</h3>
-          <div class="field"><label>State</label><select id="taxState" onchange="renderTax()"><option value="TX|8.25">Texas — 8.25%</option><option value="CA|9.50">California — 9.50%</option><option value="NY|8.88">New York — 8.88%</option><option value="FL|7.00">Florida — 7.00%</option></select></div>
+          <div class="field"><label for="taxState">State</label><select id="taxState" onchange="renderTax()"><option value="TX|8.25">Texas — 8.25%</option><option value="CA|9.50">California — 9.50%</option><option value="NY|8.88">New York — 8.88%</option><option value="FL|7.00">Florida — 7.00%</option></select></div>
           <div style="font-size:13px;line-height:1.9;color:var(--muted)" id="taxNote"></div>
           <button class="btn p" style="margin-top:8px" onclick="toast('Tax report generated for filing period')">Generate tax report</button>
         </div>
@@ -488,7 +488,7 @@
     <!-- REPORT CENTER -->
     <section class="view" id="v-reports">
       <div class="top"><div><h1>Report Center</h1><div class="sub" id="repSub">Business intelligence for every part of the shop</div></div>
-        <div class="rep-searchbox"><input id="repSearch" placeholder="Search reports…  profit · inventory · tax · cash · employee" oninput="repSearchInput()"></div></div>
+        <div class="rep-searchbox"><input id="repSearch" aria-label="Search reports" placeholder="Search reports…  profit · inventory · tax · cash · employee" oninput="repSearchInput()"></div></div>
       <div class="rep-wrap">
         <aside class="rep-cats" id="repCats"></aside>
         <div class="rep-main" id="repMain"></div>
@@ -521,9 +521,9 @@
       <div class="top"><div><h1>Settings</h1><div class="sub">Stores & accounts — the two things every entry belongs to.</div></div></div>
       <div class="grid g2">
         <div class="card"><h3>Stores</h3><div id="storeList"></div>
-          <div style="display:flex;gap:8px;margin-top:10px"><input id="newStore" placeholder="Add store name"><button class="btn p" onclick="addStore()">Add</button></div></div>
+          <div style="display:flex;gap:8px;margin-top:10px"><input id="newStore" aria-label="New store name" placeholder="Add store name"><button class="btn p" onclick="addStore()">Add</button></div></div>
         <div class="card"><h3>Bank Accounts</h3><div id="acctList"></div>
-          <div style="display:flex;gap:8px;margin-top:10px"><input id="newAcct" placeholder="Add account name"><button class="btn p" onclick="addAcct()">Add</button></div></div>
+          <div style="display:flex;gap:8px;margin-top:10px"><input id="newAcct" aria-label="New account name" placeholder="Add account name"><button class="btn p" onclick="addAcct()">Add</button></div></div>
       </div>
       <div class="card" style="margin-top:13px"><h3>What changed in V1</h3>
         <div style="font-size:13px;color:var(--muted);line-height:1.8">Removed for simplicity: Average Basket, Average Margin, Customer Management, Loyalty. Inventory moved to a future module. The system is now accounting-first: sales, expenses, purchases, tax, payroll, and reports — driven by Claude and Telegram.</div></div>
