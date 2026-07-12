@@ -236,11 +236,12 @@
     .top .sub{font-size:12px;color:var(--muted)}
     .top>div:first-child{flex:1;min-width:0}
 
-    /* --- grids --- */
-    .g4,.g3,.g2{grid-template-columns:1fr 1fr}
+    /* --- grids: content stacks, KPI tiles stay 2-up --- */
+    .g4,.g3,.g2{grid-template-columns:1fr}
+    .grid:has(> .card.kpi){grid-template-columns:1fr 1fr}
     .grid{gap:10px}
     .card{padding:13px;border-radius:12px}
-    .card[style*="span 2"]{grid-column:span 2 !important}
+    .card[style*="span 2"]{grid-column:auto !important}
     .kpi .v{font-size:20px}.kpi .l{font-size:11px}.kpi .s{font-size:10.5px}
 
     /* --- tables: horizontal scroll with momentum --- */
@@ -260,7 +261,7 @@
     /* --- Ask Claude (copilot) --- */
     .cop-wrap{grid-template-columns:1fr;height:auto;gap:0}
     .cop-side{display:none}
-    .cop-main{height:calc(100dvh - 250px);min-height:340px;border-radius:14px}
+    .cop-main{height:calc(100dvh - 215px);min-height:340px;border-radius:14px}
     .cop-stream{padding:14px}
     .cop-row{max-width:96%}
     .cop-row.me{max-width:88%}
@@ -308,8 +309,8 @@
     .pill{font-size:11px}
     .askbtn{display:none} /* replaced by mobile top-bar ✦ button */
   }
-  @media(max-width:380px){
-    .g4,.g3,.g2{grid-template-columns:1fr}
+  @media(max-width:360px){
+    .grid:has(> .card.kpi){grid-template-columns:1fr}
     .rep-kpis{grid-template-columns:1fr}
     .mbot button{font-size:9px}
   }
