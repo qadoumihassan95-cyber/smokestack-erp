@@ -12,7 +12,14 @@
 <meta name="apple-mobile-web-app-title" content="SmokeStack">
 <meta name="mobile-web-app-capable" content="yes">
 <style>
-  :root{--bg:#0f1420;--panel:#161d2e;--panel2:#1d2740;--line:#2a3550;--txt:#e8edf7;--muted:#93a0bd;
+  :root{
+    /* fixed mobile nav geometry — single source of truth */
+    --mobile-bottom-nav-height:62px;
+    --mobile-safe-area-bottom:env(safe-area-inset-bottom, 0px);
+    --mobile-safe-area-top:env(safe-area-inset-top, 0px);
+    --mobile-top-bar-height:54px;
+    --mobile-bottom-clearance:calc(var(--mobile-bottom-nav-height) + var(--mobile-safe-area-bottom) + 24px);
+    --bg:#0f1420;--panel:#161d2e;--panel2:#1d2740;--line:#2a3550;--txt:#e8edf7;--muted:#93a0bd;
         --brand:#ff7a45;--brand2:#ffb020;--ok:#31c48d;--warn:#ffb020;--bad:#f05252;--accent:#5b8def;}
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--txt);height:100vh;overflow:hidden}
@@ -202,9 +209,15 @@
   /* ===================== MOBILE (premium native feel) ===================== */
   .mtop,.mbot,.scrim{display:none}
   @media(max-width:860px){
-    html,body{overflow-x:hidden}
-    body{-webkit-tap-highlight-color:transparent}
-    .app{grid-template-columns:1fr;height:auto;min-height:100dvh}
+    /* ROOT CAUSE FIX ------------------------------------------------------
+       Desktop uses body{height:100vh;overflow:hidden} + .main{overflow-y:auto}.
+       On mobile that left NO scroll container (main was set to visible), so the
+       document was clipped at 100vh -> rubber-band + snap-back.
+       Here we hand scrolling back to the DOCUMENT and reserve nav space on the
+       real scrolling container. ------------------------------------------ */
+    html{height:auto;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior-y:contain;scroll-behavior:auto}
+    body{height:auto;min-height:100svh;overflow-y:visible;overflow-x:hidden;-webkit-tap-highlight-color:transparent;overscroll-behavior-y:contain}
+    .app{display:block;grid-template-columns:1fr;height:auto;min-height:auto}
 
     /* --- top app bar --- */
     .mtop{display:flex;position:fixed;top:0;left:0;right:0;z-index:130;height:calc(54px + env(safe-area-inset-top));
@@ -216,7 +229,7 @@
     .mtop-title{flex:1;text-align:center;font-size:16px;font-weight:800;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
     /* --- slide-in drawer (was display:none = no nav at all) --- */
-    .side{display:flex;position:fixed;top:0;bottom:0;left:0;width:272px;max-width:82vw;z-index:150;
+    .side{display:flex;position:fixed;top:0;bottom:0;left:0;width:272px;max-width:82vw;z-index:150;height:100dvh;
       transform:translateX(-102%);transition:transform .26s cubic-bezier(.3,.9,.3,1);
       box-shadow:24px 0 60px rgba(0,0,0,.5);overflow-y:auto;
       padding:calc(14px + env(safe-area-inset-top)) 12px calc(18px + env(safe-area-inset-bottom))}
@@ -228,16 +241,25 @@
 
     /* --- bottom tab bar --- */
     .mbot{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:130;
-      padding:6px 4px calc(6px + env(safe-area-inset-bottom));
-      background:rgba(22,29,46,.94);backdrop-filter:saturate(180%) blur(14px);border-top:1px solid var(--line)}
-    .mbot button{flex:1;background:none;border:none;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:3px;
-      padding:6px 2px;font-size:10px;font-weight:700;cursor:pointer;border-radius:10px;min-height:52px}
+      height:var(--mobile-bottom-nav-height);box-sizing:content-box;
+      padding:0 4px var(--mobile-safe-area-bottom);align-items:center;
+      background:rgba(22,29,46,.94);backdrop-filter:saturate(180%) blur(14px);border-top:1px solid var(--line);
+      pointer-events:auto;touch-action:manipulation}
+    .mbot button{flex:1;background:none;border:none;color:var(--muted);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+      padding:4px 2px;font-size:10px;font-weight:700;cursor:pointer;border-radius:10px;height:var(--mobile-bottom-nav-height);min-height:0}
     .mbot button .i{font-size:19px;line-height:1}
     .mbot button.on{color:var(--brand)}
     .mbot button:active{background:var(--panel2)}
 
     /* --- main content spacing --- */
-    .main{padding:calc(60px + env(safe-area-inset-top)) 14px calc(84px + env(safe-area-inset-bottom));overflow-y:visible}
+    .main{
+      overflow:visible;height:auto;min-height:0;
+      padding-top:calc(var(--mobile-top-bar-height) + var(--mobile-safe-area-top) + 12px);
+      padding-left:14px;padding-right:14px;
+      padding-bottom:var(--mobile-bottom-clearance);   /* nav + safe-area + comfort */
+    }
+    /* belt & braces: a real spacer element in flow, immune to padding collapse */
+    .main::after{content:"";display:block;height:0}
     .top{margin-bottom:12px;gap:8px;align-items:center}
     .top h1{display:none}                 /* app bar already shows the page title */
     .top .sub{font-size:12px;color:var(--muted)}
@@ -251,8 +273,9 @@
     .card[style*="span 2"]{grid-column:auto !important}
     .kpi .v{font-size:20px}.kpi .l{font-size:11px}.kpi .s{font-size:10.5px}
 
-    /* --- tables: horizontal scroll with momentum --- */
-    .card{overflow-x:auto;-webkit-overflow-scrolling:touch}
+    /* --- tables: horizontal scroll ONLY (overflow-y must be explicit, or the
+           spec promotes it to `auto` and every card becomes a scroll trap) --- */
+    .card{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain}
     table{min-width:520px}
     th{font-size:10px;padding:8px 6px}
     td{padding:9px 6px;font-size:12.5px}
@@ -268,7 +291,7 @@
     /* --- Ask Claude (copilot) --- */
     .cop-wrap{grid-template-columns:1fr;height:auto;gap:0}
     .cop-side{display:none}
-    .cop-main{height:calc(100dvh - 215px);min-height:340px;border-radius:14px}
+    .cop-main{height:calc(100svh - var(--mobile-top-bar-height) - var(--mobile-safe-area-top) - var(--mobile-bottom-clearance) - 92px);min-height:320px;border-radius:14px}
     .cop-stream{padding:14px}
     .cop-row{max-width:96%}
     .cop-row.me{max-width:88%}
@@ -282,7 +305,7 @@
 
     /* --- Report Center --- */
     .rep-wrap{grid-template-columns:1fr;height:auto;gap:10px}
-    .rep-cats{display:flex;flex-wrap:nowrap;gap:7px;overflow-x:auto;padding:8px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+    .rep-cats{display:flex;flex-wrap:nowrap;gap:7px;overflow-x:auto;overflow-y:hidden;padding:8px;-webkit-overflow-scrolling:touch;scrollbar-width:none;overscroll-behavior-x:contain}
     .rep-cats::-webkit-scrollbar{display:none}
     .rep-cat{flex:0 0 auto;white-space:nowrap;padding:9px 13px;border-radius:20px;background:var(--panel2);border:1px solid var(--line);margin:0;min-height:40px}
     .rep-cat.on{box-shadow:none;background:var(--brand);color:#1a1000}
@@ -300,7 +323,7 @@
     .rep-exp button{flex:1 1 auto;min-height:42px}
     .rep-dh{flex-direction:column;align-items:stretch;gap:10px}
     .rep-searchbox input{width:100%;max-width:none;font-size:16px}
-    .rep-tbl-wrap{max-height:none}
+    .rep-tbl-wrap{max-height:none;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain}
     .rep-svg{min-width:0}
 
     /* --- header search box on reports --- */
