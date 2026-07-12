@@ -1160,7 +1160,11 @@ function copRespond(text){
   // Writing to the books always wins over analysing them: an explicit amount + a transaction
   // verb ("we sold 6,200 today") must post an entry, not be answered as a revenue question.
   if(r.kind==='command')return copCommand(r);
-  if(r.kind!=='transaction'){
+  /* A transaction only pre-empts the brain when it carries a real AMOUNT.
+     Without one, a bare noun like "purchase" ("walk me through recording a purchase")
+     was being claimed as an entry to draft, so the assistant answered "How much was it?"
+     to a training question. Amount present = intent to post. No amount = let the brain think. */
+  if(r.kind!=='transaction'||r.amount==null){
     if(brainRespond(text))return;                        // the ERP brain handles questions, analysis, actions
     if(r.kind==='question')return copSay(copAnswer(r,text),{actions:copAnswerActions(text)});
     if(r.kind==='unknown')return copSay("I didn't catch that one. I can **analyse** the business (*“why is my profit lower?”*, *“compare Store A and Store C”*, *“what's almost out of stock?”*) or **post entries** (*“Store B electricity 320”*). I'd rather ask than guess.",{chips:{field:'shortcut',items:["What should I focus on today?","Compare stores","What should I reorder?"]}});
@@ -1234,7 +1238,8 @@ function copBindStream(){const el=document.getElementById('copStream');
     ({chip:()=>copAnswerField(a.field,a.val),save:()=>copCommit(),cancel:()=>copCancel(),undo:()=>copUndo(a.txid),dup:()=>copDup(a.txid),
       opentx:()=>{go(COP.lastTx&&COP.lastTx.type==='sale'?'sales':COP.lastTx&&COP.lastTx.type==='purchase'?'purchases':'expenses');toast('Opened transaction');},
       ledger:()=>{go('dash');toast('Opened ledger');},report:()=>{go('reports');},pdf:()=>toast('Export generated & ready to send'),
-      nav:()=>{const v=a.val;if(ERP_GRAPH[v]&&ERP_GRAPH[v].live===false){toast(ERP_GRAPH[v].name+' ships in Version 2');return;}go(v);toast('Opened '+(ERP_GRAPH[v]?ERP_GRAPH[v].name:v));},
+      nav:()=>{const v=a.val;if(ERP_GRAPH[v]&&ERP_GRAPH[v].live===false){toast(ERP_GRAPH[v].name+' ships in Version 2');return;}go(ERP_GRAPH[v]&&ERP_GRAPH[v].view?ERP_GRAPH[v].view:v);toast('Opened '+(ERP_GRAPH[v]?ERP_GRAPH[v].name:v));},
+      csv:()=>bExportCSV(),
       copy:()=>copCopy(a.mid),editmsg:()=>copEditMsg(a.mid),retry:()=>copRetry(),fixpick:()=>copOpenEdit(a.txid),shortcut:()=>copSubmitText(a.val)}[a.act]||(()=>{}))();});
   el.addEventListener('change',e=>{const f=e.target.dataset.field;if(!f||!COP.pending)return;COP.pending[f]=e.target.type==='number'?+e.target.value:e.target.value;
     const msg=[...COP.msgs].reverse().find(m=>m.card);if(msg){msg.card=copPreviewCard(COP.pending);copRender();}});
@@ -1286,22 +1291,50 @@ function copKeys(e){const ta=document.getElementById('copTa');
   if(e.key==='ArrowUp'&&!ta.value.trim()){const last=[...COP.msgs].reverse().find(x=>x.who==='user');if(last){e.preventDefault();copEditMsg(last.id);}}}
 
 // ---- right sidebar ----
-function copInsights(){const wk=LEDGER.filter(x=>inPeriod(x.date,'week'));const t=sum(LEDGER.filter(x=>x.date===daysAgo(0)),'sale');const y=sum(LEDGER.filter(x=>x.date===daysAgo(1)),'sale');
-  const delta=y?Math.round((t-y)/y*100):0;const ins=[];
-  if(delta<=-8)ins.push({i:'📉',t:`Sales are down **${Math.abs(delta)}%** vs yesterday.`});else if(delta>=8)ins.push({i:'📈',t:`Sales are up **${delta}%** vs yesterday — nice.`});
-  ins.push({i:'🏦',t:`Cash is building up — consider a deposit today.`});
-  ins.push({i:'🧮',t:`Sales-tax filing due **Jul 20** (18 days).`});
-  // duplicate expense detection
-  const seen={};wk.filter(x=>x.type==='expense').forEach(x=>{const k=x.amount+'|'+x.category+'|'+x.date;if(seen[k])ins.push({i:'⚠️',t:`Possible **duplicate expense**: ${money(x.amount)} ${x.category} on ${x.date}.`});seen[k]=1;});
+/* Proactive insights — every one is COMPUTED from the warehouse and clickable through
+   to the analysis that produced it. No canned strings. */
+function copInsights(){
+  const ins=[];
+  const wk=bRange('week'),lw=bRange('lastweek');
+  const cur=bMetrics(LEDGER.filter(x=>inR(x.date,wk)));
+  const prev=bMetrics(LEDGER.filter(x=>inR(x.date,lw)));
+  // 1. revenue trend
+  if(prev.sales){const d=(cur.sales-prev.sales)/prev.sales*100;
+    if(Math.abs(d)>=6)ins.push({i:d>0?'📈':'📉',t:`Revenue is **${d>0?'up':'down'} ${Math.abs(d).toFixed(0)}%** week-on-week (${money(cur.sales)} vs ${money(prev.sales)}).`,q:'Why did revenue change?'});}
+  // 2. margin drift
+  if(prev.margin&&Math.abs(cur.margin-prev.margin)>=2)
+    ins.push({i:'⚖️',t:`Gross margin ${cur.margin>prev.margin?'improved':'slipped'} to **${cur.margin.toFixed(1)}%** from ${prev.margin.toFixed(1)}%.`,q:'Why did my margin change?'});
+  // 3. low stock
+  const low=(REP.products||[]).filter(p=>p.stock<=p.reorder);
+  if(low.length){const out=low.filter(p=>p.stock===0);
+    ins.push({i:'📦',t:out.length?`**${out[0].name} is out of stock.** ${low.length} product${low.length>1?'s are':' is'} at or below reorder.`:`**${low.length} product${low.length>1?'s':''}** at or below the reorder point.`,q:'What should I reorder?'});}
+  // 4. silent store
+  const silent=STORES.filter(s=>!LEDGER.some(x=>x.date===daysAgo(0)&&x.store===s&&x.type==='sale'));
+  if(silent.length)ins.push({i:'🏬',t:`**${silent.join(', ')}** ${silent.length>1?'have':'has'} not reported sales today.`,q:"Show me today's sales."});
+  // 5. anomalies
+  const anom=bAnomalies({period:wk});
+  const m=anom.text.match(/\*\*(\d+) thing/);
+  if(m)ins.push({i:'⚠️',t:`**${m[1]} transaction${+m[1]>1?'s':''}** look out of place this week.`,q:'Find unusual transactions.'});
+  // 6. tax held
+  const tax=LEDGER.filter(x=>inR(x.date,bRange('month'))).reduce((a,x)=>a+(x.tax||0),0);
+  ins.push({i:'🧮',t:`**${money(tax)}** of sales tax is held for the state. Filing **Jul 20**.`,q:'What taxes do I owe?'});
+  // 7. cash to bank
+  const cashRows=LEDGER.filter(x=>inR(x.date,wk)&&x.account==='Cash');
+  const onHand=cashRows.reduce((a,x)=>a+(x.type==='sale'?x.amount:-x.amount),0);
+  if(onHand>1500)ins.push({i:'🏦',t:`**${money(onHand)}** of cash has built up this week — worth banking.`,q:'How much cash should I deposit?'});
   return ins;}
 function copSide(){const el=document.getElementById('copSide');if(!el)return;const ins=copInsights();
   const sec=(title,body,right='')=>`<div class="cop-sec"><h4>${title}${right}</h4>${body}</div>`;
-  const suggested=["Report today's sales","Generate tax report","Compare stores","Reverse last entry"].map(s=>`<div class="cop-srow" data-act="shortcut" data-val="${s}">✨ ${s}</div>`).join('');
+  const suggested=["What should I focus on today?","Why is my profit lower?","Where can I grow?","Compare stores","Find unusual transactions"].map(s=>`<div class="cop-srow" data-act="shortcut" data-val="${copEsc(s)}">✨ ${s}</div>`).join('');
   const shortcuts=['We sold $ today','Paid electricity $','Bought inventory $','Deposited $ cash'].map(s=>`<span class="cop-schip" data-tmpl="${s}">${s}</span>`).join('');
   const recent=COP.recent.length?COP.recent.map(s=>`<div class="cop-srow" data-act="shortcut" data-val="${copEsc(s)}">🕘 ${copEsc(s.length>30?s.slice(0,30)+'…':s)}<span class="st" data-fav="${copEsc(s)}">☆</span></div>`).join(''):'<div class="cop-empty">Nothing yet — start typing.</div>';
   const favs=COP.favs.length?COP.favs.map(s=>`<div class="cop-srow" data-act="shortcut" data-val="${copEsc(s)}">⭐ ${copEsc(s)}</div>`).join(''):'<div class="cop-empty">Star a recent prompt to pin it.</div>';
   const uploads=COP.uploads.length?COP.uploads.map(u=>`<div class="cop-srow">📄 ${u.name}<span class="st">${u.kind}</span></div>`).join(''):'<div class="cop-empty">Drop a receipt or statement here.</div>';
-  const insHtml=ins.slice(0,3).map(x=>`<div class="cop-srow" style="cursor:default">${x.i} <span>${copFmt(x.t)}</span></div>`).join('');
+  // insights are clickable: tapping one asks me the question that produced it
+  const insHtml=ins.slice(0,4).map(x=>x.q
+    ? `<div class="cop-srow" data-act="shortcut" data-val="${copEsc(x.q)}" title="${copEsc(x.q)}">${x.i} <span>${copFmt(x.t)}</span></div>`
+    : `<div class="cop-srow" style="cursor:default">${x.i} <span>${copFmt(x.t)}</span></div>`).join('')
+    ||'<div class="cop-empty">Nothing needs your attention right now.</div>';
   el.innerHTML=sec('AI Insights',insHtml)+sec('Suggested actions',suggested)+sec("Today's shortcuts",`<div class="cop-schips">${shortcuts}</div>`)+sec('Recent prompts',recent)+sec('Pinned',favs)+sec('Recent uploads',uploads);
 }
 function copBindSide(){const el=document.getElementById('copSide');
@@ -1342,14 +1375,87 @@ const ERP_GRAPH={
   inventory:{name:'Inventory',live:false,note:'Stock levels, product costs and movement are already tracked in the warehouse, so I can answer stock questions — but the full Inventory workspace (counts, adjustments, transfers) ships in Version 2.',
         metrics:['stock on hand','reorder point','stock value','turnover','slow movers'],rel:['purchases','sales','reports']},
   customers:{name:'Customers',live:false,note:'Customer records exist in the reporting warehouse but the CRM module is deferred to Version 2.',metrics:['visits','spend','LTV','balance'],rel:['sales','reports']},
-  employees:{name:'Employees',live:false,note:'Employee sales, hours and pay live inside Payroll, Telegram (clock-in) and the Employees reports. A standalone Employees workspace ships in V2.',metrics:['sales per employee','gross pay','attendance'],rel:['payroll','sales','telegram']},
-  suppliers:{name:'Suppliers',live:false,note:'Vendor spend, order counts and balances are in Purchases and the Vendors reports; a dedicated Suppliers workspace ships in V2.',metrics:['spend','orders','balance'],rel:['purchases','reports']},
-  branches:{name:'Branches / Transfers',live:false,note:'Multi-store is live everywhere (every entry carries a store), but stock transfers between branches ship with Inventory in V2.',metrics:['sales by store','profit by store'],rel:['*']}
+  employees:{name:'Employees',live:false,note:'Employee sales, hours and pay live inside Payroll, Telegram (clock-in) and the Employees reports. A standalone Employees workspace ships in Version 2.',metrics:['sales per employee','gross pay','attendance'],rel:['payroll','sales','telegram']},
+  suppliers:{name:'Suppliers',live:false,note:'Vendor spend, order counts and balances are in Purchases and the Vendors reports; a dedicated Suppliers workspace ships in Version 2.',metrics:['spend','orders','balance'],rel:['purchases','reports']},
+  branches:{name:'Branches / Transfers',live:false,note:'Multi-store is live everywhere (every entry carries a store), but stock transfers between branches ship with Inventory in Version 2.',metrics:['sales by store','profit by store'],rel:['*']},
+  products:{name:'Products',live:false,note:'Product catalogue (cost, price, stock, turnover) powers the Inventory and Sales reports today; a product-management workspace ships with Inventory in Version 2.',metrics:['cost','price','stock','turnover','margin per product'],rel:['inventory','sales','purchases','reports']},
+  accounting:{name:'Accounting',live:true,view:'reports',purpose:'The whole product is accounting-first — the ledger IS the accounting module. P&L, cash, tax and reconciliation all project from one transaction table.',metrics:['P&L','cash basis profit','ledger'],rel:['reports','recon','tax','dash']},
+  notifications:{name:'Notifications',live:false,note:'Alerts surface today inside the Dashboard ("Pending tasks") and through me — low stock, silent stores, tax deadlines. A notification centre with delivery rules ships in Version 2.',metrics:['alerts'],rel:['dash','ai']},
+  permissions:{name:'User permissions',live:false,note:'V1 runs as a single owner account. Role-based access (owner / manager / cashier, per-store scoping) is designed but ships in Version 2 — I will not pretend a permission check exists when it does not.',metrics:['roles','scopes'],rel:['settings']},
+  audit:{name:'Audit logs',live:false,note:'Every entry already carries a store, account, date and channel (web / Telegram / import / AI), which is the substrate for an audit trail — but the immutable, user-attributed audit log ships in Version 2.',metrics:['who','what','when','channel'],rel:['settings','reports']},
+  documents:{name:'Documents',live:false,note:'You can attach receipts and statements to me in chat and I extract the figures, but a document vault with retention and search ships in Version 2.',metrics:['receipts','statements'],rel:['ai','recon','expenses']}
 };
+
+/* ---- Domain knowledge: what an experienced accountant/ops manager actually knows.
+   Answers here are explanations, never invented numbers about THIS business.
+   Keys are matched on WORD BOUNDARIES: naive substring matching made "noti-FICA-tions"
+   match the payroll-tax entry. ---- */
+function kbHit(d,keys){return keys.some(k=>new RegExp('\\b'+k.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\b').test(d));}
+const ERP_KB=[
+  {k:['inventory valuation','value my stock','stock value','fifo','lifo','weighted average'],
+   t:'Inventory valuation',
+   a:'Stock is an asset until it sells, then it becomes cost of goods sold. Three common methods: **FIFO** (first in, first out — oldest cost leaves first; the standard for retail and what most US smoke shops use), **weighted average** (blend all unit costs; simpler, smooths price swings), and **LIFO** (allowed under US GAAP but rare and messy).\n\nSmokeStack values cost of goods using each product\'s **cost-to-price ratio** — a weighted-average approach. It gives an accurate margin without asking you to track individual purchase lots. Full lot-level FIFO arrives with the Inventory module in Version 2.'},
+  {k:['reorder point','when should i reorder','safety stock'],
+   t:'Reorder point',
+   a:'Reorder point = **average daily sales × lead time in days + safety stock**. If you sell 6 Elf Bars a day and your supplier takes 5 days, you need 30 units on the shelf when you place the order, plus a buffer for a bad week.\n\nSet it too low and you stock out — that\'s revenue you never recover, because the customer buys it somewhere else. Set it too high and you\'ve parked cash on a shelf.'},
+  {k:['turnover','inventory turns','how fast'],
+   t:'Inventory turnover',
+   a:'Turnover = **cost of goods sold ÷ average inventory value**. It answers "how many times a year do I sell through my shelf?"\n\nHigh turnover means your cash is recycling fast. Low turnover means cash is trapped in stock that isn\'t moving — the single most common way a profitable-looking shop runs out of money.'},
+  {k:['gross margin','net margin','difference between gross and net'],
+   t:'Gross vs net margin',
+   a:'**Gross margin** = (revenue − cost of goods) ÷ revenue. It tells you whether your *pricing* works.\n\n**Net margin** = what\'s left after rent, payroll, utilities and everything else. It tells you whether your *business* works.\n\nYou can have a healthy gross margin and still lose money — that means the problem is overheads, not pricing. The reverse (thin gross margin, positive net) usually means you\'re surviving on volume and one bad month will hurt.'},
+  {k:['cash basis','accrual','why does profit look'],
+   t:'Cash basis vs accrual',
+   a:'SmokeStack reports on a **cash basis**: a purchase hits profit the day you pay for it, not the day the stock sells.\n\nThat\'s why a good month can look unprofitable — you bought $8,000 of stock you\'ll sell over the next six weeks. **Accrual** accounting would spread that cost against the sales it produces. Cash basis is simpler and is what most small US retailers file on, but read a single month\'s profit with that caveat in mind.'},
+  {k:['sales tax','nexus','how does sales tax work','file sales tax'],
+   t:'US sales tax',
+   a:'Sales tax is **not your money** — you collect it from the customer and hold it for the state. Texas is **8.25%** (6.25% state + up to 2% local), and SmokeStack stores it tax-inclusive on every taxable sale.\n\nYou file and remit on a schedule the state assigns (monthly, quarterly or annually, based on volume). **Nexus** means an obligation to collect in a state — physical presence always creates it; economic nexus (a revenue threshold) can create it even without a store there. Multi-state rates are a settings change here, not a code change.\n\nNot tax advice — confirm your filing frequency and rates with your CPA.'},
+  {k:['payroll tax','fica','futa','employer tax','withholding'],
+   t:'Payroll taxes',
+   a:'On top of gross wages you owe **employer FICA at 7.65%** (6.2% Social Security + 1.45% Medicare) — the employee pays a matching 7.65% out of their pay — plus **unemployment tax** (FUTA federally, plus state UI), roughly 2% here.\n\nSo an employee costing "$3,000 a month" actually costs you about **$3,290**. Budget on total cost, not gross. Full withholding tables and pay stubs arrive with a payroll provider integration in Version 2.'},
+  {k:['shrinkage','theft','loss'],
+   t:'Shrinkage',
+   a:'Shrinkage is stock you paid for that never becomes a sale — theft, damage, miscounts, or till errors. Retail runs about **1–2% of revenue**; tobacco and vape run higher because the items are small and valuable.\n\nYou detect it by comparing counted stock against expected stock. Ask me to *find unusual transactions* and I\'ll flag refund spikes and duplicate entries, which are the patterns that most often hide it.'},
+  {k:['kpi','kpis','which numbers matter','numbers matter','what should i track','metrics matter','most important metrics'],
+   t:'The KPIs that actually matter',
+   a:'For a smoke shop, in order: **gross margin %** (is pricing right), **inventory turnover** (is cash moving), **net profit** (does the business work), **revenue per store**, **sales tax held** (money you owe, not money you have), and **labour as a % of revenue** (usually 15–20% in retail).\n\nI\'d ignore vanity metrics. Revenue growth with falling margin is a business getting busier and poorer.'},
+  {k:['age verification','21','compliance','license','flavor ban','pact act'],
+   t:'Smoke-shop compliance',
+   a:'Federal law sets the minimum purchase age at **21** for all tobacco and nicotine products, and ID checks are the single highest-risk area in this business — a failed compliance check can cost the licence.\n\nOther live areas: state/local **retail licences**, **flavoured-product restrictions** (which vary by city, not just state), the **PACT Act** for any shipping, and Texas permits for tobacco retail.\n\nAge verification at point-of-sale is designed for the V2 POS module. I\'m not a lawyer — treat this as orientation, not legal advice, and confirm with counsel.'}
+];
 const MODULE_ALIASES={dashboard:'dash',home:'dash',sales:'sales','daily sales':'sales',revenue:'sales',expense:'expenses',expenses:'expenses',cost:'expenses',purchase:'purchases',purchases:'purchases',
   supplier:'suppliers',suppliers:'suppliers',vendor:'suppliers',vendors:'suppliers',bank:'recon',reconciliation:'recon',recon:'recon',tax:'tax','sales tax':'tax',vat:'tax',payroll:'payroll',
   report:'reports',reports:'reports','report center':'reports',telegram:'telegram',settings:'settings',inventory:'inventory',stock:'inventory',product:'inventory',products:'inventory',
-  customer:'customers',customers:'customers',crm:'customers',employee:'employees',employees:'employees',staff:'employees',branch:'branches',branches:'branches',store:'branches',transfers:'branches',accounting:'reports'};
+  customer:'customers',customers:'customers',crm:'customers',employee:'employees',employees:'employees',staff:'employees',branch:'branches',branches:'branches',transfers:'branches',transfer:'branches',
+  accounting:'accounting',ledger:'accounting','chart of accounts':'accounting','p&l':'accounting','profit and loss':'accounting',
+  notification:'notifications',notifications:'notifications',alerts:'notifications',alert:'notifications',
+  permission:'permissions',permissions:'permissions',roles:'permissions',role:'permissions',access:'permissions','user permissions':'permissions',
+  audit:'audit','audit log':'audit','audit logs':'audit',document:'documents',documents:'documents',receipts:'documents'};
+
+// ---- Workflow guidance: the assistant as an ERP trainer ----
+const WORKFLOWS=[
+  {k:['record a sale','recording a sale','daily sales','report sales','reporting sales','enter sales','entering sales','log sales','close the day','record sales'],view:'sales',t:'Record a day\'s sales',
+   s:['Open **Daily Sales**.','Pick the store.','Enter the day\'s **cash** and **card** totals — you do not key individual receipts.','Leave "taxable" on unless the day was genuinely tax-exempt.','Save. Sales tax at 8.25% is computed and set aside automatically, and the Dashboard, Reports and Sales Tax pages all update from the same entry.'],
+   tip:'Faster still: just tell me *“Store B sold 6,200 today”* and I\'ll draft it.'},
+  {k:['record an expense','recording an expense','enter an expense','entering an expense','log an expense','add an expense','adding an expense','pay a bill','record expenses'],view:'expenses',t:'Record an expense',
+   s:['Open **Expenses**.','Choose the store and the account the money left from.','Pick a category — Utilities, Rent, Supplies, Marketing, Bank Charges.','Enter the amount and who it was paid to.','Save.'],
+   tip:'Or say *“Store B electricity 320”* and I\'ll categorise it as Utilities and draft the entry for you.'},
+  {k:['record a purchase','recording a purchase','create a purchase','creating a purchase','enter a purchase','entering a purchase','buy stock','order stock','supplier invoice','record purchases','log a purchase'],view:'purchases',t:'Record a purchase from a supplier',
+   s:['Open **Purchases**.','Enter the vendor, the date and the amount.','Add a description of what you bought and any notes.','Save — it posts as **cost of goods**, which is what drives your gross margin.'],
+   tip:'Remember purchases hit profit on a cash basis: a big restock will depress this month\'s profit even though you\'ll sell that stock over the coming weeks.'},
+  {k:['run payroll','running payroll','pay staff','paying staff','process payroll','processing payroll','payroll run','do payroll'],view:'payroll',t:'Run payroll',
+   s:['Open **Payroll**.','Check each employee\'s gross for the period.','Review the computed employer taxes: **FICA 7.65%** plus roughly **2% unemployment**.','Press **Run payroll** — it posts to the ledger as a payroll entry.'],
+   tip:'Budget on *total cost*, not gross: $3,000 of wages really costs you about $3,290.'},
+  {k:['file sales tax','filing sales tax','file taxes','filing taxes','sales tax return','remit tax','remitting tax','tax report','file my taxes'],view:'tax',t:'File your sales tax',
+   s:['Open **Sales Tax**.','Confirm the state and rate (Texas defaults to 8.25%).','Check **taxable sales** and **tax collected** for the period, and the by-store breakdown.','Press **Generate tax report** and file with the state by the due date (currently **Jul 20**).'],
+   tip:'The tax you collected is not revenue — it is the state\'s money sitting in your account. Don\'t spend it.'},
+  {k:['reconcile','reconciling','reconcile the bank','bank reconciliation','match transactions','matching transactions','import bank','bank statement','import a statement'],view:'recon',t:'Reconcile the bank',
+   s:['Open **Bank Reconciliation**.','Import the statement (CSV, OFX, QBO or MT940) — lines are auto-categorised.','Work down the unmatched lines.','Press **Record** on each one to post it to the books in a tap.'],
+   tip:'Reconciling weekly is the single habit that keeps a small retail business\'s books trustworthy.'},
+  {k:['add a store','adding a store','new store','add an account','adding an account','set up a store','create a store'],view:'settings',t:'Add a store or account',
+   s:['Open **Settings**.','Add the store or account by name.','It immediately appears in every dropdown, report filter and in my answers.'],
+   tip:'Every transaction carries a store, so multi-store reporting works from the moment you add one.'}
+];
 
 // ---- 2. Session memory ----
 const BRAIN={mem:{metric:null,period:null,store:null,employee:null,product:null,vendor:null,lastAnswer:null,lastPlan:null},turns:[]};
@@ -1437,6 +1543,16 @@ function bCategory(d){const c=EXPCATS.find(x=>d.includes(x.toLowerCase()));retur
 function bIntent(d){
   if(/^(hi|hello|hey|good (morning|evening))\b/.test(d))return 'greet';
   if(/what (can|do) you (do|know)|help me|who are you|your capabilities/.test(d))return 'help';
+  // trainer + domain knowledge come first: "how do I run payroll" is a workflow, not a payroll metric
+  if(/^(how (do|can) i|how to|walk me through|guide me|show me how|teach me|steps to)\b/.test(d))return 'howto';
+  if(ERP_KB.some(e=>kbHit(d,e.k))&&/^(what|how|why|which|explain|tell me|define|is |are |does )\b/.test(d))return 'knowledge';
+  if(/^(create|add|new|start|make|record|enter|log)\b/.test(d)&&/(purchase|expense|sale|entry|transaction|bill)/.test(d))return 'create';
+  if(/(which|what) (expenses?|costs?|purchases?|categor)/.test(d)&&/(increas|rose|up|grew|went up|chang|down|fell|decreas)/.test(d))return 'catvariance';
+  if(/(expenses?|purchases?|spend).*(by categor|breakdown|broken down)/.test(d))return 'catvariance';
+  if(/(seasonal|season|busiest (day|hour)|best day|which day|day of week|weekday|peak (hour|time)|quiet)/.test(d))return 'seasonality';
+  if(/(growth|grow|opportunit|improve (the )?business|make more money|increase (profit|revenue|sales)|what could i)/.test(d))return 'growth';
+  if(/payroll/.test(d)&&/(anomal|unusual|wrong|check|increas|spike|high|too much|why)/.test(d))return 'payrollcheck';
+  if(/margin/.test(d)&&/(chang|drop|fell|fall|slip|improv|why|lower|higher|up|down)/.test(d))return 'marginchange';
   // Specific asks are checked BEFORE the generic "what should I…" briefing, so
   // "what should I reorder?" is a stock question, not a morning briefing.
   if(/(almost out|low stock|running out|out of stock|reorder|re-?stock|need to (buy|order))/.test(d))return 'lowstock';
@@ -1467,9 +1583,20 @@ function bPlan(text){
   const p={_raw:text,intent:bIntent(d),metric:bMetric(d),period:bParsePeriod(d),store:bStore(d),employee:bEmployee(d),
            product:bProduct(d),vendor:bVendor(d),category:bCategory(d),module:bModule(d),
            isQuestion:/\?$/.test(d)||/^(what|how|which|who|when|where|why|show|list|give|tell|compare|find|is|are|do|does|can)\b/.test(d)};
+  /* ---- Module reference beats metric word ----
+     "what is the PAYROLL module?" is a question about a module, not a payroll figure.
+     "what is the daily SALES page?" likewise. If the user explicitly says module/page/
+     screen/section/tab — or asks "what about <module>" — treat the module as the subject
+     and suppress the metric, or we answer a number to a question about a feature. */
+  const saysModule=/\b(module|page|screen|section|tab|workspace|feature)\b/.test(d);
+  if(p.module&&p.store&&!saysModule)p.module=null;   // "Store B" is an entity, not the Branches module
+  const asksAbout=/^(what about|how about|tell me about|what are the|what is the)\b/.test(d);
+  if(p.module&&(saysModule||(asksAbout&&!bParsePeriod(d)))){p.metric=null;p.intent='explain';}
+
   // ---- ellipsis / follow-up resolution from session memory ----
   const bare=!p.metric&&!p.intent;
-  if(!p.metric&&BRAIN.mem.metric&&(p.store||p.period||p.employee||p.product||/^(and|what about|how about|ok|also)\b/.test(d)))p.metric=BRAIN.mem.metric;
+  const inheritOK=!p.module&&!saysModule;   // never inherit a metric into a module question
+  if(!p.metric&&inheritOK&&BRAIN.mem.metric&&(p.store||p.period||p.employee||p.product||/^(and|what about|how about|ok|also)\b/.test(d)))p.metric=BRAIN.mem.metric;
   if(!p.period&&p.metric&&BRAIN.mem.period&&(bare||/^(and|what about|how about)\b/.test(d)))p.period=BRAIN.mem.period;
   if(!p.period)p.period=bRange('month');
   if(!p.intent&&p.metric)p.intent='metric';
@@ -1609,7 +1736,7 @@ function bSuppliers(p){
     const spend=f.reduce((a,x)=>a+x.amount,0);return {v,spend,orders:f.length,avg:f.length?spend/f.length:0};}).filter(r=>r.orders).sort((a,b)=>b.spend-a.spend);
   if(!rows.length)return {text:`No supplier purchases recorded in ${p.period.label}.`,actions:[{label:'Open Purchases',act:'nav',val:'purchases'}]};
   const cheapest=[...rows].sort((a,b)=>a.avg-b.avg)[0];
-  return {text:`You bought from **${rows.length} suppliers** in ${p.period.label}, spending **${money(rows.reduce((a,x)=>a+x.spend,0))}**.\n\n**${rows[0].v}** takes the largest share (${money(rows[0].spend)} over ${rows[0].orders} orders). **${cheapest.v}** has the lowest average order at ${money(cheapest.avg)}.\n\nA caveat I want to be straight about: I can compare **spend and order size**, not unit prices — line-item pricing arrives with the Inventory/PO module in V2, so "best price" here means smallest average order value, not cheapest per unit.`,
+  return {text:`You bought from **${rows.length} suppliers** in ${p.period.label}, spending **${money(rows.reduce((a,x)=>a+x.spend,0))}**.\n\n**${rows[0].v}** takes the largest share (${money(rows[0].spend)} over ${rows[0].orders} orders). **${cheapest.v}** has the lowest average order at ${money(cheapest.avg)}.\n\nA caveat I want to be straight about: I can compare **spend and order size**, not unit prices — line-item pricing arrives with the Inventory/PO module in Version 2, so "best price" here means smallest average order value, not cheapest per unit.`,
     card:bTable(`Supplier spend · ${p.period.label}`,['Supplier','Spend','Orders','Avg order'],
       rows.map(r=>[`<b>${r.v}</b>`,money(r.spend),r.orders,money(r.avg)])),
     actions:[{label:'Open Purchases',act:'nav',val:'purchases'}]};
@@ -1720,6 +1847,8 @@ function bExplain(p){
     if(/report/.test(d))return {text:`No report is open right now, so there's nothing specific for me to explain — I won't guess which one you mean.\n\nOpen any of the 90 reports in the Report Center and ask me again, and I'll walk you through every metric, how it's calculated, what changed and what to do about it.`,
       actions:[{label:'Open Report Center',act:'nav',val:'reports',pri:true}]};
   }
+  // a named module wins over a metric word ("the payroll module" ≠ the payroll figure)
+  if(p.module&&ERP_GRAPH[p.module]&&/\b(module|page|screen|section|tab|workspace|feature)\b/.test(d))p.metric=null;
   if(p.metric&&METRIC_HOW[p.metric]){
     const M=bMetrics(bRows(p));
     return {text:`**${METRIC_LABEL[p.metric]}** — ${METRIC_HOW[p.metric]}\n\nRight now, over ${p.period.label}, it comes to **${bFmt(p.metric,M[p.metric])}**.\n\n${p.metric==='profit'?'Note this is *cash-basis* profit: a big stock purchase lands entirely in the month you paid for it, even though you\'ll sell that stock over the following weeks. That\'s why a good month can look unprofitable.':p.metric==='margin'?'Margin is the honest measure of whether your pricing works. Revenue can rise while margin falls — that means you\'re selling more but keeping less of it.':''}`,
@@ -1755,6 +1884,135 @@ function bSearch(p){
     actions:[{label:'Open Reports',act:'nav',val:'reports'}]};
 }
 
+// ---- 8b. Deep BI ----
+function bCatVariance(p){
+  // "What expenses increased this month?" must name the CATEGORY, not just the total.
+  const type=/purchase/.test(p._raw.toLowerCase())?'purchase':'expense';
+  const pr=bRange(PREV[p.period.key]||'lastmonth');
+  const cur=bRows(p).filter(x=>x.type===type), old=bRows({...p,period:pr}).filter(x=>x.type===type);
+  if(!cur.length&&!old.length)return {text:`No ${type}s recorded in ${p.period.label} or ${pr.label}, so there's no change for me to break down.`};
+  const key=x=>x.category||x.vendor||'Uncategorised';
+  const roll=rows=>rows.reduce((a,x)=>{a[key(x)]=(a[key(x)]||0)+x.amount;return a;},{});
+  const A=roll(old),B=roll(cur);
+  const cats=[...new Set([...Object.keys(A),...Object.keys(B)])]
+    .map(c=>({c,now:B[c]||0,was:A[c]||0,d:(B[c]||0)-(A[c]||0)}))
+    .sort((x,y)=>y.d-x.d);
+  const up=cats.filter(x=>x.d>0),down=cats.filter(x=>x.d<0);
+  const total=cats.reduce((a,x)=>a+x.d,0);
+  const lead=up[0];
+  return {text:`Total ${type}s ${total>=0?'**rose**':'**fell**'} ${money(Math.abs(total))} — ${money(Object.values(A).reduce((a,b)=>a+b,0))} in ${pr.label} → **${money(Object.values(B).reduce((a,b)=>a+b,0))}** in ${p.period.label}.\n\n${up.length?`**What went up:**\n`+up.slice(0,4).map(x=>`- **${x.c}** +${money(x.d)} (${money(x.was)} → ${money(x.now)})${x.was===0?' — this is new spend that didn\'t exist last period':''}`).join('\n'):'Nothing increased.'}\n\n${down.length?`**What came down:**\n`+down.slice(0,3).map(x=>`- ${x.c} −${money(Math.abs(x.d))} (${money(x.was)} → ${money(x.now)})`).join('\n'):''}\n\n${lead?`The increase is driven by **${lead.c}**. ${lead.c==='Rent'?'Rent is fixed — a jump usually means two months landed in one period.':lead.c==='Payroll'?'Check whether an extra pay run fell inside this window.':'Worth checking the individual entries before you accept it.'}`:''}`,
+    card:bTable(`${cap(type)} by category`,['Category',pr.label,p.period.label,'Change'],
+      cats.slice(0,8).map(x=>[`<b>${x.c}</b>`,money(x.was),money(x.now),
+        `<b style="color:${x.d>0?'var(--bad)':'var(--ok)'}">${x.d>=0?'+':'−'}${money(Math.abs(x.d))}</b>`])),
+    chips:{field:'shortcut',items:['Show unusual transactions','Why is my profit lower?','Compare stores']},
+    actions:[{label:'Open Expenses',act:'nav',val:'expenses'},{label:'⬇ Export CSV',act:'csv'}]};
+}
+function bSeasonality(p){
+  const rows=LEDGER.filter(x=>x.type==='sale'&&inR(x.date,bRange('year'))&&(!p.store||x.store===p.store));
+  if(!rows.length)return {text:`I don't have enough sales history to read a seasonal pattern.`};
+  const DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const byDow=DOW.map(d=>{const f=rows.filter(x=>(x.weekday||DOW[new Date(x.date).getDay()])===d);
+    const days=new Set(f.map(x=>x.date)).size||1;return {d,total:f.reduce((a,x)=>a+x.amount,0),avg:f.reduce((a,x)=>a+x.amount,0)/days};});
+  const best=[...byDow].sort((a,b)=>b.avg-a.avg)[0],worst=[...byDow].sort((a,b)=>a.avg-b.avg)[0];
+  const byHour={};rows.forEach(x=>{if(x.hour!=null)byHour[x.hour]=(byHour[x.hour]||0)+x.amount;});
+  const hrs=Object.entries(byHour).sort((a,b)=>b[1]-a[1]).slice(0,3).map(h=>`${h[0]}:00`);
+  const lift=worst.avg?((best.avg-worst.avg)/worst.avg*100):0;
+  return {text:`**${best.d} is your strongest day** — it averages **${money(best.avg)}**, which is **${lift.toFixed(0)}% above ${worst.d}** (${money(worst.avg)}), your weakest.\n\nYour busiest hours are **${hrs.join(', ')}**.\n\nWhat I'd do with that: staff to the peak rather than evenly across the week, and put promotions on **${worst.d}** where you have capacity to spare rather than on ${best.d} where you'd just discount sales you were going to make anyway.`,
+    card:bTable('Sales by weekday',['Day','Avg / day','Total'],byDow.map(x=>[`<b>${x.d}</b>`,money(x.avg),money(x.total)])),
+    actions:[{label:'Open Reports',act:'nav',val:'reports'}]};
+}
+function bGrowth(p){
+  const per=bRange('month');
+  const prods=(REP.products||[]).map(x=>{const f=LEDGER.filter(y=>y.type==='sale'&&y.product===x.name&&inR(y.date,per));
+    const rev=f.reduce((a,y)=>a+y.amount,0);const marg=(x.price-x.cost)/x.price*100;
+    return {...x,rev,marg};});
+  const highMarginLowVolume=prods.filter(x=>x.marg>40).sort((a,b)=>a.rev-b.rev)[0];
+  const stockoutRisk=prods.filter(x=>x.stock<=x.reorder).sort((a,b)=>b.rev-a.rev)[0];
+  const stores=STORES.map(s=>({s,...bMetrics(bRows({period:per,store:s}))})).sort((a,b)=>b.sales-a.sales);
+  const gap=stores[0].sales-stores[stores.length-1].sales;
+  const deadCap=prods.sort((a,b)=>a.turnover-b.turnover).slice(0,3).reduce((a,x)=>a+x.value,0);
+  const ideas=[];
+  if(stockoutRisk)ideas.push(`**Stop the stockout on ${stockoutRisk.name}.** It earned ${money(stockoutRisk.rev)} in the last 30 days and is down to ${stockoutRisk.stock} units. Every empty day is revenue you never get back — this is the highest-certainty money on this list.`);
+  if(highMarginLowVolume)ideas.push(`**Push ${highMarginLowVolume.name}.** It carries a ${highMarginLowVolume.marg.toFixed(0)}% margin but only did ${money(highMarginLowVolume.rev)}. Moving high-margin, low-volume stock to eye level is the cheapest margin gain you have.`);
+  if(gap>0)ideas.push(`**Close the store gap.** ${stores[0].s} does ${money(gap)} more than ${stores[stores.length-1].s}. If the weak store is a footfall problem, marketing helps; if it's a basket problem, ${stores[0].s}'s layout and staffing are the template.`);
+  if(deadCap>0)ideas.push(`**Free up ${money(deadCap)} of trapped cash.** That's the capital sitting in your three slowest movers. Discounting to clear it converts dead stock into stock that actually turns.`);
+  return {text:`Here's where I'd look for growth, in the order I'd act on it — highest certainty first:\n\n`+ideas.map((s,i)=>`${i+1}. ${s}`).join('\n\n')+`\n\nI'm deliberately not listing "sell more" — these are all changes you can make this week with stock and staff you already have.`,
+    chips:{field:'shortcut',items:['What should I reorder?','What is slow moving?','Show seasonality']},
+    actions:[{label:'Open Reports',act:'nav',val:'reports'}]};
+}
+function bPayrollCheck(p){
+  const per=p.period.key==='today'?bRange('quarter'):p.period;
+  const runs=LEDGER.filter(x=>x.type==='payroll'&&inR(x.date,per));
+  if(!runs.length)return {text:`No payroll runs posted in ${per.label}. If you've paid staff, the run hasn't been recorded — that would understate your costs and overstate profit.`,
+    actions:[{label:'Open Payroll',act:'nav',val:'payroll',pri:true}]};
+  const byDate={};runs.forEach(x=>byDate[x.date]=(byDate[x.date]||0)+x.amount);
+  const dates=Object.keys(byDate).sort();
+  const amts=Object.values(byDate);
+  const avg=amts.reduce((a,b)=>a+b,0)/amts.length;
+  const outliers=dates.filter(d=>Math.abs(byDate[d]-avg)/avg>0.25);
+  const gross=EMPLOYEES.reduce((a,e)=>a+e.gross,0);
+  const total=runs.reduce((a,x)=>a+x.amount,0);
+  const sales=bT(bRows({...p,period:per}),'sale');
+  const labourPct=sales?total/sales*100:0;
+  const flags=[];
+  if(outliers.length)flags.push(`**${outliers.length} run${outliers.length>1?'s are':' is'} more than 25% off your ${money(avg)} average** (${outliers.map(d=>`${d}: ${money(byDate[d])}`).join(', ')}). An extra pay period landing inside the window is the usual innocent explanation.`);
+  if(labourPct>25)flags.push(`**Labour is ${labourPct.toFixed(1)}% of revenue**, above the 15–20% that's normal for retail. Either hours are too high for the traffic, or revenue is too low for the staffing.`);
+  if(labourPct&&labourPct<10)flags.push(`Labour is only ${labourPct.toFixed(1)}% of revenue — unusually lean. Check that every pay run has actually been posted.`);
+  return {text:`Payroll over ${per.label}: **${money(total)}** across ${dates.length} runs, averaging ${money(avg)}.\n\nOn top of gross you owe **employer FICA (7.65%)** and roughly **2% unemployment** — so the true cost of ${money(gross)} of wages is about **${money(gross*1.0965)}**.\n\n${flags.length?flags.map(f=>`- ${f}`).join('\n'):`Nothing anomalous: run sizes are consistent and labour is ${labourPct.toFixed(1)}% of revenue, inside the normal retail band.`}`,
+    card:bTable('Payroll runs',['Date','Amount','vs average'],dates.slice(-6).map(d=>[d,money(byDate[d]),
+      `<b style="color:${Math.abs(byDate[d]-avg)/avg>0.25?'var(--warn)':'var(--ok)'}">${byDate[d]>=avg?'+':'−'}${money(Math.abs(byDate[d]-avg))}</b>`])),
+    actions:[{label:'Open Payroll',act:'nav',val:'payroll'}]};
+}
+function bMarginCheck(p){
+  const cur=bMetrics(bRows(p));
+  const pr=bRange(PREV[p.period.key]||'lastmonth');
+  const prev=bMetrics(bRows({...p,period:pr}));
+  if(!cur.net||!prev.net)return {text:`I need sales in both ${p.period.label} and ${pr.label} to measure a margin change.`};
+  const d=cur.margin-prev.margin;
+  const dir=d>=0?'improved':'slipped';
+  const cause=Math.abs(cur.net-prev.net)/prev.net > Math.abs(cur.cogs-prev.cogs)/(prev.cogs||1)
+    ? 'revenue mix' : 'cost of goods';
+  return {text:`**Gross margin ${dir} ${Math.abs(d).toFixed(1)} points** — ${prev.margin.toFixed(1)}% in ${pr.label} → **${cur.margin.toFixed(1)}%** in ${p.period.label}.\n\nRevenue went ${cur.net>=prev.net?'up':'down'} ${money(Math.abs(cur.net-prev.net))} while cost of goods went ${cur.cogs>=prev.cogs?'up':'down'} ${money(Math.abs(cur.cogs-prev.cogs))}. The change is mostly a **${cause}** effect.\n\n${d<-2?'A margin fall of this size is worth acting on: either supplier costs rose and you absorbed them, or you sold a heavier mix of low-margin lines. Both are fixable with pricing.':d>2?'That\'s a real improvement — worth knowing which products drove it so you can repeat it.':'That\'s within normal drift; I wouldn\'t act on it.'}`,
+    card:bCard('Margin bridge',cur.margin.toFixed(1)+'%',[['Net revenue',`${money(prev.net)} → ${money(cur.net)}`],
+      ['Cost of goods',`${money(prev.cogs)} → ${money(cur.cogs)}`],['Gross profit',`${money(prev.gross)} → ${money(cur.gross)}`],
+      ['Gross margin',`<b>${prev.margin.toFixed(1)}% → ${cur.margin.toFixed(1)}%</b>`]]),
+    actions:[{label:'Open Reports',act:'nav',val:'reports'}]};
+}
+function bHowTo(p){
+  const d=p._raw.toLowerCase();
+  const wf=WORKFLOWS.find(w=>kbHit(d,w.k));
+  if(!wf)return null;
+  const mod=ERP_GRAPH[wf.view];
+  return {text:`**${wf.t}** — here's the whole flow:\n\n`+wf.s.map((s,i)=>`${i+1}. ${s}`).join('\n')+`\n\n💡 ${wf.tip}`,
+    actions:[{label:'Open '+(mod?mod.name:wf.view),act:'nav',val:wf.view,pri:true}]};
+}
+function bKnowledge(p){
+  const d=p._raw.toLowerCase();
+  const hit=ERP_KB.find(e=>kbHit(d,e.k));
+  if(!hit)return null;
+  return {text:`**${hit.t}**\n\n${hit.a}`,chips:{field:'shortcut',items:['What should I focus on today?','Explain gross margin','What should I reorder?']}};
+}
+function bExportCSV(){
+  const rows=LEDGER.slice().sort((a,b)=>a.date<b.date?1:-1);
+  const cols=['date','store','account','type','category','vendor','product','employee','amount','tax','memo'];
+  const esc=v=>v==null?'':/[",\n]/.test(String(v))?`"${String(v).replace(/"/g,'""')}"`:String(v);
+  const csv=[cols.join(',')].concat(rows.map(r=>cols.map(c=>esc(r[c])).join(','))).join('\n');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download=`smokestack-ledger-${daysAgo(0)}.csv`;document.body.appendChild(a);a.click();
+  setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1500);
+  toast(`Exported ${rows.length.toLocaleString()} transactions to CSV`);
+}
+function bStartDraft(p){
+  // "Create a purchase" / "add an expense" with no amount yet -> start the guided draft.
+  const d=p._raw.toLowerCase();
+  const intent=/purchase|buy|order|supplier|restock/.test(d)?'purchase':/expense|bill|pay/.test(d)?'expense':/sale|sold|takings/.test(d)?'sale':null;
+  if(!intent)return null;
+  COP.pending={intent,amount:parseAmount(p._raw)||null,store:p.store,account:null,category:p.category,vendor:p.vendor,desc:null,date:daysAgo(0),step:null};
+  copAdvance();
+  return {_handled:true};
+}
+
 // ---- 9. Router ----
 function brainRespond(text){
   const p=bPlan(text);
@@ -1778,10 +2036,20 @@ function brainRespond(text){
     case 'explain': r=bExplain(p);break;
     case 'navigate': r=bNavigate(p);break;
     case 'search': r=bSearch(p);break;
-    case 'export': r={text:`I've prepared the export for ${p.period.label}. Reports also exports any of its 90 views to CSV or PDF.`,actions:[{label:'⬇ Download',act:'pdf'},{label:'Open Reports',act:'nav',val:'reports'}]};break;
+    case 'howto': r=bHowTo(p)||bExplain(p);break;
+    case 'knowledge': r=bKnowledge(p);break;
+    case 'create': r=bStartDraft(p);break;
+    case 'catvariance': r=bCatVariance(p);break;
+    case 'seasonality': r=bSeasonality(p);break;
+    case 'growth': r=bGrowth(p);break;
+    case 'payrollcheck': r=bPayrollCheck(p);break;
+    case 'marginchange': r=bMarginCheck(p);break;
+    case 'export': r={text:`Exporting your full ledger — **${LEDGER.length.toLocaleString()} transactions** with date, store, account, type, category, vendor, product, employee, amount and tax — as a CSV you can open in Excel or hand to your accountant.\n\nThe Report Center can also export any of its 90 individual views.`,
+      actions:[{label:'⬇ Download CSV',act:'csv',pri:true},{label:'Open Reports',act:'nav',val:'reports'}]};break;
     case 'metric': r=(p.metric==='tax')?bTaxOwed(p):bMetricAnswer(p);break;
   }
   if(!r)return false;
+  if(r._handled)return true;   // the draft flow already replied
   brainRemember(p,r.text);
   copSay(r.text,{card:r.card,chips:r.chips,actions:r.actions});
   if(r._nav)setTimeout(()=>go(r._nav),700);
