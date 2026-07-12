@@ -231,9 +231,10 @@
 
     /* --- main content spacing --- */
     .main{padding:calc(60px + env(safe-area-inset-top)) 14px calc(84px + env(safe-area-inset-bottom));overflow-y:visible}
-    .top{margin-bottom:14px;gap:8px}
-    .top h1{font-size:21px}
-    .top .sub{font-size:11.5px}
+    .top{margin-bottom:12px;gap:8px;align-items:center}
+    .top h1{display:none}                 /* app bar already shows the page title */
+    .top .sub{font-size:12px;color:var(--muted)}
+    .top>div:first-child{flex:1;min-width:0}
 
     /* --- grids --- */
     .g4,.g3,.g2{grid-template-columns:1fr 1fr}
@@ -259,7 +260,7 @@
     /* --- Ask Claude (copilot) --- */
     .cop-wrap{grid-template-columns:1fr;height:auto;gap:0}
     .cop-side{display:none}
-    .cop-main{height:calc(100dvh - 190px);min-height:380px;border-radius:14px}
+    .cop-main{height:calc(100dvh - 250px);min-height:340px;border-radius:14px}
     .cop-stream{padding:14px}
     .cop-row{max-width:96%}
     .cop-row.me{max-width:88%}
@@ -273,13 +274,17 @@
 
     /* --- Report Center --- */
     .rep-wrap{grid-template-columns:1fr;height:auto;gap:10px}
-    .rep-cats{display:flex;gap:7px;overflow-x:auto;padding:8px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+    .rep-cats{display:flex;flex-wrap:nowrap;gap:7px;overflow-x:auto;padding:8px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
     .rep-cats::-webkit-scrollbar{display:none}
     .rep-cat{flex:0 0 auto;white-space:nowrap;padding:9px 13px;border-radius:20px;background:var(--panel2);border:1px solid var(--line);margin:0;min-height:40px}
     .rep-cat.on{box-shadow:none;background:var(--brand);color:#1a1000}
     .rep-cat.on .n{background:rgba(0,0,0,.18);color:#1a1000;border-color:transparent}
-    .rep-grid{grid-template-columns:1fr;gap:10px}
-    .rep-card{overflow:visible}
+    .rep-grid{grid-template-columns:1fr;gap:9px}
+    .rep-card{overflow:visible;display:flex;align-items:center;gap:12px;padding:12px 13px}
+    .rep-card .ic{margin-bottom:0;flex:0 0 38px;width:38px;height:38px}
+    .rep-card .txt{min-width:0}
+    .rep-card h4{margin-bottom:2px}
+    .rep-card p{white-space:normal}
     .rep-kpis{grid-template-columns:1fr 1fr;gap:10px}
     .rep-fbar{gap:7px}
     .rep-fbar select{flex:1 1 45%;min-width:0}
@@ -910,7 +915,7 @@ function renderReports(){if(!REP.inited){repSeed();RCATALOG=repCatalog();repBind
   else list=RCATALOG.filter(r=>r.cat===REP.cat);
   document.getElementById('repSub').textContent=q?`${list.length} reports match “${REP.search}”`:`${REP.cat} · ${list.length} reports · ${RCATALOG.length} total`;
   main.innerHTML=`<div class="rep-cathead">${q?'Search results':REP.cat+' reports'}</div>`+
-    (list.length?`<div class="rep-grid">${list.map(r=>`<div class="rep-card" data-open="${r.id}"><div class="ic">${r.ic}</div><h4>${r.name}</h4><p>${r.desc}</p></div>`).join('')}</div>`
+    (list.length?`<div class="rep-grid">${list.map(r=>`<div class="rep-card" data-open="${r.id}"><div class="ic">${r.ic}</div><div class="txt"><h4>${r.name}</h4><p>${r.desc}</p></div></div>`).join('')}</div>`
      :`<div class="rep-cathead" style="color:var(--muted)">No reports match — try “profit”, “tax”, “inventory”, “cash”.</div>`);
 }
 function repDetail(){const rep=RCATALOG.find(r=>r.id===REP.current);if(!rep)return repBackCat();
@@ -1303,6 +1308,10 @@ function mInit(){
   // close drawer whenever a nav item inside it is tapped (go() already syncs)
   document.getElementById('nav').addEventListener('click',()=>mDrawer(false));
   mSync('dash');
+  // phones: shorter placeholder so it doesn't wrap to two lines
+  if(window.matchMedia('(max-width:860px)').matches){
+    const ta=document.getElementById('copTa');if(ta)ta.placeholder='Message Claude…  e.g. Store B electricity 320';
+  }
 }
 function init(){fillStores();document.getElementById('pDate').value=daysAgo(0);renderSettings();refreshAll();copInit();mInit();}
 init();
