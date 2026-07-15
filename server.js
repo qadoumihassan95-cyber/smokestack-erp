@@ -1,6 +1,7 @@
 'use strict';
 const path = require('path');
 const express = require('express');
+const compression = require('compression');
 
 const app = express();
 const PORT = process.env.PORT || 3000;   // Render injects PORT
@@ -8,11 +9,18 @@ const HOST = '0.0.0.0';                  // required by Render
 const NODE_ENV = process.env.NODE_ENV || 'production';
 
 app.disable('x-powered-by');
+app.set('etag', 'strong');
+
+// gzip every response — the single-file app is ~228 KB raw, ~50 KB compressed
+app.use(compression());
 
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains'); // Render serves HTTPS
+  // HTML is always revalidated so a new deploy is seen immediately (no stale-page refresh loop)
+  res.setHeader('Cache-Control', 'no-cache');
   next();
 });
 

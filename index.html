@@ -556,7 +556,30 @@
 <div class="toast" id="toast"></div>
 
 <script>
-// ---------------- State ----------------
+/* ==========================================================================
+   SmokeStack — accounting-first ERP (single-file app)
+   --------------------------------------------------------------------------
+   ARCHITECTURE (top → bottom of this script):
+     1. State ............ STORES, ACCOUNTS, LEDGER, EMPLOYEES, VENDORS
+     2. Shared utilities . money(), sum() [canonical aggregator], period filters
+     3. Modules .......... Dashboard, Daily Sales, Expenses, Purchases,
+                           Bank Recon, Sales Tax, Payroll  (each = render + submit)
+     4. Report Center .... rep* — 90 reports projected over the warehouse
+     5. Telegram + NL .... processMessage() shared by chat and the bot
+     6. Ask Claude ....... cop* — copilot UI, parsing, preview, actions
+     7. ERP Brain ........ ERP_GRAPH, ERP_KB, WORKFLOWS + b* analytics engine
+     8. Mobile ........... m* — top bar, bottom tabs, drawer
+     9. Boot ............. unifyWarehouse() → refreshAll() → brainInit/copInit/mInit
+
+   INVARIANTS — do not break:
+     • SINGLE SOURCE OF TRUTH: LEDGER === REP.tx after unifyWarehouse(). Every
+       module and the AI read/write the SAME array, so figures can never diverge.
+     • sum() is the one aggregator; repSum()/bT() delegate to it.
+     • Period filters (inPeriod 30d / repInPeriod 29d / inR range) are DELIBERATELY
+       different — do not "unify" them or dashboard vs report figures will shift.
+     • The AI never posts to the ledger without an explicit user confirmation.
+   ========================================================================== */
+// ---------------- 1. State ----------------
 let STORES=["Store A","Store B","Store C"];
 let ACCOUNTS=["Cash","Checking","Business Bank","Credit Card"];
 const today=new Date('2026-07-02');
@@ -581,11 +604,19 @@ let uid=100;
 const TYPECHIP={sale:"c-sale",expense:"c-exp",purchase:"c-pur",deposit:"c-dep",transfer:"c-dep",refund:"c-ref",payroll:"c-pay"};
 let curStore="all";
 
-// ---------------- helpers ----------------
+/* ============================ SHARED UTILITIES ============================
+   Single home for money formatting and ledger aggregation. Reporting (repSum)
+   and the AI brain (bT) delegate here so there is exactly one implementation of
+   "total the amount for a transaction type" in the codebase.
+   NOTE on period filters: inPeriod (dashboard), repInPeriod (reports) and inR
+   (AI brain) look similar but are intentionally NOT unified — the dashboard uses
+   a rolling 30-day month while reports use 29, and merging them would silently
+   change every figure on those pages. Kept separate on purpose. ======================== */
 function money(n){return '$'+Math.round(n).toLocaleString();}
 function money2(n){return '$'+(+n).toFixed(2);}
 function inPeriod(d,p){if(p==='today')return d===daysAgo(0);if(p==='week')return d>=daysAgo(6);if(p==='month')return d>=daysAgo(30);return true;}
 function filt(store){return LEDGER.filter(x=>store==='all'||x.store===store);}
+// canonical aggregator — sum the `amount` of every row of a given type
 function sum(rows,type){return rows.filter(x=>x.type===type).reduce((a,x)=>a+x.amount,0);}
 function go(v){document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('active',a.dataset.v===v));
   document.querySelectorAll('.view').forEach(s=>s.classList.remove('on'));document.getElementById('v-'+v).classList.add('on');
@@ -718,7 +749,7 @@ function repSeed(){let s=42;const rnd=()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul
 }
 function repInPeriod(d,p){if(p==='today')return d===daysAgo(0);if(p==='week')return d>=daysAgo(6);if(p==='month')return d>=daysAgo(29);if(p==='quarter')return d>=daysAgo(89);if(p==='year')return d>=daysAgo(200);return true;}
 function repTx(){const f=REP.filters;return REP.tx.filter(x=>repInPeriod(x.date,f.period)&&(f.store==='all'||x.store===f.store)&&(f.account==='all'||x.account===f.account)&&(f.category==='all'||x.category===f.category||x.prodCat===f.category)&&(f.vendor==='all'||x.vendor===f.vendor)&&(f.employee==='all'||x.employee===f.employee)&&(f.product==='all'||x.product===f.product)&&(f.customer==='all'||x.customer===f.customer));}
-function repSum(rows,type){return rows.filter(x=>x.type===type).reduce((a,x)=>a+x.amount,0);}
+function repSum(rows,type){return sum(rows,type);}   // delegates to the canonical aggregator
 
 // ---- charts ----
 function repBar(data,color){const w=760,h=250,pad=36;if(!data.length)return repEmpty();const max=Math.max(1,...data.map(d=>d[1]));const step=(w-pad*2)/data.length,bw=Math.min(48,step*0.62);
@@ -1500,7 +1531,7 @@ function bRows(p){return LEDGER.filter(x=>inR(x.date,p.period)
   &&(!p.store||x.store===p.store)&&(!p.employee||x.employee===p.employee)
   &&(!p.product||x.product===p.product)&&(!p.vendor||x.vendor===p.vendor)
   &&(!p.category||x.category===p.category));}
-function bT(rows,t){return rows.filter(x=>x.type===t).reduce((a,x)=>a+x.amount,0);}
+function bT(rows,t){return sum(rows,t);}   // delegates to the canonical aggregator
 function bCOGS(rows){const cost={};REP.products.forEach(p=>cost[p.name]=p.cost/p.price);
   return rows.filter(x=>x.type==='sale').reduce((a,x)=>a+x.amount*(cost[x.product]!=null?cost[x.product]:0.62),0);}
 function bMetrics(rows){
@@ -1532,7 +1563,8 @@ const METRIC_HOW={
 function bFmt(m,v){return m==='margin'?v.toFixed(1)+'%':m==='txns'?Math.round(v).toLocaleString():money(v);}
 
 // ---- 5. Entity resolution ----
-function bStore(d){const s=STORES.find(x=>d.includes(x.toLowerCase()));if(s)return s;
+// reuse the name-scan from copFindStore, then add the brain's "store X" letter shorthand
+function bStore(d){const s=copFindStore(d);if(s)return s;
   const m=d.match(/\bstore\s+([a-z])\b/);if(m){const f=STORES.find(x=>x.toLowerCase().endsWith(' '+m[1]));if(f)return f;}return null;}
 function bEmployee(d){const e=EMPLOYEES.find(x=>d.includes(x.name.toLowerCase())||d.includes(x.name.split(' ')[0].toLowerCase()));return e?e.name:null;}
 function bProduct(d){const p=(REP.products||[]).find(x=>d.includes(x.name.toLowerCase()));return p?p.name:null;}
