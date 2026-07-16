@@ -421,11 +421,14 @@
       border-radius:18px 18px 0 0;transform:translateY(102%);padding-bottom:env(safe-area-inset-bottom)}
     .drw.on{transform:none}
     .drw-acts button{min-height:46px}
-    .amenu{left:8px!important;right:8px!important;top:auto!important;bottom:calc(12px + env(safe-area-inset-bottom));min-width:0}
-    .amenu button{padding:12px 10px;font-size:14.5px}
+    /* mobile: anchored bottom-sheet that clears the bottom navigation bar */
+    .amenu{left:8px!important;right:8px!important;top:auto!important;
+      bottom:calc(var(--mobile-bottom-nav-height) + env(safe-area-inset-bottom) + 14px)!important;
+      min-width:0;max-height:58vh;overflow-y:auto}
+    .amenu button{padding:13px 12px;font-size:15px;min-height:48px}
     .dlg{bottom:0;top:auto;left:0;transform:translateY(102%);width:100%;max-width:100%;border-radius:18px 18px 0 0}
     .dlg.on{transform:none}
-    .rowact{width:38px;height:38px}
+    .rowact{width:44px;height:44px}   /* ≥44×44 touch target */
   }
   /* ===== Print / PDF page tools ===== */
   .ptools{display:inline-flex;gap:8px;align-items:center}
@@ -984,7 +987,7 @@ function renderDash(){curStore=BRANCH;const rows=scope(LEDGER);
   // recent
   const rec=[...rows].sort((a,b)=>b.id-a.id).slice(0,8);
   document.getElementById('recentTbl').innerHTML=`<thead><tr><th>Date</th><th>Store</th><th>Account</th><th>Type</th><th>Memo</th><th style="text-align:end">Amount</th><th></th></tr></thead><tbody>`+
-    rec.map(x=>`<tr data-txid="${x.id}"><td>${x.date.slice(5)}</td><td>${x.store}</td><td>${x.account}</td><td><span class="chip ${TYPECHIP[x.type]}">${x.type}</span></td><td>${x.memo||x.category}${x.voided?'<span class="voided-badge">void</span>':''}</td><td style="text-align:end;color:${x.type==='sale'||x.type==='deposit'?'var(--ok)':'var(--txt)'}"><b>${money(x.amount)}</b></td><td style="text-align:center"><button class="rowact" data-rowmenu="${x.id}" aria-label="Actions for #${x.id}">⋯</button></td></tr>`).join('')+`</tbody>`;
+    rec.map(x=>`<tr data-txid="${x.id}"><td>${x.date.slice(5)}</td><td>${x.store}</td><td>${x.account}</td><td><span class="chip ${TYPECHIP[x.type]}">${x.type}</span></td><td>${x.memo||x.category}${x.voided?'<span class="voided-badge">void</span>':''}</td><td style="text-align:end;color:${x.type==='sale'||x.type==='deposit'?'var(--ok)':'var(--txt)'}"><b>${money(x.amount)}</b></td><td style="text-align:center"><button type="button" class="rowact" data-rowmenu="${x.id}" aria-label="More actions" aria-haspopup="menu" aria-expanded="false">⋯</button></td></tr>`).join('')+`</tbody>`;
   rowify('recentTbl','transaction');
   document.getElementById('pending').innerHTML=`🔵 <b>${money(cash>4000?cash-1000:0)}</b> cash ready to deposit<br>🟡 Store C hasn't reported today<br>🟢 Payroll due in 3 days<br>🟠 Sales-tax filing in 12 days`;
   document.getElementById('taxMini').innerHTML=`Taxable sales (MTD): <b>${money(sum(monthRows,'sale'))}</b><br>Tax collected: <b style="color:var(--brand)">${money(taxPayable)}</b><br>Filing status: <b style="color:var(--warn)">Open</b>`;
@@ -993,7 +996,7 @@ function renderDash(){curStore=BRANCH;const rows=scope(LEDGER);
 // ---------------- Daily Sales ----------------
 function renderSales(){const rows=scope(LEDGER).filter(x=>x.type==='sale').sort((a,b)=>b.id-a.id).slice(0,12);
   document.getElementById('salesTbl').innerHTML=`<thead><tr><th>Date</th><th>Store</th><th>Account</th><th>Tax</th><th style="text-align:end">Amount</th><th></th></tr></thead><tbody>`+
-    rows.map(x=>`<tr data-txid="${x.id}"><td>${x.date.slice(5)}</td><td>${x.store}</td><td>${x.account}</td><td>${x.tax?money2(x.tax):'—'}</td><td style="text-align:end"><b>${money(x.amount)}</b>${x.voided?'<span class="voided-badge">void</span>':''}</td><td style="text-align:center"><button class="rowact" data-rowmenu="${x.id}" aria-label="Actions for #${x.id}">⋯</button></td></tr>`).join('')+`</tbody>`;
+    rows.map(x=>`<tr data-txid="${x.id}"><td>${x.date.slice(5)}</td><td>${x.store}</td><td>${x.account}</td><td>${x.tax?money2(x.tax):'—'}</td><td style="text-align:end"><b>${money(x.amount)}</b>${x.voided?'<span class="voided-badge">void</span>':''}</td><td style="text-align:center"><button type="button" class="rowact" data-rowmenu="${x.id}" aria-label="More actions" aria-haspopup="menu" aria-expanded="false">⋯</button></td></tr>`).join('')+`</tbody>`;
   rowify('salesTbl','sale');}
 function submitDailySales(){const store=document.getElementById('sStore').value;const cash=+document.getElementById('sCash').value||0;const card=+document.getElementById('sCard').value||0;const taxable=document.getElementById('sTaxable').value==='1';
   const total=cash+card;if(!total)return toast('Enter a sales amount');const tax=taxable?+(total*0.0825/1.0825).toFixed(2):0;
@@ -1004,7 +1007,7 @@ function submitDailySales(){const store=document.getElementById('sStore').value;
 // ---------------- Expenses ----------------
 function renderExp(){const rows=scope(LEDGER).filter(x=>x.type==='expense'||x.type==='payroll').sort((a,b)=>b.id-a.id).slice(0,12);
   document.getElementById('expTbl').innerHTML=`<thead><tr><th>Date</th><th>Store</th><th>Category</th><th>Account</th><th style="text-align:end">Amount</th><th></th></tr></thead><tbody>`+
-    rows.map(x=>`<tr data-txid="${x.id}"><td>${x.date.slice(5)}</td><td>${x.store}</td><td>${x.category}</td><td>${x.account}</td><td style="text-align:end;color:var(--bad)"><b>${money(x.amount)}</b>${x.voided?'<span class="voided-badge">void</span>':''}</td><td style="text-align:center"><button class="rowact" data-rowmenu="${x.id}" aria-label="Actions for #${x.id}">⋯</button></td></tr>`).join('')+`</tbody>`;
+    rows.map(x=>`<tr data-txid="${x.id}"><td>${x.date.slice(5)}</td><td>${x.store}</td><td>${x.category}</td><td>${x.account}</td><td style="text-align:end;color:var(--bad)"><b>${money(x.amount)}</b>${x.voided?'<span class="voided-badge">void</span>':''}</td><td style="text-align:center"><button type="button" class="rowact" data-rowmenu="${x.id}" aria-label="More actions" aria-haspopup="menu" aria-expanded="false">⋯</button></td></tr>`).join('')+`</tbody>`;
   rowify('expTbl','expense');}
 function submitExpense(){const amt=+document.getElementById('eAmt').value||0;if(!amt)return toast('Enter an amount');
   LEDGER.push({id:++uid,date:daysAgo(0),store:document.getElementById('eStore').value,account:document.getElementById('eAcct').value,type:"expense",category:document.getElementById('eCat').value,amount:amt,memo:document.getElementById('eVendor').value||document.getElementById('eCat').value});
@@ -1013,7 +1016,7 @@ function submitExpense(){const amt=+document.getElementById('eAmt').value||0;if(
 // ---------------- Purchases ----------------
 function renderPur(){const rows=scope(LEDGER).filter(x=>x.type==='purchase').sort((a,b)=>b.id-a.id).slice(0,12);
   document.getElementById('purTbl').innerHTML=`<thead><tr><th>Date</th><th>Vendor</th><th>Store</th><th>Description</th><th style="text-align:end">Amount</th><th></th></tr></thead><tbody>`+
-    rows.map(x=>`<tr data-txid="${x.id}"><td>${x.date.slice(5)}</td><td><b>${x.vendor||x.memo}</b></td><td>${x.store}</td><td>${x.desc||'—'}</td><td style="text-align:end"><b>${money(x.amount)}</b>${x.voided?'<span class="voided-badge">void</span>':''}</td><td style="text-align:center"><button class="rowact" data-rowmenu="${x.id}" aria-label="Actions for #${x.id}">⋯</button></td></tr>`).join('')+`</tbody>`;
+    rows.map(x=>`<tr data-txid="${x.id}"><td>${x.date.slice(5)}</td><td><b>${x.vendor||x.memo}</b></td><td>${x.store}</td><td>${x.desc||'—'}</td><td style="text-align:end"><b>${money(x.amount)}</b>${x.voided?'<span class="voided-badge">void</span>':''}</td><td style="text-align:center"><button type="button" class="rowact" data-rowmenu="${x.id}" aria-label="More actions" aria-haspopup="menu" aria-expanded="false">⋯</button></td></tr>`).join('')+`</tbody>`;
   rowify('purTbl','purchase');}
 function submitPurchase(){const amt=+document.getElementById('pAmt').value||0;if(!amt)return toast('Enter an amount');
   LEDGER.push({id:++uid,date:document.getElementById('pDate').value||daysAgo(0),store:document.getElementById('pStore').value,account:document.getElementById('pAcct').value,type:"purchase",category:"Inventory Purchase",amount:amt,vendor:document.getElementById('pVendor').value,desc:document.getElementById('pDesc').value,memo:document.getElementById('pNotes').value||document.getElementById('pVendor').value});
@@ -2527,20 +2530,93 @@ function dlgConfirm(){const ta=document.getElementById('dlgReason');
   if(cb)cb(reason);
 }
 
-// ---- ActionsMenu (popover) ----
-function aMenuOpen(ev,items){ev.stopPropagation();
-  const m=document.getElementById('aMenu');
-  m.innerHTML=items.map(i=>i==='sep'?'<div class="sep"></div>':
-    `<button ${i.disabled?'disabled':''} class="${i.danger?'danger':''}" data-i="${i.k}">${i.ic||''} ${i.label}</button>`).join('');
-  m.querySelectorAll('button[data-i]').forEach(b=>b.onclick=e=>{e.stopPropagation();const it=items.find(x=>x.k===b.dataset.i);aMenuClose();if(it&&it.run)it.run();});
-  const r=ev.currentTarget.getBoundingClientRect();
-  if(!window.matchMedia('(max-width:860px)').matches){
-    m.style.top=Math.min(r.bottom+6,innerHeight-260)+'px';m.style.left=Math.max(8,r.right-176)+'px';
+// ---- ActionsMenu — one shared, reliable, portal-positioned overflow menu ----
+// Root-cause fix: the old code positioned off ev.currentTarget, but every caller
+// runs from a DELEGATED document handler, so currentTarget was `document` and
+// getBoundingClientRect() threw → the menu never opened. We now resolve the real
+// trigger element, position it viewport-safely (flip/shift) via the #aMenu body
+// portal, and manage outside-click / Esc / scroll / resize / focus correctly.
+let _amTrigger=null,_amReposition=null;
+function _amResolveTrigger(ev){
+  if(ev&&ev.target&&ev.target.closest){
+    const t=ev.target.closest('[data-rowmenu],[data-invmenu],[data-menutrigger],.rowact');
+    if(t)return t;
   }
-  m.classList.add('on');scrim(true);
+  if(ev&&ev.currentTarget&&ev.currentTarget.getBoundingClientRect&&ev.currentTarget.nodeType===1)return ev.currentTarget;
+  if(ev&&ev.target&&ev.target.getBoundingClientRect)return ev.target;
+  return null;
 }
-function aMenuClose(){const m=document.getElementById('aMenu');if(m)m.classList.remove('on');
-  if(!document.getElementById('drw').classList.contains('on')&&!document.getElementById('dlg').classList.contains('on'))scrim(false);}
+function aMenuOpen(ev,items){
+  if(ev){ if(ev.preventDefault)ev.preventDefault(); if(ev.stopPropagation)ev.stopPropagation(); }
+  const m=document.getElementById('aMenu');
+  const trg=_amResolveTrigger(ev);
+  // toggle: clicking the SAME trigger again closes the menu
+  if(m.classList.contains('on')&&_amTrigger&&_amTrigger===trg){aMenuClose();return;}
+  aMenuClose(true);                                   // only one menu open at a time
+  items=(items||[]).filter(Boolean);
+  const hasEnabledAction=items.some(i=>i!=='sep'&&!i.disabled);
+  if(!hasEnabledAction){                              // no permitted actions → don't show an empty menu
+    if(trg){trg.setAttribute('aria-disabled','true');trg.title='No actions available for your role';}
+    toast('No actions available for your role');return;
+  }
+  m.setAttribute('role','menu');m.setAttribute('aria-label','Actions');
+  m.innerHTML=items.map(i=>i==='sep'?'<div class="sep" role="separator"></div>':
+    `<button type="button" role="menuitem" tabindex="-1" ${i.disabled?'disabled title="Not permitted for your role"':''} class="${i.danger?'danger':''}" data-i="${i.k}">${i.ic?`<span aria-hidden="true">${i.ic}</span> `:''}${i.label}</button>`).join('');
+  m.querySelectorAll('button[data-i]').forEach(b=>{
+    b.onclick=e=>{e.preventDefault();e.stopPropagation();const it=items.find(x=>x.k===b.dataset.i);aMenuClose(true);if(it&&it.run&&!it.disabled)it.run();};
+  });
+  _amTrigger=trg||null;
+  if(_amTrigger&&_amTrigger.setAttribute){_amTrigger.setAttribute('aria-expanded','true');}
+  m.classList.add('on');
+  _amPosition();
+  const first=m.querySelector('button[data-i]:not([disabled])');if(first)setTimeout(()=>{try{first.focus();}catch(e){}},0);
+  _amReposition=()=>{if(m.classList.contains('on'))_amPosition();};
+  window.addEventListener('scroll',_amReposition,true);
+  window.addEventListener('resize',_amReposition);
+  setTimeout(()=>{document.addEventListener('click',_amOutside,true);document.addEventListener('touchstart',_amOutside,true);},0);
+}
+function _amPosition(){
+  const m=document.getElementById('aMenu');
+  if(window.matchMedia('(max-width:860px)').matches){   // mobile: CSS bottom-sheet handles placement
+    m.style.top=m.style.left=m.style.right='';m.style.maxHeight='58vh';m.style.overflowY='auto';return;
+  }
+  const t=_amTrigger;if(!t||!t.getBoundingClientRect)return;
+  const r=t.getBoundingClientRect(),pad=8,vw=innerWidth,vh=innerHeight;
+  m.style.right='';m.style.maxHeight='';m.style.overflowY='';
+  const mw=m.offsetWidth||190,mh=m.offsetHeight||44;
+  let left=r.right-mw;                                   // right-align to the trigger
+  if(left<pad)left=r.left;                               // near left edge → left-align
+  left=Math.max(pad,Math.min(left,vw-mw-pad));
+  let top=r.bottom+6;                                    // below by default
+  if(top+mh>vh-pad && r.top-mh-6>=pad)top=r.top-mh-6;    // flip above when not enough room below
+  top=Math.max(pad,Math.min(top,vh-mh-pad));
+  if(mh>vh-2*pad){top=pad;m.style.maxHeight=(vh-2*pad)+'px';m.style.overflowY='auto';}  // very tall → scroll
+  m.style.left=left+'px';m.style.top=top+'px';
+}
+function _amOutside(e){
+  const m=document.getElementById('aMenu');
+  if(m.contains(e.target))return;
+  if(_amTrigger&&_amTrigger.contains&&_amTrigger.contains(e.target))return;
+  aMenuClose(true);   // clicking elsewhere: let focus follow the click (Esc restores focus instead)
+}
+function aMenuClose(skipFocus){
+  const m=document.getElementById('aMenu');if(!m)return;
+  const was=m.classList.contains('on');
+  m.classList.remove('on');m.style.maxHeight='';m.style.overflowY='';
+  if(_amTrigger&&_amTrigger.setAttribute){_amTrigger.setAttribute('aria-expanded','false');if(was&&!skipFocus){try{_amTrigger.focus();}catch(e){}}}
+  document.removeEventListener('click',_amOutside,true);document.removeEventListener('touchstart',_amOutside,true);
+  if(_amReposition){window.removeEventListener('scroll',_amReposition,true);window.removeEventListener('resize',_amReposition);_amReposition=null;}
+  _amTrigger=null;
+  if(!document.getElementById('drw').classList.contains('on')&&!document.getElementById('dlg').classList.contains('on'))scrim(false);
+}
+// keyboard navigation within the open menu
+document.getElementById('aMenu').addEventListener('keydown',e=>{
+  const items=[...document.querySelectorAll('#aMenu button[data-i]:not([disabled])')];if(!items.length)return;
+  const i=items.indexOf(document.activeElement);
+  if(e.key==='ArrowDown'){e.preventDefault();(items[i+1]||items[0]).focus();}
+  else if(e.key==='ArrowUp'){e.preventDefault();(items[i-1]||items[items.length-1]).focus();}
+  else if(e.key==='Escape'){e.preventDefault();aMenuClose();}
+});
 
 // ---- DetailDrawer for a ledger transaction ----
 let _drwTx=null;
@@ -2903,7 +2979,7 @@ function invProdTable(){
     +`<td style="white-space:nowrap;text-align:center">`
     +(can('edit')?`<button class="rowact" title="Edit" onclick="event.stopPropagation();invProductForm('${p.sku}')">✎</button> `:'')
     +(can('adjust_stock')?`<button class="rowact" title="Add stock" onclick="event.stopPropagation();invAddStockForm('${p.sku}')">＋</button> `:'')
-    +`<button class="rowact" data-invmenu="${p.sku}" title="More actions">⋯</button></td></tr>`;}).join('');
+    +`<button type="button" class="rowact" data-invmenu="${p.sku}" title="More actions" aria-label="More actions" aria-haspopup="menu" aria-expanded="false">⋯</button></td></tr>`;}).join('');
   const pager=pages>1?`<div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:12.5px;color:var(--muted)">
     <span>${(INV.page-1)*INV.per+1}–${Math.min(INV.page*INV.per,total)} of ${total}</span>
     <span style="display:flex;gap:6px"><button class="ptool" ${INV.page<=1?'disabled':''} onclick="INV.page--;invRenderProdTable()">‹ Prev</button><button class="ptool" ${INV.page>=pages?'disabled':''} onclick="INV.page++;invRenderProdTable()">Next ›</button></span></div>`:'';
