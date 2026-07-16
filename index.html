@@ -19,8 +19,13 @@
     --mobile-safe-area-top:env(safe-area-inset-top, 0px);
     --mobile-top-bar-height:54px;
     --mobile-bottom-clearance:calc(var(--mobile-bottom-nav-height) + var(--mobile-safe-area-bottom) + 24px);
-    --bg:#0f1420;--panel:#161d2e;--panel2:#1d2740;--line:#2a3550;--txt:#e8edf7;--muted:#93a0bd;
-        --brand:#ff7a45;--brand2:#ffb020;--ok:#31c48d;--warn:#ffb020;--bad:#f05252;--accent:#5b8def;}
+    /* Professional white ERP palette (light, high-contrast, one warm brand accent) */
+    --bg:#f5f7fb;--panel:#ffffff;--panel2:#eef2f8;--line:#e2e8f2;--txt:#141a25;--muted:#5a6b85;
+        --brand:#ff7a45;--brand2:#ffb020;--ok:#0f9d63;--warn:#b7791f;--bad:#d92d20;--accent:#2563eb;
+        --shadow:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.08);
+        --shadow-md:0 4px 10px rgba(16,24,40,.08),0 2px 4px rgba(16,24,40,.05);
+        --shadow-lg:0 12px 34px rgba(16,24,40,.16);
+        --ok-bg:#e7f6ee;--warn-bg:#fdf3e2;--bad-bg:#fdecea;--accent-bg:#eaf1fe;}
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--txt);height:100vh;overflow:hidden}
   .app{display:grid;grid-template-columns:216px 1fr;height:100vh}
@@ -464,6 +469,98 @@
   .lbl-preview{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
   .lbl-card{border:1px solid var(--line);border-radius:8px;padding:8px;text-align:center;background:#fff;color:#000}
   .lbl-card svg{max-width:100%}
+
+  /* ============================================================
+     WHITE ERP DESIGN SYSTEM — professional polish layer (v3)
+     Inspired by patterns common to Stripe, Xero, QuickBooks,
+     NetSuite, Odoo, Fiori. Original styling — no copied assets.
+     ============================================================ */
+  .card{box-shadow:var(--shadow)}
+  .kpi{transition:box-shadow .15s,transform .15s}
+  .kpi:hover{box-shadow:var(--shadow-md)}
+  .side{box-shadow:1px 0 0 var(--line)}
+  .logo{color:var(--txt)}
+  .nav a.active{font-weight:700}
+  .btn.p{color:#fff;background:var(--accent)}      /* one primary accent = professional blue */
+  .btn.p:hover{filter:brightness(.94)}
+  .btn.g{background:#fff;color:var(--txt);border:1px solid var(--line)}
+  .btn.g:hover{background:var(--panel2)}
+  .askbtn{background:var(--accent);color:#fff;box-shadow:var(--shadow)}
+  .askbtn:hover{filter:brightness(.94)}
+  /* data tables: clear hover + clickable affordance + sticky header */
+  tbody tr{transition:background .12s}
+  tbody tr:hover{background:var(--panel2)}
+  tr[data-invsku],tr[data-txid],tr.clickrow{cursor:pointer}
+  thead th{position:sticky;top:0;background:var(--panel);z-index:2}
+  /* status = never color-only: chips carry a text label + tinted bg */
+  .chip.ok,.chip.paid,.chip.reconciled{background:var(--ok-bg);color:var(--ok)}
+  .chip.warn,.chip.low,.chip.pending{background:var(--warn-bg);color:var(--warn)}
+  .chip.bad,.chip.overdue,.chip.out{background:var(--bad-bg);color:var(--bad)}
+  .chip.info{background:var(--accent-bg);color:var(--accent)}
+  /* empty / loading / error states for tables */
+  .tstate{padding:34px 16px;text-align:center;color:var(--muted);font-size:13px}
+  .tstate .ic{font-size:26px;display:block;margin-bottom:8px;opacity:.6}
+  .tstate.err{color:var(--bad)}
+  .skel{background:linear-gradient(90deg,var(--panel2),#f7f9fc,var(--panel2));background-size:200% 100%;animation:skel 1.1s infinite;border-radius:6px;height:12px;margin:8px 0}
+  @keyframes skel{0%{background-position:200% 0}100%{background-position:-200% 0}}
+
+  /* ---- BACK NAVIGATION (visible on nested pages) ---- */
+  .backbar{display:flex;align-items:center;gap:10px;margin:-2px 0 12px}
+  .backbtn{display:inline-flex;align-items:center;gap:7px;background:#fff;border:1px solid var(--line);color:var(--txt);
+    border-radius:9px;padding:7px 13px 7px 10px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:var(--shadow)}
+  .backbtn:hover{background:var(--panel2)}
+  .backbtn .ar{font-size:15px;line-height:1}
+  .crumbs{font-size:12px;color:var(--muted);font-weight:600}
+  .crumbs b{color:var(--txt)}
+
+  /* ---- ASSISTANT close/back controls ---- */
+  .cop-close{width:34px;height:34px;border-radius:9px;border:1px solid var(--line);background:#fff;color:var(--txt);
+    font-size:16px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
+  .cop-close:hover{background:var(--panel2)}
+  .cop-back{display:none}
+  @media(max-width:860px){
+    .cop-back{display:inline-flex;align-items:center;gap:6px;background:transparent;border:none;color:var(--accent);
+      font-size:15px;font-weight:800;cursor:pointer;padding:4px 6px}
+  }
+  /* ---- Voice mode UI ---- */
+  .cop-mic{position:relative}
+  .cop-mic.listening{color:var(--bad)!important;background:var(--bad-bg)!important}
+  .cop-mic.listening::after{content:"";position:absolute;inset:-3px;border-radius:50%;border:2px solid var(--bad);opacity:.5;animation:micpulse 1.1s infinite}
+  @keyframes micpulse{0%{transform:scale(.85);opacity:.7}100%{transform:scale(1.5);opacity:0}}
+  .voice-panel{border:1px solid var(--line);background:var(--panel2);border-radius:12px;padding:12px;margin:6px 0}
+  .voice-panel .st{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);display:flex;align-items:center;gap:7px}
+  .voice-panel .st .dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+  .voice-panel.listening .st .dot{background:var(--bad);animation:micpulse 1.1s infinite}
+  .voice-panel.processing .st .dot{background:var(--warn)}
+  .voice-panel.error .st{color:var(--bad)}
+  .voice-panel .tx{margin-top:8px;font-size:14px;color:var(--txt);width:100%;min-height:38px;border:1px solid var(--line);border-radius:8px;padding:8px;background:#fff}
+  .voice-panel .vacts{display:flex;gap:8px;margin-top:9px;flex-wrap:wrap}
+  /* ---- Action preview card ---- */
+  .act-preview{border:1px solid var(--accent);background:var(--accent-bg);border-radius:12px;padding:12px;margin:4px 0}
+  .act-preview.l3{border-color:var(--bad);background:var(--bad-bg)}
+  .act-preview h4{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:8px;display:flex;align-items:center;gap:7px}
+  .act-preview .row{display:flex;justify-content:space-between;gap:12px;font-size:13px;padding:3px 0}
+  .act-preview .row .k{color:var(--muted)}
+  .act-preview .row .v{font-weight:700;text-align:right}
+  .act-preview .miss{color:var(--bad);font-weight:700}
+  .act-preview .pv-acts{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+  /* ---- Coach-mark highlight for "Help me on this page" tours ---- */
+  .coach-halo{position:fixed;z-index:400;border:2px solid var(--accent);border-radius:12px;box-shadow:0 0 0 4000px rgba(15,20,32,.45);pointer-events:none;transition:all .2s}
+  .coach-tip{position:fixed;z-index:401;max-width:300px;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow-lg);padding:14px}
+  .coach-tip h5{font-size:14px;margin-bottom:5px}
+  .coach-tip p{font-size:12.5px;color:var(--muted);line-height:1.5}
+  .coach-tip .ct-acts{display:flex;gap:8px;margin-top:11px;justify-content:flex-end}
+  .coach-tip .ct-acts button{font-size:12px;font-weight:700;border-radius:8px;padding:6px 11px;cursor:pointer;border:1px solid var(--line);background:#fff}
+  .coach-tip .ct-acts button.pri{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .coach-step{font-size:11px;color:var(--muted);font-weight:700}
+  /* swipe-back visual feedback (mobile) */
+  .swipe-hint{position:fixed;top:0;bottom:0;left:0;width:0;z-index:200;pointer-events:none;
+    background:linear-gradient(90deg,rgba(37,99,235,.22),transparent)}
+  .swipe-hint .chev{position:absolute;top:50%;left:8px;transform:translateY(-50%);font-size:24px;color:var(--accent);opacity:0}
+  @media(max-width:860px){
+    .backbtn{padding:9px 14px}  /* larger touch target on mobile */
+    .cop-close{width:40px;height:40px}
+  }
 </style>
 <!-- Real (selectable-text) PDF generation — structured data, not screenshots -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -535,8 +632,11 @@
 
     <!-- AI ASSISTANT (Copilot) -->
     <section class="view" id="v-ai">
-      <div class="top"><div><h1>Ask Claude</h1><div class="sub">Your AI accounting copilot — say what happened, Claude keeps the books.</div></div>
-        <div style="display:flex;gap:8px;align-items:center"><span class="pill" id="copCtx">Ready</span><button class="btn g" onclick="copNewChat()">＋ New chat</button></div></div>
+      <div class="top"><div style="display:flex;align-items:center;gap:10px">
+          <button class="cop-back" id="copBack" aria-label="Back to previous page" onclick="copCloseAssistant()">‹ Back</button>
+          <div><h1>Ask Claude</h1><div class="sub">Your AI accounting copilot — say what happened, Claude keeps the books.</div></div></div>
+        <div style="display:flex;gap:8px;align-items:center"><span class="pill" id="copCtx">Ready</span><button class="btn g" onclick="copNewChat()">＋ New chat</button>
+          <button class="cop-close" id="copClose" aria-label="Close assistant" title="Close assistant (Esc)" onclick="copCloseAssistant()">✕</button></div></div>
       <div class="cop-wrap">
         <div class="cop-main">
           <div class="cop-stream" id="copStream"></div>
@@ -549,8 +649,9 @@
               <div class="cop-tools">
                 <button class="cop-tool" title="Attach receipt / statement (⌘U)" onclick="document.getElementById('copFile').click()">📎</button>
                 <button class="cop-tool" id="copDateBtn" title="Insert date" onclick="copToggleDate()">📅</button>
-                <button class="cop-tool" title="Voice input" onclick="copVoice()">🎙️</button>
+                <button class="cop-tool cop-mic" id="copMic" aria-label="Voice input" title="Speak a command" onclick="copVoice()">🎙️</button>
                 <button class="cop-tool" title="Commands (/)" onclick="copOpenCmd()">⌘</button>
+                <button class="cop-tool" id="copHelpBtn" aria-label="Help me on this page" title="Help me on this page" onclick="aiHelpThisPage()">❔</button>
                 <input type="date" id="copDate" aria-label="Insert date" style="display:none" onchange="copInsertDate(this.value)">
                 <span class="cop-kbd">↵ send</span><span class="cop-kbd">⇧↵ newline</span>
                 <button class="cop-send" id="copSend" onclick="copSubmit()">Send</button>
@@ -703,7 +804,7 @@
 <!-- ===== INTERACTION LAYER: scrim, detail drawer, actions menu, confirm dialog ===== -->
 <div class="ov-scrim" id="ovScrim" onclick="uiCloseAll()"></div>
 <aside class="drw" id="drw" role="dialog" aria-modal="true" aria-labelledby="drwTitle">
-  <div class="drw-h"><h3 id="drwTitle">Record</h3><button class="x" aria-label="Close" onclick="drwClose()">✕</button></div>
+  <div class="drw-h"><button class="backbtn" aria-label="Back" title="Back" onclick="drwClose()"><span class="ar">‹</span>Back</button><h3 id="drwTitle" style="flex:1">Record</h3><button class="x" aria-label="Close" onclick="drwClose()">✕</button></div>
   <div class="drw-b" id="drwBody"></div>
   <div class="drw-acts" id="drwActs"></div>
 </aside>
@@ -1516,7 +1617,8 @@ function copBindStream(){const el=document.getElementById('copStream');
       ledger:()=>{go('dash');toast('Opened ledger');},report:()=>{go('reports');},pdf:()=>toast('Export generated & ready to send'),
       nav:()=>{const v=a.val;if(ERP_GRAPH[v]&&ERP_GRAPH[v].live===false){toast(ERP_GRAPH[v].name+' ships in Version 2');return;}go(ERP_GRAPH[v]&&ERP_GRAPH[v].view?ERP_GRAPH[v].view:v);toast('Opened '+(ERP_GRAPH[v]?ERP_GRAPH[v].name:v));},
       csv:()=>bExportCSV(),
-      copy:()=>copCopy(a.mid),editmsg:()=>copEditMsg(a.mid),retry:()=>copRetry(),fixpick:()=>copOpenEdit(a.txid),shortcut:()=>copSubmitText(a.val)}[a.act]||(()=>{}))();});
+      copy:()=>copCopy(a.mid),editmsg:()=>copEditMsg(a.mid),retry:()=>copRetry(),fixpick:()=>copOpenEdit(a.txid),shortcut:()=>copSubmitText(a.val),
+      tour:()=>tourStart(a.val),help:()=>aiHelpThisPage()}[a.act]||(()=>{}))();});
   el.addEventListener('change',e=>{const f=e.target.dataset.field;if(!f||!COP.pending)return;COP.pending[f]=e.target.type==='number'?+e.target.value:e.target.value;
     const msg=[...COP.msgs].reverse().find(m=>m.card);if(msg){msg.card=copPreviewCard(COP.pending);copRender();}});
 }
@@ -3612,6 +3714,360 @@ function unifyWarehouse(){
 }
 function init(){unifyWarehouse();restoreBranchState();fillStores();document.getElementById('pDate').value=daysAgo(0);renderSettings();refreshAll();brainInit();copInit();mInit();syncBranchUI();}
 init();
+
+/* ============================================================================
+   NAVIGATION + ASSISTANT + VOICE + CONTEXTUAL HELP + AI ACTION LAYER  (v3)
+   Additive module. Preserves all existing behaviour; wraps go() / copRespond()
+   / copVoice() rather than replacing the modules they belong to.
+   ========================================================================== */
+(function(){
+  /* ---- a11y live region for assistant / voice states ---- */
+  var live=document.createElement('div');
+  live.id='aiLive';live.setAttribute('aria-live','polite');live.setAttribute('role','status');
+  live.style.cssText='position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap';
+  document.body.appendChild(live);
+  window.aiAnnounce=function(m){live.textContent=m;};
+
+  /* ---- swipe-back visual element ---- */
+  var hint=document.createElement('div');hint.className='swipe-hint';hint.innerHTML='<span class="chev">‹</span>';
+  document.body.appendChild(hint);
+})();
+
+var NAV={stack:[],pos:{},opener:null};
+function _view(){var a=document.querySelector('.view.on');return a?a.id.replace('v-',''):'dash';}
+function _mainEl(){return document.querySelector('.main');}
+function _anyOverlay(){return ['drw','dlg'].some(function(id){var e=document.getElementById(id);return e&&e.classList.contains('on');})
+  || (document.getElementById('aMenu')&&document.getElementById('aMenu').classList.contains('on'));}
+
+var _rawGo=go;
+go=function(v,opts){
+  opts=opts||{};
+  var prev=_view(),main=_mainEl(),active=document.querySelector('.view.on');
+  if(active)NAV.pos[active.id]={m:main?main.scrollTop:0,w:window.scrollY||0};
+  if(!opts.back && prev && prev!==v){NAV.stack.push(prev);if(NAV.stack.length>60)NAV.stack.shift();}
+  if(v==='ai')NAV.opener=document.activeElement;
+  _rawGo(v);
+  _backUI(v);
+  if(!opts.noHistory){try{history.pushState({v:v},'','#'+v);}catch(e){}}
+  if(opts.back){var p=NAV.pos['v-'+v];if(p)requestAnimationFrame(function(){if(main)main.scrollTop=p.m;window.scrollTo(0,p.w);});}
+  return true;
+};
+function goBack(){
+  if(_anyOverlay()){uiCloseAll();return;}
+  if(NAV.stack.length){go(NAV.stack.pop(),{back:true});}
+  else{go('dash',{back:true});}
+}
+/* Inject a visible Back control at the top of nested views (not Dashboard, not the
+   assistant which already carries its own Back/✕). Preserves branch/filter/search
+   because those live in module state and are never reset by navigation. */
+function _backUI(v){
+  document.querySelectorAll('.backbar.dyn').forEach(function(n){n.remove();});
+  if(v==='dash'||v==='ai')return;
+  if(!NAV.stack.length)return;
+  var sec=document.getElementById('v-'+v);if(!sec)return;
+  var prev=NAV.stack[NAV.stack.length-1];
+  var titles=(typeof MTITLES!=='undefined')?MTITLES:{};
+  var bar=document.createElement('div');bar.className='backbar dyn';
+  bar.innerHTML='<button class="backbtn" aria-label="Back to '+(titles[prev]||'previous page')+'" onclick="goBack()"><span class="ar">‹</span>Back</button>'
+    +'<span class="crumbs">'+(titles[prev]||'Home')+' › <b>'+(titles[v]||v)+'</b></span>';
+  sec.insertBefore(bar,sec.firstChild);
+}
+function copCloseAssistant(){
+  var op=NAV.opener;
+  goBack();
+  aiAnnounce('Assistant closed');
+  setTimeout(function(){try{(op&&document.body.contains(op)?op:document.getElementById('mAsk')||document.querySelector('[data-v="ai"]')).focus();}catch(e){}},60);
+}
+/* browser history + Escape */
+window.addEventListener('popstate',function(e){
+  if(_anyOverlay()){uiCloseAll();return;}
+  var v=(e.state&&e.state.v)||(location.hash?location.hash.slice(1):'dash');
+  if(document.getElementById('v-'+v))go(v,{back:true,noHistory:true});
+});
+document.addEventListener('keydown',function(e){
+  if(e.key==='Escape'&&!_anyOverlay()&&_view()==='ai'){copCloseAssistant();}
+});
+try{history.replaceState({v:_view()},'','#'+_view());}catch(e){}
+
+/* ---- MOBILE: edge swipe-right to go back (does not fight tables/charts/inputs) ---- */
+(function(){
+  var sx=0,sy=0,tracking=false,dx=0;
+  var BLOCK='input,textarea,select,table,canvas,svg,.scan-wrap,.rep-searchbox,[data-noswipe]';
+  function edge(){return window.matchMedia('(max-width:860px)').matches;}
+  document.addEventListener('touchstart',function(e){
+    if(!edge()||e.touches.length!==1)return;
+    var t=e.touches[0];
+    if(t.clientX>26)return;                       // only from the very left edge
+    if(e.target.closest && e.target.closest(BLOCK))return;
+    sx=t.clientX;sy=t.clientY;tracking=true;dx=0;
+  },{passive:true});
+  document.addEventListener('touchmove',function(e){
+    if(!tracking)return;var t=e.touches[0];dx=t.clientX-sx;var dy=Math.abs(t.clientY-sy);
+    if(dx<0||dy>Math.abs(dx)){tracking=false;hideHint();return;}   // vertical scroll wins
+    var w=Math.min(dx,120);document.querySelector('.swipe-hint').style.width=w+'px';
+    var chev=document.querySelector('.swipe-hint .chev');if(chev)chev.style.opacity=Math.min(1,dx/70);
+  },{passive:true});
+  document.addEventListener('touchend',function(){
+    if(!tracking){hideHint();return;}tracking=false;
+    var fire=dx>70;hideHint();
+    if(fire){if(_anyOverlay())uiCloseAll();else goBack();}
+  });
+  function hideHint(){var h=document.querySelector('.swipe-hint');if(h){h.style.width='0';var c=h.querySelector('.chev');if(c)c.style.opacity=0;}}
+})();
+
+/* ---- a11y: focus trap inside the detail drawer while open ---- */
+document.addEventListener('keydown',function(e){
+  if(e.key!=='Tab')return;
+  var drw=document.getElementById('drw');if(!drw||!drw.classList.contains('on'))return;
+  var f=drw.querySelectorAll('button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])');
+  f=Array.prototype.filter.call(f,function(el){return !el.disabled&&el.offsetParent!==null||el.getClientRects().length;});
+  if(!f.length)return;var first=f[0],last=f[f.length-1];
+  if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
+  else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
+});
+
+/* ============================================================================
+   VOICE MODE  (Web Speech API — English now, structured for Arabic later)
+   ========================================================================== */
+var VOICE={rec:null,on:false,txt:'',lang:'en-US'};
+function _voicePanel(){
+  var p=document.getElementById('voicePanel');
+  if(!p){
+    var inbox=document.getElementById('copInbox');if(!inbox)return null;
+    p=document.createElement('div');p.id='voicePanel';p.className='voice-panel';p.style.display='none';
+    inbox.parentNode.insertBefore(p,inbox);
+  }
+  return p;
+}
+function _voiceRender(state,msg){
+  var p=_voicePanel();if(!p)return;
+  p.className='voice-panel '+(state||'');p.style.display='block';
+  var label={listening:'Listening… speak now',processing:'Processing…',ready:'Review & send',error:msg||'Voice error'}[state]||'';
+  p.innerHTML='<div class="st"><span class="dot"></span>'+label+'</div>'
+    +'<textarea class="tx" id="voiceTx" aria-label="Voice transcript (editable)" placeholder="Your words appear here…">'+(VOICE.txt||'')+'</textarea>'
+    +'<div class="vacts">'
+    +(state==='listening'?'<button class="btn g" onclick="voiceStop()">■ Stop listening</button>':'')
+    +(state==='ready'||state==='error'?'<button class="btn p" onclick="voiceSubmit()">Send ▷</button><button class="btn g" onclick="voiceRetry()">🎙 Again</button>':'')
+    +'<button class="btn g" onclick="voiceClose()">Cancel</button>'
+    +'</div>';
+  aiAnnounce(label);
+}
+function copVoice(){    /* overrides the earlier "coming soon" stub (last declaration wins) */
+  var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  var btn=document.getElementById('copMic');
+  if(!SR){
+    _voiceRender('error','Voice isn\'t supported in this browser — you can type your command instead.');
+    return;
+  }
+  if(VOICE.on){voiceStop();return;}
+  try{
+    VOICE.rec=new SR();VOICE.rec.lang=VOICE.lang;VOICE.rec.interimResults=true;VOICE.rec.continuous=false;VOICE.txt='';
+    VOICE.rec.onstart=function(){VOICE.on=true;if(btn)btn.classList.add('listening');_voiceRender('listening');};
+    VOICE.rec.onresult=function(ev){var t='';for(var i=0;i<ev.results.length;i++)t+=ev.results[i][0].transcript;VOICE.txt=t;var tx=document.getElementById('voiceTx');if(tx)tx.value=t;};
+    VOICE.rec.onerror=function(ev){VOICE.on=false;if(btn)btn.classList.remove('listening');
+      var m=ev.error==='not-allowed'||ev.error==='service-not-allowed'?'Microphone permission was denied. Enable it in your browser to use voice, or type your command.'
+        :ev.error==='no-speech'?'I didn\'t catch that — tap 🎙 Again or type it.':'Voice error ('+ev.error+') — you can type instead.';
+      _voiceRender('error',m);};
+    VOICE.rec.onend=function(){VOICE.on=false;if(btn)btn.classList.remove('listening');if(VOICE.txt.trim())_voiceRender('ready');else if(document.getElementById('voicePanel')&&document.getElementById('voicePanel').style.display!=='none')_voiceRender('error','No speech detected.');};
+    VOICE.rec.start();
+  }catch(e){_voiceRender('error','Could not start voice input.');}
+}
+function voiceStop(){try{VOICE.rec&&VOICE.rec.stop();}catch(e){}VOICE.on=false;}
+function voiceRetry(){VOICE.txt='';copVoice();}
+function voiceClose(){voiceStop();var p=document.getElementById('voicePanel');if(p)p.style.display='none';VOICE.txt='';}
+function voiceSubmit(){var tx=document.getElementById('voiceTx');var t=(tx?tx.value:VOICE.txt).trim();if(!t){return;}voiceClose();copSubmitText(t);}
+
+/* ============================================================================
+   AI ACTION LAYER  — maps assistant/voice requests to existing, permissioned,
+   audited application actions with tiered confirmation.
+   Levels: 1 none · 2 simple confirm · 3 strong (typed) confirm.
+   ========================================================================== */
+var AIACT={pending:null,busy:false};
+var VIEW_WORDS=[['inventory',/invent|stock|product/],['sales',/daily sale|\bsales\b/],['expenses',/expense/],
+  ['purchases',/purchase|\bpo\b|vendor bill/],['recon',/reconcil|bank/],['tax',/sales tax|\bvat\b|tax owe|tax due/],
+  ['payroll',/payroll|wage|salary/],['reports',/report/],['telegram',/telegram/],['settings',/setting|permission|role/],
+  ['dash',/dashboard|home/],['ai',/assistant|claude/]];
+function _matchView(d){for(var i=0;i<VIEW_WORDS.length;i++)if(VIEW_WORDS[i][1].test(d))return VIEW_WORDS[i][0];return null;}
+function _findProduct(d){
+  if(typeof INV==='undefined'||!INV.products)return null;
+  var byBc=INV.products.find(function(p){return p.barcode&&d.indexOf(p.barcode)>=0;});if(byBc)return byBc;
+  var hit=null,best=0;
+  INV.products.forEach(function(p){var n=(p.name||'').toLowerCase();if(n&&d.indexOf(n)>=0&&n.length>best){best=n.length;hit=p;}});
+  return hit;
+}
+/* returns true if it fully handled the message (so copRespond should stop) */
+function aiRoute(text){
+  var d=text.toLowerCase().trim();
+  /* ----- contextual help ----- */
+  /* NEW capabilities only — everything the existing copilot already answers
+     (metrics, comparisons, navigation, how-to/trainer, low-stock) is deliberately
+     NOT intercepted here, so those responses are unchanged. */
+  if(/help me (on |with )?(this )?(page|screen)|help on this page|what (is|does) this page do|explain this page/.test(d)){aiHelpThisPage();return true;}
+  if(/\b(tour|walkthrough|onboarding)\b/.test(d)&&/\b(start|give|show|take|begin|walk|guide)\b/.test(d)){var mv=_matchView(d)||_view();tourStart(mv);return true;}
+  /* ----- L3 sensitive: refuse single-tap / voice-only execution ----- */
+  if(/^(delete|permanently (remove|delete)|post payroll|submit (the )?(sales )?tax|file (the )?(sales )?tax|finali[sz]e (the )?reconciliation|complete (the )?transfer|change (the )?permission|void (a |the )?(transaction|entry|sale)|bulk (update|delete))/.test(d)){
+    aiSensitive(d,text);return true;
+  }
+  /* how-to QUESTIONS belong to the existing trainer, never the action layer */
+  if(/^(how|what|where|why|when|which|who)\b/.test(d)||/\bhow (do|to|can) i\b/.test(d))return false;
+  /* ----- L2 perform (simple confirmation + structured preview) ----- */
+  var mAdd=d.match(/add\s+(\d+)\s*(units?|pcs?|pieces?)?\s*(to|of|for)\s+(.+)/);
+  if(mAdd&&/stock|unit|pcs|piece|receiv|inventory/.test(d)&&!/expense|\$|dollar/.test(d)){
+    var p=_findProduct(d);var qty=+mAdd[1];
+    if(!can('adjust_stock'))return _deny('add or adjust stock');
+    if(!p)return _needProduct('add '+qty+' units',qty);
+    var _br=(BRANCH!=='all'?BRANCH:(allowedBranches()[0]));
+    AIACT.pending={type:'addstock',level:2,sku:p.sku,name:p.name,qty:qty,branch:_br,
+      run:function(){ if(typeof invAddStockForm==='function'){invAddStockForm(p.sku);   // closure values — safe after pending is cleared
+        setTimeout(function(){setVal('asBranch',_br);setVal('asQty',String(qty));
+          if(typeof invDoAddStock==='function')invDoAddStock(invProductBySku(p.sku).id);toast('Added '+qty+' to '+p.name);},60);} }};
+    aiPreview('Add stock',[['Product',p.name],['Barcode/SKU',p.barcode||p.sku],['Quantity','+'+qty],['Branch',AIACT.pending.branch]],2);return true;
+  }
+  if(/(start|create|new).*(transfer)|transfer.*(from|between).*(store|branch)/.test(d)){
+    if(!can('transfer_stock'))return _deny('create a transfer');
+    var mF=d.match(/from\s+(store\s*[abc])/),mT=d.match(/to\s+(store\s*[abc])/);var _from=_store(mF),_to=_store(mT);
+    AIACT.pending={type:'transfer',level:2,from:_from,to:_to,
+      run:function(){go('inventory');setTimeout(function(){if(typeof invTransferForm==='function'){invTransferForm();
+        setTimeout(function(){if(_from)setVal('trFrom',_from);if(_to)setVal('trTo',_to);toast('Transfer draft — pick product & qty, then Create');},80);}},120);}};
+    aiPreview('Create stock transfer (draft)',[['From',_store(mF)||'—'],['To',_store(mT)||'—'],['Type','Draft — you confirm product, qty & Create']],2);return true;
+  }
+  if(/(add|create|new)\s+(a\s+)?product/.test(d)){
+    if(!can('create'))return _deny('add a product');
+    AIACT.pending={type:'newproduct',level:2,run:function(){go('inventory');setTimeout(function(){if(typeof invProductForm==='function')invProductForm();},120);}};
+    aiPreview('Add product',[['Action','Open the New Product form'],['Branch',BRANCH]],2);return true;
+  }
+  if(/clock (me )?(in|out)/.test(d)){
+    if(!can('close_shift')&&!can('create')&&!can('view'))return _deny('clock in/out');
+    var dir=/out/.test(d)?'out':'in';
+    AIACT.pending={type:'clock',level:2,dir:dir,run:function(){go('payroll');toast('Clock '+dir+' — confirm on the time clock');}};
+    aiPreview('Clock '+dir,[['Action','Time clock — '+dir],['Employee','You'],['Time','Now']],2);return true;
+  }
+  return false;   /* not an action/help intent → let the existing copilot answer */
+}
+function _store(m){if(!m)return null;var s=m[1].replace(/\s+/g,' ').replace(/store\s*/,'Store ').toUpperCase().replace('STORE','Store');return s.replace(/store /i,'Store ');}
+function _deny(what){copSay('Your current role (**'+(ROLE?ROLE.kind:'user')+'**) isn\'t permitted to '+what+'. Ask an owner or admin to grant access in **Settings → Branch access & role**.');audit('ai_denied','permission',what,'blocked','WEB');return true;}
+function _needProduct(action,qty){AIACT.await={action:action,qty:qty};copSay('Which product? Say or type the product name or scan its barcode, and I\'ll '+action+'.');return true;}
+
+/* structured preview + tiered confirm */
+function aiPreview(title,rows,level){
+  AIACT.pending2=AIACT.pending;AIACT.busy=false;
+  var miss=rows.filter(function(r){return r[1]==='—'||r[1]==null||r[1]==='';});
+  var html='<div class="act-preview'+(level>=3?' l3':'')+'"><h4>◆ '+title+(level>=3?' · needs strong confirmation':'')+'</h4>'
+    +rows.map(function(r){return '<div class="row"><span class="k">'+r[0]+'</span><span class="v'+((r[1]==='—')?' miss':'')+'">'+(r[1]||'—')+'</span></div>';}).join('')
+    +(miss.length?'<div class="row"><span class="miss">Missing: '+miss.map(function(r){return r[0];}).join(', ')+' — I\'ll ask before running.</span></div>':'')
+    +'<div class="pv-acts"><button class="btn p" onclick="aiConfirm()">✓ Confirm</button>'
+    +'<button class="btn g" onclick="aiEditAction()">Edit</button>'
+    +'<button class="btn g" onclick="aiCancelAction()">Cancel</button></div></div>';
+  copSay('I understood — please review before I continue:',{card:html});
+  aiAnnounce(title+' — awaiting your confirmation');
+}
+function aiConfirm(){
+  if(AIACT.busy)return;                       // idempotency: no double submit
+  var p=AIACT.pending2;if(!p)return;
+  if(p.level>=3){aiCancelAction();return;}    // L3 must go through the typed dialog, never a single tap
+  AIACT.busy=true;
+  try{p.run&&p.run();audit('ai_action',p.type,p.sku||p.type,JSON.stringify({q:p.qty,from:p.from,to:p.to,dir:p.dir}),'WEB');}
+  finally{copSay('Done ✓ '+_actLabel(p)+'. You can review or undo it on the page I opened.');AIACT.pending=AIACT.pending2=null;setTimeout(function(){AIACT.busy=false;},400);}
+}
+function _actLabel(p){return {addstock:'Added '+p.qty+' to '+p.name,transfer:'Started a transfer draft',newproduct:'Opened the New Product form',purchase:'Opened a purchase draft',clock:'Clock '+p.dir}[p.type]||'Action performed';}
+function aiEditAction(){var p=AIACT.pending2;AIACT.pending=AIACT.pending2=null;if(p&&p.run)p.run();copSay('Opened it so you can adjust the details, then Save.');}
+function aiCancelAction(){AIACT.pending=AIACT.pending2=null;AIACT.busy=false;copSay('Cancelled — nothing was changed.');}
+function aiSensitive(d,text){
+  var kind=/delete|remove/.test(d)?'delete a record':/payroll/.test(d)?'post payroll':/tax/.test(d)?'submit the sales-tax filing':/reconcil/.test(d)?'finalize the reconciliation':/transfer/.test(d)?'complete the transfer':/void/.test(d)?'void a transaction':/permission/.test(d)?'change permissions':'run a sensitive action';
+  copSay('**'+kind.replace(/^./,function(c){return c.toUpperCase();})+'** is a sensitive, hard-to-undo action. For safety I don\'t run these from a voice or chat command alone — please open the relevant page and confirm it there, where you\'ll get a typed confirmation.',
+    {actions:[{label:'Open the page',act:'shortcut',val:'open '+(/payroll/.test(d)?'payroll':/tax/.test(d)?'tax':/reconcil/.test(d)?'recon':/permission/.test(d)?'settings':'inventory')}]});
+  audit('ai_sensitive_blocked','action',kind,text,'WEB');
+}
+
+/* ============================================================================
+   CONTEXTUAL HELP  — "Help me on this page", how-to answers, guided tours
+   ========================================================================== */
+var HELP={
+  dash:{name:'Dashboard',what:'Your at-a-glance view of the selected branch: KPIs, recent transactions, pending tasks and the month-to-date tax summary.',do:['Read the KPI cards','Click any recent transaction to see or edit it','Use Ask Claude for anything else'],ask:'How is this month\'s profit calculated?'},
+  ai:{name:'Ask Claude',what:'Your AI copilot. Type or speak plain English to get answers, navigate, prefill forms, run reports, or record entries.',do:['Type a question or command','Tap 🎙 to speak','Use / for commands and @ to mention a store'],ask:'How do I add an expense?'},
+  sales:{name:'Daily Sales',what:'Record each store\'s daily cash and card totals. Sales tax is computed and set aside automatically.',do:['Pick the store','Enter cash & card totals','Save — dashboard, reports and tax update together'],ask:'How do I record a sale?'},
+  expenses:{name:'Expenses',what:'Log operating expenses and payroll against a branch and payment account.',do:['Pick the store & account','Choose a category','Enter the amount and Save'],ask:'How do I add a cleaning expense?'},
+  purchases:{name:'Purchases',what:'Record inventory purchases / vendor bills per branch.',do:['Pick the store & vendor','Enter the amount','Save the purchase'],ask:'How do I create a purchase?'},
+  recon:{name:'Bank Reconciliation',what:'Match your bank feed to book entries so your cash balance is trustworthy.',do:['Review each bank line','Match it to a book entry','Reconcile when balanced'],ask:'How do I reconcile the bank?'},
+  tax:{name:'Sales Tax',what:'See tax collected, what to set aside, and the filing due date for the chosen state.',do:['Pick the state','Read the amount to set aside','Print/PDF for filing'],ask:'How much sales tax do I owe this month?'},
+  payroll:{name:'Payroll',what:'Review gross, taxes and net pay for employees, and the time clock.',do:['Review each employee','Check the totals','Print the payroll report'],ask:'How do I run payroll?'},
+  inventory:{name:'Inventory',what:'Products, per-branch stock, movements, transfers, receiving and barcode tools.',do:['Add a product or scan a barcode','Add stock / adjust / transfer','Print barcode labels'],ask:'How do I receive inventory?'},
+  reports:{name:'Reports',what:'90+ reports with charts. Search or pick a category, then Print/PDF.',do:['Search or choose a category','Open a report','Print or download PDF'],ask:'How do I print a report?'},
+  telegram:{name:'Telegram',what:'Simulated Telegram bot for alerts and quick commands (owner-configured).',do:['Review the commands','See how alerts read'],ask:'What can the Telegram bot do?'},
+  settings:{name:'Settings',what:'Branches, accounts, role & branch access, and the live permission grid.',do:['Switch role to preview access','Assign branches','Rename branches/accounts inline'],ask:'How do I change permissions?'}
+};
+function aiHelpThisPage(){
+  var v=_view(),h=HELP[v]||HELP.dash;
+  copSay('**'+h.name+'** — '+h.what+'\n\n**Common workflow:**\n'+h.do.map(function(s,i){return (i+1)+'. '+s;}).join('\n'),
+    {actions:[{label:'▶ Show me (guided tour)',act:'tour',val:v},{label:'Ask: '+h.ask,act:'shortcut',val:h.ask}]});
+  if(document.getElementById('copCtx'))document.getElementById('copCtx').textContent='Helping · '+h.name;
+}
+/* concise, step-based how-to answers (mirrors the in-app trainer) */
+var HOWTO=[
+  [/add.*(a )?product|create.*product/,'Add a product','inventory',['Open **Inventory → Products**.','Click **+ Add Product** (top-right) — or tap **Scan** to add by barcode.','Fill name, SKU, price (cost/qty optional).','Save. It\'s created for the selected branch.']],
+  [/receiv.*inventory|receiv.*stock|add stock|goods received/,'Receive inventory','inventory',['Open **Inventory**.','Use **Scan / Enter Barcode → Receive** for continuous receiving, or a product\'s **Add Stock**.','Enter qty (and batch/expiry if needed).','Save — a movement and receiving doc are recorded.']],
+  [/transfer.*(stock|store|branch)/,'Transfer stock between stores','inventory',['Open **Inventory**.','Click **Transfer**.','Pick From store, To store, product and quantity.','Create — stock ships from source and is added on receive.']],
+  [/add.*expense|record.*expense/,'Add an expense','expenses',['Open **Expenses**.','Pick the store, account and category.','Enter the amount.','Save — it posts to the ledger and dashboard.']],
+  [/reconcil|bank/,'Reconcile the bank','recon',['Open **Bank Reconciliation**.','Match each bank line to a book entry.','Resolve any differences.','Reconcile once balanced.']],
+  [/run.*payroll|do.*payroll/,'Run payroll','payroll',['Open **Payroll**.','Review gross, taxes and net per employee.','Check the totals.','Print the payroll report.']],
+  [/sales tax|calculate.*tax|how much.*tax/,'Sales tax','tax',['Open **Sales Tax**.','Pick your state — the rate applies automatically.','Read the amount to set aside and the due date.','Print/PDF for filing.']],
+  [/print.*report|download.*report|export.*report/,'Print a report','reports',['Open **Reports**.','Search or pick a category, then open a report.','Click **Print** or **PDF** (top-right).']],
+  [/low.?stock|reorder/,'See low-stock products','inventory',['Open **Inventory → Products**.','Set the **Status** filter to **Low**.','These are at or below their minimum — reorder as needed.']],
+  [/change branch|switch branch|change store/,'Change branches','dash',['Use the **Branch** selector at the top of the sidebar.','On mobile, tap the branch chip in the header.','Everything re-scopes to that branch.']],
+  [/record.*sale|add.*sale|daily sale/,'Record a sale','sales',['Open **Daily Sales**.','Pick the store.','Enter the day\'s cash and card totals.','Save — tax is computed and set aside automatically.']]
+];
+function aiHowTo(d){for(var i=0;i<HOWTO.length;i++)if(HOWTO[i][0].test(d))return{title:HOWTO[i][1],view:HOWTO[i][2],steps:HOWTO[i][3]};return null;}
+function aiSayHowTo(h){
+  copSay('**'+h.title+'**\n'+h.steps.map(function(s,i){return (i+1)+'. '+s;}).join('\n'),
+    {actions:[{label:'Take me there',act:'shortcut',val:'open '+h.view},{label:'Show me how',act:'tour',val:h.view}]});
+}
+
+/* ---- Guided tours (coach-marks) for every module ---- */
+var TOURS={
+  dash:[['#kpis','Your KPIs','Revenue, expenses, profit and cash for the selected branch and period.'],['#recentTbl','Recent transactions','Click any row to view, edit, print or void it.'],['.askbtn','Ask Claude','Your shortcut to the AI copilot from any page.']],
+  sales:[['#v-sales .top','Daily Sales','Record each store\'s cash & card totals here.'],['#v-sales .card','Entry form','Pick the store, enter totals, Save — tax is automatic.']],
+  expenses:[['#v-expenses .top','Expenses','Log operating costs and payroll.'],['#v-expenses .card','New expense','Store, account, category, amount — then Save.']],
+  purchases:[['#v-purchases .top','Purchases','Record inventory purchases and vendor bills.'],['#v-purchases .card','New purchase','Store, vendor, amount — then Save.']],
+  recon:[['#v-recon .top','Bank Reconciliation','Match your bank feed to book entries.'],['#reconTbl','Bank lines','Reconcile each line to trust your cash balance.']],
+  tax:[['#v-tax .top','Sales Tax','See collected tax, what to set aside, and the due date.'],['#v-tax .card','By state','Pick a state to apply the correct rate.']],
+  payroll:[['#v-payroll .top','Payroll','Gross, taxes, net pay and the time clock.'],['#v-payroll .card','Employees','Review each employee, then Print the report.']],
+  inventory:[['#invAddHeaderBtn','Add Product','Create a product — or use Scan to add by barcode.'],['#invBody','Products & stock','Add stock, adjust, transfer, and print labels.']],
+  reports:[['.rep-searchbox','Find a report','Search 90+ reports or pick a category.'],['#v-reports .top','Print / PDF','Open a report then Print or download a PDF.']],
+  telegram:[['#v-telegram .top','Telegram','Simulated bot for alerts and quick commands.']],
+  settings:[['#v-settings .top','Settings','Branches, accounts and access.'],['#rolePanel','Role & permissions','Switch role to preview the live permission grid.']]
+};
+var TOUR={steps:[],i:0,view:null};
+function tourStart(view){
+  var t=TOURS[view]||TOURS.dash;go(view);
+  setTimeout(function(){TOUR={steps:t,i:0,view:view};tourStep(0);},220);
+}
+function tourStep(i){
+  tourClear();
+  if(i<0||i>=TOUR.steps.length){tourEnd();return;}
+  TOUR.i=i;var step=TOUR.steps[i];var el=document.querySelector(step[0]);
+  var halo=document.createElement('div');halo.className='coach-halo';halo.id='coachHalo';
+  var tip=document.createElement('div');tip.className='coach-tip';tip.id='coachTip';
+  var r=el?el.getBoundingClientRect():{top:80,left:20,width:200,height:40,bottom:120,right:220};
+  halo.style.cssText='top:'+(r.top-6)+'px;left:'+(r.left-6)+'px;width:'+(r.width+12)+'px;height:'+(r.height+12)+'px';
+  tip.innerHTML='<div class="coach-step">Step '+(i+1)+' of '+TOUR.steps.length+'</div><h5>'+step[1]+'</h5><p>'+step[2]+'</p>'
+    +'<div class="ct-acts">'+(i>0?'<button onclick="tourStep('+(i-1)+')">Back</button>':'')
+    +'<button onclick="tourEnd()">Stop</button>'
+    +'<button class="pri" onclick="tourStep('+(i+1)+')">'+(i===TOUR.steps.length-1?'Done':'Next')+'</button></div>';
+  document.body.appendChild(halo);document.body.appendChild(tip);
+  var top=Math.min(r.bottom+10,(window.innerHeight||800)-160);tip.style.top=top+'px';tip.style.left=Math.max(12,Math.min(r.left,(window.innerWidth||1000)-320))+'px';
+  if(el&&el.scrollIntoView)try{el.scrollIntoView({block:'center',behavior:'smooth'});}catch(e){}
+  aiAnnounce(step[1]+'. '+step[2]);
+}
+function tourClear(){['coachHalo','coachTip'].forEach(function(id){var e=document.getElementById(id);if(e)e.remove();});}
+function tourEnd(){tourClear();TOUR.steps=[];aiAnnounce('Tour ended');}
+
+/* Route action + help intents through the AI layer BEFORE the existing copilot
+   answers. If aiRoute doesn't claim the message, the original engine handles it. */
+var _rawRespond=copRespond;
+copRespond=function(text){
+  try{ if(!COP.pending && aiRoute(text)) return; }catch(e){ /* fall through on any parse error */ }
+  return _rawRespond(text);
+};
 </script>
 </body>
 </html>
