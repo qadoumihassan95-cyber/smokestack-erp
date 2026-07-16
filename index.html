@@ -28,6 +28,12 @@
   .logo{display:flex;align-items:center;gap:9px;font-weight:800;font-size:18px;padding:6px 8px 4px}
   .logo .b{width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,var(--brand),var(--brand2));display:flex;align-items:center;justify-content:center;font-size:14px}
   .tag{font-size:10px;color:var(--muted);padding:0 8px 14px}
+  .branchbox{margin:0 4px 12px;padding:10px;border:1px solid var(--line);border-radius:11px;background:var(--panel2)}
+  .branchbox label{display:block;font-size:10px;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);margin-bottom:6px;font-weight:700}
+  .branchbox select{width:100%;background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:8px 9px;font-size:13px;font-weight:600;cursor:pointer}
+  .branch-role{font-size:10.5px;color:var(--muted);margin-top:6px;display:flex;align-items:center;gap:5px}
+  .branch-role .dot{width:6px;height:6px;border-radius:50%;background:var(--brand);flex:0 0 6px}
+  .mtop-branch{font-size:10.5px;font-weight:700;color:var(--brand);white-space:nowrap;max-width:88px;overflow:hidden;text-overflow:ellipsis}
   .nav a{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:9px;color:var(--muted);text-decoration:none;font-size:13.5px;font-weight:600;cursor:pointer;margin-bottom:2px}
   .nav a:hover{background:var(--panel2);color:var(--txt)}
   .nav a.active{background:var(--panel2);color:var(--txt);box-shadow:inset 3px 0 0 var(--brand)}
@@ -350,7 +356,10 @@
 <!-- ===== MOBILE CHROME (hidden on desktop) ===== -->
 <header class="mtop">
   <button class="mtop-btn" id="mMenu" aria-label="Menu">☰</button>
-  <div class="mtop-title" id="mTitle">Dashboard</div>
+  <div style="flex:1;min-width:0;text-align:center">
+    <div class="mtop-title" id="mTitle">Dashboard</div>
+    <div class="mtop-branch" id="mBranch" style="text-align:center"></div>
+  </div>
   <button class="mtop-btn accent" id="mAsk" aria-label="Ask Claude">✦</button>
 </header>
 <div class="scrim" id="mScrim"></div>
@@ -360,6 +369,11 @@
   <aside class="side">
     <div class="logo"><span class="b">🔥</span> SmokeStack</div>
     <div class="tag">Accounting · Version 1</div>
+    <div class="branchbox">
+      <label for="branchSel">🏬 Branch</label>
+      <select id="branchSel" aria-label="Active branch" onchange="setBranch(this.value)"></select>
+      <div class="branch-role" id="branchRole"></div>
+    </div>
     <nav class="nav" id="nav">
       <a data-v="dash" class="active">📊 Dashboard</a>
       <a data-v="ai">🤖 Ask Claude</a>
@@ -385,7 +399,7 @@
     <section class="view on" id="v-dash">
       <div class="top"><div><h1>Dashboard</h1><div class="sub" id="dashSub">All stores · today</div></div>
         <div style="display:flex;gap:9px;align-items:center">
-          <select id="storeSel" aria-label="Filter by store" onchange="renderDash()"></select>
+          <select id="storeSel" aria-label="Active branch" onchange="setBranch(this.value)"></select>
           <button class="askbtn" onclick="go('ai')">🤖 Ask Claude</button>
         </div>
       </div>
@@ -548,6 +562,11 @@
         <div class="card"><h3>Bank Accounts</h3><div id="acctList"></div>
           <div style="display:flex;gap:8px;margin-top:10px"><input id="newAcct" aria-label="New account name" placeholder="Add account name"><button class="btn p" onclick="addAcct()">Add</button></div></div>
       </div>
+      <div class="card" style="margin-top:13px"><h3>Branch access &amp; role</h3>
+        <div style="font-size:13px;color:var(--muted);line-height:1.7;margin-bottom:10px">Controls which branches a user can see. <b>Owner/Admin</b> sees all; <b>Branch manager</b> sees assigned branches; <b>Employee</b> sees only their own. The active branch persists across refresh.</div>
+        <div id="rolePanel"></div>
+        <div style="font-size:11.5px;color:var(--warn);margin-top:10px;line-height:1.6">⚠️ This is a front-end (UI) access control for demonstration. It is <b>not</b> a security boundary — real enforcement requires the server-side branch scoping described in the deployment notes. Anyone with the file can change roles.</div>
+      </div>
       <div class="card" style="margin-top:13px"><h3>What changed in V1</h3>
         <div style="font-size:13px;color:var(--muted);line-height:1.8">Removed for simplicity: Average Basket, Average Margin, Customer Management, Loyalty. Inventory moved to a future module. The system is now accounting-first: sales, expenses, purchases, tax, payroll, and reports — driven by Claude and Telegram.</div></div>
     </section>
@@ -585,6 +604,31 @@ let ACCOUNTS=["Cash","Checking","Business Bank","Credit Card"];
 const today=new Date('2026-07-02');
 function dstr(d){return d.toISOString().slice(0,10);}
 function daysAgo(n){const d=new Date(today);d.setDate(d.getDate()-n);return dstr(d);}
+
+/* ===================== MULTI-BRANCH + ROLES =====================
+   A "branch" is a store. BRANCH holds the active selection ('all' or a store name).
+   ROLE gates which branches a user may see AT THE DATA LAYER (scope()), not just the UI.
+   HONESTY: this is a front-end app with no server, so these permissions are a UX
+   boundary, not a security boundary — anyone with the file can change ROLE. Real
+   enforcement needs the backend described in the deploy notes. Labelled as such in the UI. */
+let BRANCH='all';                                   // active branch filter
+let ROLE={kind:'owner',branches:'all'};             // owner | manager | employee ; branches: 'all' | [names]
+const LS={branch:'ss_branch',role:'ss_role'};
+function lsGet(k){try{return localStorage.getItem(k);}catch(e){return null;}}
+function lsSet(k,v){try{localStorage.setItem(k,v);}catch(e){}}
+// branches this role is allowed to see, intersected with existing stores
+function allowedBranches(){
+  if(ROLE.kind==='owner')return STORES.slice();
+  const list=(ROLE.branches==='all'?STORES:(Array.isArray(ROLE.branches)?ROLE.branches:[ROLE.branches])).filter(b=>STORES.includes(b));
+  return ROLE.kind==='employee'?list.slice(0,1):list;   // employee = exactly one (own) branch
+}
+function canSeeAll(){return allowedBranches().length>1;}
+// THE branch/role gate: every view funnels its rows through scope() before rendering.
+// Even with BRANCH='all', a restricted role only ever sees its allowed branches → no leakage.
+function scope(rows){const allow=allowedBranches();const sel=BRANCH;
+  return rows.filter(x=>{const b=x.store;if(!b)return sel==='all'||!STORES.includes(sel);   // branchless demo rows (e.g. recon) pass through
+    return allow.includes(b)&&(sel==='all'||b===sel);});}
+function branchLabel(){return BRANCH==='all'?(canSeeAll()?'All branches':allowedBranches()[0]||'—'):BRANCH;}
 // ledger: {id,date,store,account,type,category,amount,memo,tax}
 let LEDGER=[
  {id:1,date:daysAgo(0),store:"Store A",account:"Cash",type:"sale",category:"Sales",amount:8420,memo:"Daily sales",tax:642.20},
@@ -623,13 +667,52 @@ function go(v){document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle
   mSync(v);window.scrollTo(0,0);}
 document.getElementById('nav').addEventListener('click',e=>{const a=e.target.closest('a');if(!a||!a.dataset.v)return;go(a.dataset.v);if(a.dataset.v==='ai')setTimeout(()=>document.getElementById('chatInput')?.focus(),50);});
 let tt;function toast(m){const t=document.getElementById('toast');t.className='toast show';t.textContent='✅ '+m;clearTimeout(tt);tt=setTimeout(()=>t.className='toast',2600);}
-function fillStores(){const opts=s=>['<option value="all">All stores</option>'].concat(STORES.map(x=>`<option>${x}</option>`)).join('');
-  document.getElementById('storeSel').innerHTML=opts();
-  ['sStore','eStore','pStore'].forEach(id=>document.getElementById(id).innerHTML=STORES.map(x=>`<option>${x}</option>`).join(''));
-  ['eAcct','pAcct'].forEach(id=>document.getElementById(id).innerHTML=ACCOUNTS.map(x=>`<option>${x}</option>`).join(''));}
+function fillStores(){
+  const allow=allowedBranches();
+  // branch selectors only offer branches this role may see; "All branches" only if >1
+  const branchOpts=(canSeeAll()?'<option value="all">All branches</option>':'')+allow.map(x=>`<option>${x}</option>`).join('');
+  const bs=document.getElementById('branchSel');if(bs)bs.innerHTML=branchOpts;
+  const ss=document.getElementById('storeSel');if(ss)ss.innerHTML=branchOpts;   // dashboard mirror
+  // entry forms only let you post to a branch you're allowed to
+  ['sStore','eStore','pStore'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML=allow.map(x=>`<option>${x}</option>`).join('');});
+  ['eAcct','pAcct'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML=ACCOUNTS.map(x=>`<option>${x}</option>`).join('');});
+  syncBranchUI();
+}
+// keep both selectors, the role caption, and the mobile chip in lockstep with BRANCH
+function syncBranchUI(){
+  ['branchSel','storeSel'].forEach(id=>{const el=document.getElementById(id);if(el&&el.value!==BRANCH)el.value=BRANCH;});
+  const roleName={owner:'Owner · all branches',manager:'Branch manager',employee:'Employee'}[ROLE.kind];
+  const rc=document.getElementById('branchRole');
+  if(rc)rc.innerHTML=`<span class="dot"></span>${roleName}${ROLE.kind!=='owner'?' · '+allowedBranches().join(', '):''}`;
+  const mb=document.getElementById('mBranch');if(mb)mb.textContent=branchLabel();
+}
+// THE global switch: validates against role, persists, and re-renders every view
+function setBranch(v){
+  const allow=allowedBranches();
+  if(v!=='all'&&!allow.includes(v))v=allow[0]||'all';       // never trust a value the role can't access
+  if(v==='all'&&!canSeeAll())v=allow[0]||'all';
+  BRANCH=v;lsSet(LS.branch,v);
+  if(REP){REP.filters.store=(v==='all'?'all':v);REP.current=REP.current;}  // reports follow the branch
+  syncBranchUI();refreshAll();
+}
+function setRole(kind,branches){
+  ROLE={kind,branches:branches||(kind==='owner'?'all':allowedBranches().slice(0, kind==='employee'?1:2))};
+  lsSet(LS.role,JSON.stringify(ROLE));
+  // clamp current selection into the newly-allowed set
+  if(!canSeeAll())BRANCH=allowedBranches()[0]||'all';
+  else if(BRANCH!=='all'&&!allowedBranches().includes(BRANCH))BRANCH='all';
+  fillStores();setBranch(BRANCH);
+  if(document.getElementById('rolePanel'))renderRolePanel();
+}
+function restoreBranchState(){
+  const r=lsGet(LS.role);if(r){try{const o=JSON.parse(r);if(o&&o.kind)ROLE=o;}catch(e){}}
+  const b=lsGet(LS.branch);if(b)BRANCH=b;
+  if(BRANCH!=='all'&&!allowedBranches().includes(BRANCH))BRANCH=canSeeAll()?'all':(allowedBranches()[0]||'all');
+  if(BRANCH==='all'&&!canSeeAll())BRANCH=allowedBranches()[0]||'all';
+}
 
 // ---------------- Dashboard ----------------
-function renderDash(){curStore=document.getElementById('storeSel').value;const rows=filt(curStore);
+function renderDash(){curStore=BRANCH;const rows=scope(LEDGER);
   const todayRows=rows.filter(x=>x.date===daysAgo(0)), weekRows=rows.filter(x=>inPeriod(x.date,'week')), monthRows=rows.filter(x=>inPeriod(x.date,'month'));
   const salesToday=sum(todayRows,'sale'), salesWeek=sum(weekRows,'sale');
   const expMonth=sum(monthRows,'expense')+sum(monthRows,'payroll'), purMonth=sum(monthRows,'purchase');
@@ -647,7 +730,7 @@ function renderDash(){curStore=document.getElementById('storeSel').value;const r
     ["Tax Payable",money(taxPayable),"var(--brand)","sales tax MTD"],
     ["Purchases (MTD)",money(purMonth),"var(--txt)","cost of goods"]];
   document.getElementById('kpis').innerHTML=K.slice(0,8).map(k=>`<div class="card kpi"><div class="l">${k[0]}</div><div class="v" style="color:${k[2]}">${k[1]}</div><div class="s">${k[3]}</div></div>`).join('');
-  document.getElementById('dashSub').textContent=(curStore==='all'?'All stores':curStore)+' · '+daysAgo(0);
+  document.getElementById('dashSub').textContent=branchLabel()+' · '+daysAgo(0);
   // recent
   const rec=[...rows].sort((a,b)=>b.id-a.id).slice(0,8);
   document.getElementById('recentTbl').innerHTML=`<thead><tr><th>Date</th><th>Store</th><th>Account</th><th>Type</th><th>Memo</th><th style="text-align:end">Amount</th></tr></thead><tbody>`+
@@ -657,7 +740,7 @@ function renderDash(){curStore=document.getElementById('storeSel').value;const r
 }
 
 // ---------------- Daily Sales ----------------
-function renderSales(){const rows=LEDGER.filter(x=>x.type==='sale').sort((a,b)=>b.id-a.id).slice(0,12);
+function renderSales(){const rows=scope(LEDGER).filter(x=>x.type==='sale').sort((a,b)=>b.id-a.id).slice(0,12);
   document.getElementById('salesTbl').innerHTML=`<thead><tr><th>Date</th><th>Store</th><th>Account</th><th>Tax</th><th style="text-align:end">Amount</th></tr></thead><tbody>`+
     rows.map(x=>`<tr><td>${x.date.slice(5)}</td><td>${x.store}</td><td>${x.account}</td><td>${x.tax?money2(x.tax):'—'}</td><td style="text-align:end"><b>${money(x.amount)}</b></td></tr>`).join('')+`</tbody>`;}
 function submitDailySales(){const store=document.getElementById('sStore').value;const cash=+document.getElementById('sCash').value||0;const card=+document.getElementById('sCard').value||0;const taxable=document.getElementById('sTaxable').value==='1';
@@ -667,7 +750,7 @@ function submitDailySales(){const store=document.getElementById('sStore').value;
   document.getElementById('sCash').value='';document.getElementById('sCard').value='';renderSales();renderDash();toast('Daily sales saved: '+money(total)+' ('+store+')');}
 
 // ---------------- Expenses ----------------
-function renderExp(){const rows=LEDGER.filter(x=>x.type==='expense'||x.type==='payroll').sort((a,b)=>b.id-a.id).slice(0,12);
+function renderExp(){const rows=scope(LEDGER).filter(x=>x.type==='expense'||x.type==='payroll').sort((a,b)=>b.id-a.id).slice(0,12);
   document.getElementById('expTbl').innerHTML=`<thead><tr><th>Date</th><th>Store</th><th>Category</th><th>Account</th><th style="text-align:end">Amount</th></tr></thead><tbody>`+
     rows.map(x=>`<tr><td>${x.date.slice(5)}</td><td>${x.store}</td><td>${x.category}</td><td>${x.account}</td><td style="text-align:end;color:var(--bad)"><b>${money(x.amount)}</b></td></tr>`).join('')+`</tbody>`;}
 function submitExpense(){const amt=+document.getElementById('eAmt').value||0;if(!amt)return toast('Enter an amount');
@@ -675,7 +758,7 @@ function submitExpense(){const amt=+document.getElementById('eAmt').value||0;if(
   document.getElementById('eAmt').value='';document.getElementById('eVendor').value='';renderExp();renderDash();toast('Expense saved: '+money(amt));}
 
 // ---------------- Purchases ----------------
-function renderPur(){const rows=LEDGER.filter(x=>x.type==='purchase').sort((a,b)=>b.id-a.id).slice(0,12);
+function renderPur(){const rows=scope(LEDGER).filter(x=>x.type==='purchase').sort((a,b)=>b.id-a.id).slice(0,12);
   document.getElementById('purTbl').innerHTML=`<thead><tr><th>Date</th><th>Vendor</th><th>Store</th><th>Description</th><th style="text-align:end">Amount</th></tr></thead><tbody>`+
     rows.map(x=>`<tr><td>${x.date.slice(5)}</td><td><b>${x.vendor||x.memo}</b></td><td>${x.store}</td><td>${x.desc||'—'}</td><td style="text-align:end"><b>${money(x.amount)}</b></td></tr>`).join('')+`</tbody>`;}
 function submitPurchase(){const amt=+document.getElementById('pAmt').value||0;if(!amt)return toast('Enter an amount');
@@ -695,22 +778,26 @@ function importDemo(){toast('Bank statement imported — 5 lines auto-categorize
 
 // ---------------- Sales Tax ----------------
 function renderTax(){const [st,rate]=document.getElementById('taxState').value.split('|');const r=+rate;
-  const month=LEDGER.filter(x=>inPeriod(x.date,'month'));
+  const month=scope(LEDGER).filter(x=>inPeriod(x.date,'month'));
   const taxable=sum(month,'sale');const collected=month.reduce((a,x)=>a+(x.tax||0),0);
   const K=[["Taxable Sales (MTD)",money(taxable),"var(--txt)"],["Tax Rate",r+"%","var(--txt)"],["Tax Collected",money(collected),"var(--brand)"],["Tax Payable",money(collected),"var(--warn)"]];
-  document.getElementById('taxKpis').innerHTML=K.map(k=>`<div class="card kpi"><div class="l">${k[0]}</div><div class="v" style="color:${k[2]}">${k[1]}</div><div class="s">state: ${st}</div></div>`).join('');
-  const byStore=STORES.map(s=>{const rows=month.filter(x=>x.store===s);return [s,sum(rows,'sale'),rows.reduce((a,x)=>a+(x.tax||0),0)];});
+  document.getElementById('taxKpis').innerHTML=K.map(k=>`<div class="card kpi"><div class="l">${k[0]}</div><div class="v" style="color:${k[2]}">${k[1]}</div><div class="s">state: ${st} · ${branchLabel()}</div></div>`).join('');
+  const byStore=allowedBranches().filter(s=>BRANCH==='all'||s===BRANCH).map(s=>{const rows=month.filter(x=>x.store===s);return [s,sum(rows,'sale'),rows.reduce((a,x)=>a+(x.tax||0),0)];});
   document.getElementById('taxStoreTbl').innerHTML=`<thead><tr><th>Store</th><th style="text-align:end">Taxable sales</th><th style="text-align:end">Tax collected</th></tr></thead><tbody>`+
     byStore.map(b=>`<tr><td><b>${b[0]}</b></td><td style="text-align:end">${money(b[1])}</td><td style="text-align:end;color:var(--brand)">${money(b[2])}</td></tr>`).join('')+`</tbody>`;
   document.getElementById('taxNote').innerHTML=`Rate applied: <b>${r}%</b> (${st})<br>Rates are per-jurisdiction and configurable — the engine supports different US states.<br>Next filing: <b>Jul 20</b>`;}
 
 // ---------------- Payroll ----------------
-function renderPay(){const totalGross=EMPLOYEES.reduce((a,e)=>a+e.gross,0);const empTax=+(totalGross*0.0765).toFixed(0);const unemp=+(totalGross*0.02).toFixed(0);const net=totalGross-empTax;
+// employees are branch records too — an employee/manager only sees staff at their branch(es)
+function scopeEmp(){const allow=allowedBranches();return EMPLOYEES.filter(e=>allow.includes(e.store)&&(BRANCH==='all'||e.store===BRANCH));}
+function renderPay(){const emps=scopeEmp();const totalGross=emps.reduce((a,e)=>a+e.gross,0);const empTax=+(totalGross*0.0765).toFixed(0);const unemp=+(totalGross*0.02).toFixed(0);const net=totalGross-empTax;
   const K=[["Gross Payroll",money(totalGross),"var(--txt)"],["Employer FICA (7.65%)",money(empTax),"var(--brand)"],["Unemployment (~2%)",money(unemp),"var(--brand2)"],["Total Cost",money(totalGross+empTax+unemp),"var(--bad)"]];
-  document.getElementById('payKpis').innerHTML=K.map(k=>`<div class="card kpi"><div class="l">${k[0]}</div><div class="v" style="color:${k[2]}">${k[1]}</div><div class="s">this period</div></div>`).join('');
+  document.getElementById('payKpis').innerHTML=K.map(k=>`<div class="card kpi"><div class="l">${k[0]}</div><div class="v" style="color:${k[2]}">${k[1]}</div><div class="s">${branchLabel()}</div></div>`).join('');
   document.getElementById('payTbl').innerHTML=`<thead><tr><th>Employee</th><th>Store</th><th style="text-align:end">Gross</th><th style="text-align:end">Empl. tax</th><th style="text-align:end">Net</th></tr></thead><tbody>`+
-    EMPLOYEES.map(e=>{const t=+(e.gross*0.0765).toFixed(0);return `<tr><td><b>${e.name}</b></td><td>${e.store}</td><td style="text-align:end">${money(e.gross)}</td><td style="text-align:end;color:var(--brand)">${money(t)}</td><td style="text-align:end"><b>${money(e.gross-t)}</b></td></tr>`;}).join('')+`</tbody>`;}
-function runPayroll(){const g=EMPLOYEES.reduce((a,e)=>a+e.gross,0);LEDGER.push({id:++uid,date:daysAgo(0),store:STORES[0],account:"Checking",type:"payroll",category:"Payroll",amount:g,memo:"Payroll run"});renderDash();toast('Payroll recorded: '+money(g)+' + employer taxes');}
+    (emps.length?emps.map(e=>{const t=+(e.gross*0.0765).toFixed(0);return `<tr><td><b>${e.name}</b></td><td>${e.store}</td><td style="text-align:end">${money(e.gross)}</td><td style="text-align:end;color:var(--brand)">${money(t)}</td><td style="text-align:end"><b>${money(e.gross-t)}</b></td></tr>`;}).join('')
+      :`<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:16px">No employees at ${branchLabel()}.</td></tr>`)+`</tbody>`;}
+function runPayroll(){const emps=scopeEmp();const g=emps.reduce((a,e)=>a+e.gross,0);if(!g)return toast('No employees at '+branchLabel());
+  LEDGER.push({id:++uid,date:daysAgo(0),store:BRANCH!=='all'?BRANCH:STORES[0],account:"Checking",type:"payroll",category:"Payroll",amount:g,memo:"Payroll run"});refreshAll();toast('Payroll recorded: '+money(g)+' + employer taxes');}
 
 // ---------------- Reports ----------------
 // =================== REPORT CENTER (scoped rep*) ===================
@@ -748,7 +835,7 @@ function repSeed(){let s=42;const rnd=()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul
   REP.employees=EMPLOYEES.map(e=>{const r=tx.filter(x=>x.employee===e.name&&x.type==='sale');return {name:e.name,store:e.store,gross:e.gross,sales:r.reduce((a,x)=>a+x.amount,0),txns:r.length,overtime:Math.round((e.gross%7)+2),attendance:92+Math.round((e.gross%8))};});
 }
 function repInPeriod(d,p){if(p==='today')return d===daysAgo(0);if(p==='week')return d>=daysAgo(6);if(p==='month')return d>=daysAgo(29);if(p==='quarter')return d>=daysAgo(89);if(p==='year')return d>=daysAgo(200);return true;}
-function repTx(){const f=REP.filters;return REP.tx.filter(x=>repInPeriod(x.date,f.period)&&(f.store==='all'||x.store===f.store)&&(f.account==='all'||x.account===f.account)&&(f.category==='all'||x.category===f.category||x.prodCat===f.category)&&(f.vendor==='all'||x.vendor===f.vendor)&&(f.employee==='all'||x.employee===f.employee)&&(f.product==='all'||x.product===f.product)&&(f.customer==='all'||x.customer===f.customer));}
+function repTx(){const f=REP.filters;const allow=allowedBranches();return REP.tx.filter(x=>repInPeriod(x.date,f.period)&&(!x.store||allow.includes(x.store))&&(f.store==='all'||x.store===f.store)&&(f.account==='all'||x.account===f.account)&&(f.category==='all'||x.category===f.category||x.prodCat===f.category)&&(f.vendor==='all'||x.vendor===f.vendor)&&(f.employee==='all'||x.employee===f.employee)&&(f.product==='all'||x.product===f.product)&&(f.customer==='all'||x.customer===f.customer));}
 function repSum(rows,type){return sum(rows,type);}   // delegates to the canonical aggregator
 
 // ---- charts ----
@@ -785,7 +872,7 @@ function repBuckets(gran){const out=[];const now=new Date(daysAgo(0));
   else if(gran==='month'){for(let m=6;m>=0;m--){const d=new Date(now);d.setMonth(d.getMonth()-m);const key=d.toISOString().slice(0,7);out.push({label:['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()],rows:REP.tx.filter(x=>x.date.slice(0,7)===key&&repMatchFilters(x))});}}
   else if(gran==='year'){const y=now.getFullYear();out.push({label:String(y-1),rows:REP.tx.filter(x=>x.date.slice(0,4)===String(y-1)&&repMatchFilters(x))});out.push({label:String(y),rows:REP.tx.filter(x=>x.date.slice(0,4)===String(y)&&repMatchFilters(x))});}
   return out;}
-function repMatchFilters(x){const f=REP.filters;return (f.store==='all'||x.store===f.store)&&(f.account==='all'||x.account===f.account)&&(f.category==='all'||x.category===f.category)&&(f.vendor==='all'||x.vendor===f.vendor)&&(f.employee==='all'||x.employee===f.employee);}
+function repMatchFilters(x){const f=REP.filters;const allow=allowedBranches();return (!x.store||allow.includes(x.store))&&(f.store==='all'||x.store===f.store)&&(f.account==='all'||x.account===f.account)&&(f.category==='all'||x.category===f.category)&&(f.vendor==='all'||x.vendor===f.vendor)&&(f.employee==='all'||x.employee===f.employee);}
 function metricVal(rows,m){if(m==='profit')return repSum(rows,'sale')-repSum(rows,'purchase')-repSum(rows,'expense')-repSum(rows,'payroll');if(m==='cash')return repSum(rows,'sale')+repSum(rows,'deposit')-repSum(rows,'purchase')-repSum(rows,'expense')-repSum(rows,'payroll');if(m==='revenue')return repSum(rows,'sale');return repSum(rows,m);}
 
 // ---- builders ----
@@ -845,10 +932,10 @@ function bTax(w){const rows=repTx();const collected=rows.reduce((a,x)=>a+(x.tax|
 function bKpi(){const rows=repTx();const sales=repSum(rows,'sale'),exp=repSum(rows,'expense')+repSum(rows,'payroll'),pur=repSum(rows,'purchase');const np=sales-pur-exp;const cash=metricVal(rows,'cash');
   return {kpis:[['Revenue',money(sales)],['Net profit',money(np)],['Margin',pct(np,sales)],['Cash flow',money(cash)],['Purchases',money(pur)],['Expenses',money(exp)],['Tax collected',money(rows.reduce((a,x)=>a+(x.tax||0),0))],['Transactions',rows.length]],
     chart:repLine(repBuckets('month').map(b=>[b.label,metricVal(b.rows,'revenue')]),{color:'var(--brand)',area:true}),
-    table:{cols:['Store','Sales','Profit','Margin'],align:['start','end','end','end'],rows:STORES.map(s=>{const r=rows.filter(x=>x.store===s);const sl=repSum(r,'sale'),p=sl-repSum(r,'purchase')-repSum(r,'expense')-repSum(r,'payroll');return [s,money(sl),money(p),pct(p,sl)];})},
+    table:{cols:['Store','Sales','Profit','Margin'],align:['start','end','end','end'],rows:allowedBranches().map(s=>{const r=rows.filter(x=>x.store===s);const sl=repSum(r,'sale'),p=sl-repSum(r,'purchase')-repSum(r,'expense')-repSum(r,'payroll');return [s,money(sl),money(p),pct(p,sl)];})},
     insight:`Revenue <b>${money(sales)}</b>, net profit <b>${money(np)}</b> (${pct(np,sales)} margin). ${np>=0?'Healthy period.':'Margin is under pressure.'}`};}
 function bInsights(){const rows=repTx();const b=repBuckets('week');const lastW=metricVal(b[b.length-1].rows,'revenue'),prevW=metricVal(b[b.length-2].rows,'revenue');const sd=prevW?Math.round((lastW-prevW)/prevW*100):0;
-  const worst=STORES.map(s=>[s,repSum(rows.filter(x=>x.store===s),'sale')]).sort((a,b)=>a[1]-b[1])[0];
+  const worst=allowedBranches().map(s=>[s,repSum(rows.filter(x=>x.store===s),'sale')]).sort((a,b)=>a[1]-b[1])[0];
   const dead=REP.products.filter(p=>p.sold<3);const reorder=REP.products.filter(p=>p.stock<p.reorder);
   const cashFc=bForecast({metric:'cash'});
   const ins=[['📉',`Revenue ${sd>=0?'rose':'fell'} <b>${Math.abs(sd)}%</b> week-over-week (${money(prevW)} → ${money(lastW)}).`],
@@ -1000,7 +1087,7 @@ function repFilterBar(){const opt=(items,val,label)=>[`<option value="all">All $
   const f=REP.filters;
   return `<div class="rep-fbar">
     <select data-f="period"><option value="today" ${f.period==='today'?'selected':''}>Today</option><option value="week" ${f.period==='week'?'selected':''}>This week</option><option value="month" ${f.period==='month'?'selected':''}>This month</option><option value="quarter" ${f.period==='quarter'?'selected':''}>This quarter</option><option value="year" ${f.period==='year'?'selected':''}>This year</option><option value="all" ${f.period==='all'?'selected':''}>All time</option></select>
-    <select data-f="store">${opt(STORES,f.store,'stores')}</select>
+    <select data-f="store">${(canSeeAll()?`<option value="all" ${f.store==='all'?'selected':''}>All branches</option>`:'')+allowedBranches().map(i=>`<option ${i===f.store?'selected':''}>${i}</option>`).join('')}</select>
     <select data-f="account">${opt(ACCOUNTS,f.account,'accounts')}</select>
     <select data-f="category">${opt(['Utilities','Rent','Payroll','Supplies','Marketing','Bank Charges','Cigarettes','Vape','Pouches','Cigars','Accessories'],f.category,'categories')}</select>
     <select data-f="vendor">${opt(VENDORS,f.vendor,'vendors')}</select>
@@ -1327,8 +1414,8 @@ function copKeys(e){const ta=document.getElementById('copTa');
 function copInsights(){
   const ins=[];
   const wk=bRange('week'),lw=bRange('lastweek');
-  const cur=bMetrics(LEDGER.filter(x=>inR(x.date,wk)));
-  const prev=bMetrics(LEDGER.filter(x=>inR(x.date,lw)));
+  const cur=bMetrics(scope(LEDGER).filter(x=>inR(x.date,wk)));
+  const prev=bMetrics(scope(LEDGER).filter(x=>inR(x.date,lw)));
   // 1. revenue trend
   if(prev.sales){const d=(cur.sales-prev.sales)/prev.sales*100;
     if(Math.abs(d)>=6)ins.push({i:d>0?'📈':'📉',t:`Revenue is **${d>0?'up':'down'} ${Math.abs(d).toFixed(0)}%** week-on-week (${money(cur.sales)} vs ${money(prev.sales)}).`,q:'Why did revenue change?'});}
@@ -1340,17 +1427,17 @@ function copInsights(){
   if(low.length){const out=low.filter(p=>p.stock===0);
     ins.push({i:'📦',t:out.length?`**${out[0].name} is out of stock.** ${low.length} product${low.length>1?'s are':' is'} at or below reorder.`:`**${low.length} product${low.length>1?'s':''}** at or below the reorder point.`,q:'What should I reorder?'});}
   // 4. silent store
-  const silent=STORES.filter(s=>!LEDGER.some(x=>x.date===daysAgo(0)&&x.store===s&&x.type==='sale'));
+  const silent=allowedBranches().filter(s=>!scope(LEDGER).some(x=>x.date===daysAgo(0)&&x.store===s&&x.type==='sale'));
   if(silent.length)ins.push({i:'🏬',t:`**${silent.join(', ')}** ${silent.length>1?'have':'has'} not reported sales today.`,q:"Show me today's sales."});
   // 5. anomalies
   const anom=bAnomalies({period:wk});
   const m=anom.text.match(/\*\*(\d+) thing/);
   if(m)ins.push({i:'⚠️',t:`**${m[1]} transaction${+m[1]>1?'s':''}** look out of place this week.`,q:'Find unusual transactions.'});
   // 6. tax held
-  const tax=LEDGER.filter(x=>inR(x.date,bRange('month'))).reduce((a,x)=>a+(x.tax||0),0);
+  const tax=scope(LEDGER).filter(x=>inR(x.date,bRange('month'))).reduce((a,x)=>a+(x.tax||0),0);
   ins.push({i:'🧮',t:`**${money(tax)}** of sales tax is held for the state. Filing **Jul 20**.`,q:'What taxes do I owe?'});
   // 7. cash to bank
-  const cashRows=LEDGER.filter(x=>inR(x.date,wk)&&x.account==='Cash');
+  const cashRows=scope(LEDGER).filter(x=>inR(x.date,wk)&&x.account==='Cash');
   const onHand=cashRows.reduce((a,x)=>a+(x.type==='sale'?x.amount:-x.amount),0);
   if(onHand>1500)ins.push({i:'🏦',t:`**${money(onHand)}** of cash has built up this week — worth banking.`,q:'How much cash should I deposit?'});
   return ins;}
@@ -1527,8 +1614,12 @@ function bParsePeriod(d){
 function inR(date,r){return date>=r.from&&date<=r.to;}
 
 // ---- 4. Facts (single source of truth) ----
-function bRows(p){return LEDGER.filter(x=>inR(x.date,p.period)
-  &&(!p.store||x.store===p.store)&&(!p.employee||x.employee===p.employee)
+function bRows(p){const allow=allowedBranches();
+  // scope = the store the question names, else the active branch (unless "all" is active/allowed)
+  const br=p.store||(BRANCH!=='all'?BRANCH:null);
+  return scope(LEDGER).filter(x=>inR(x.date,p.period)
+  &&allow.includes(x.store)                       // role gate — never leak other branches
+  &&(!br||x.store===br)&&(!p.employee||x.employee===p.employee)
   &&(!p.product||x.product===p.product)&&(!p.vendor||x.vendor===p.vendor)
   &&(!p.category||x.category===p.category));}
 function bT(rows,t){return sum(rows,t);}   // delegates to the canonical aggregator
@@ -1697,7 +1788,7 @@ function bWhy(p){
 function bCompare(p){
   const d=p._raw.toLowerCase();
   const dim=/employee|staff|seller|salesperson/.test(d)?'employee':/product/.test(d)?'product':'store';
-  let keys=dim==='store'?STORES:dim==='employee'?EMPLOYEES.map(e=>e.name):(REP.products||[]).map(x=>x.name);
+  let keys=dim==='store'?allowedBranches():dim==='employee'?EMPLOYEES.map(e=>e.name):(REP.products||[]).map(x=>x.name);
   // If the user names specific entities ("compare Store A and Store C"), compare exactly those.
   const named=keys.filter(k=>d.includes(k.toLowerCase())||(dim==='store'&&new RegExp('\\bstore\\s+'+k.slice(-1).toLowerCase()+'\\b').test(d)));
   if(named.length>=2)keys=named;
@@ -1715,7 +1806,7 @@ function bCompare(p){
 }
 function bTrend(p){
   const m=p.metric||'sales';const days=[];const span=p.period.key==='today'||p.period.key==='yesterday'?14:Math.min(30,Math.round((new Date(p.period.to)-new Date(p.period.from))/864e5)+1);
-  for(let i=span-1;i>=0;i--){const d=daysAgo(i);const rows=LEDGER.filter(x=>x.date===d&&(!p.store||x.store===p.store));days.push([d,bMetrics(rows)[m]]);}
+  for(let i=span-1;i>=0;i--){const d=daysAgo(i);const rows=scope(LEDGER).filter(x=>x.date===d&&(!p.store||x.store===p.store));days.push([d,bMetrics(rows)[m]]);}
   const vals=days.map(x=>x[1]);const half=Math.floor(vals.length/2);
   const a=vals.slice(0,half).reduce((x,y)=>x+y,0)/(half||1),b=vals.slice(half).reduce((x,y)=>x+y,0)/((vals.length-half)||1);
   const dl=bDelta(b,a);const peak=days.reduce((x,y)=>y[1]>x[1]?y:x);
@@ -1726,8 +1817,8 @@ function bTrend(p){
 }
 function bRank(p,dim){
   const period=p.period;
-  const keys=dim==='employee'?EMPLOYEES.map(e=>e.name):dim==='product'?(REP.products||[]).map(x=>x.name):STORES;
-  const rows=keys.map(k=>{const f=LEDGER.filter(x=>inR(x.date,period)&&x.type==='sale'&&(dim==='employee'?x.employee===k:dim==='product'?x.product===k:x.store===k));
+  const keys=dim==='employee'?EMPLOYEES.map(e=>e.name):dim==='product'?(REP.products||[]).map(x=>x.name):allowedBranches();
+  const rows=keys.map(k=>{const f=scope(LEDGER).filter(x=>inR(x.date,period)&&x.type==='sale'&&(dim==='employee'?x.employee===k:dim==='product'?x.product===k:x.store===k));
     return {k,rev:f.reduce((a,x)=>a+x.amount,0),n:f.length};}).sort((a,b)=>b.rev-a.rev).filter(r=>r.rev>0);
   if(!rows.length)return {text:`No ${dim} sales recorded in ${period.label}.`};
   const top=rows[0];
@@ -1755,7 +1846,7 @@ function bSlow(p){
     actions:[{label:'Open Reports',act:'nav',val:'reports'}]};
 }
 function bTopProducts(p){
-  const rows=(REP.products||[]).map(x=>{const f=LEDGER.filter(y=>y.type==='sale'&&y.product===x.name&&inR(y.date,p.period));
+  const rows=(REP.products||[]).map(x=>{const f=scope(LEDGER).filter(y=>y.type==='sale'&&y.product===x.name&&inR(y.date,p.period));
     return {...x,rev:f.reduce((a,y)=>a+y.amount,0),n:f.length};}).sort((a,b)=>b.rev-a.rev).slice(0,6);
   if(!rows[0]||!rows[0].rev)return {text:`No product sales in ${p.period.label}.`};
   return {text:`Your **fastest movers** in ${p.period.label}: **${rows[0].name}** leads with ${money(rows[0].rev)} across ${rows[0].n} sales. ${rows[0].stock<=rows[0].reorder?`⚠️ It's also **at its reorder point** (${rows[0].stock} left) — restock before it stocks out.`:`Stock is healthy at ${rows[0].stock} units.`}`,
@@ -1764,7 +1855,7 @@ function bTopProducts(p){
     actions:[{label:'Open Reports',act:'nav',val:'reports'}]};
 }
 function bSuppliers(p){
-  const rows=VENDORS.map(v=>{const f=LEDGER.filter(x=>x.vendor===v&&x.type==='purchase'&&inR(x.date,p.period));
+  const rows=VENDORS.map(v=>{const f=scope(LEDGER).filter(x=>x.vendor===v&&x.type==='purchase'&&inR(x.date,p.period));
     const spend=f.reduce((a,x)=>a+x.amount,0);return {v,spend,orders:f.length,avg:f.length?spend/f.length:0};}).filter(r=>r.orders).sort((a,b)=>b.spend-a.spend);
   if(!rows.length)return {text:`No supplier purchases recorded in ${p.period.label}.`,actions:[{label:'Open Purchases',act:'nav',val:'purchases'}]};
   const cheapest=[...rows].sort((a,b)=>a.avg-b.avg)[0];
@@ -1806,11 +1897,11 @@ function bBalances(p){
 }
 function bTaxOwed(p){
   const per=p.period.key==='month'?p.period:bRange('month');
-  const rows=LEDGER.filter(x=>inR(x.date,per)&&(!p.store||x.store===p.store));
+  const rows=scope(LEDGER).filter(x=>inR(x.date,per)&&(!p.store||x.store===p.store));
   const taxable=bT(rows,'sale'),collected=rows.reduce((a,x)=>a+(x.tax||0),0);
   return {text:`On **${money(taxable)}** of taxable sales in ${per.label}, you collected **${money(collected)}** of sales tax — and that is what you owe the state. It is not your money; it's held on their behalf.\n\nTexas rate applied: **8.25%** (tax-inclusive). Next filing: **Jul 20**.\n\n_How I got it: I sum the tax component stored on each taxable sale line._`,
     card:bTable('Sales tax by store',['Store','Taxable sales','Tax collected'],
-      STORES.map(s=>{const r=rows.filter(x=>x.store===s);return [`<b>${s}</b>`,money(bT(r,'sale')),`<b style="color:var(--brand)">${money(r.reduce((a,x)=>a+(x.tax||0),0))}</b>`];})),
+      allowedBranches().map(s=>{const r=rows.filter(x=>x.store===s);return [`<b>${s}</b>`,money(bT(r,'sale')),`<b style="color:var(--brand)">${money(r.reduce((a,x)=>a+(x.tax||0),0))}</b>`];})),
     actions:[{label:'Open Sales Tax',act:'nav',val:'tax'},{label:'⬇ Export',act:'pdf'}]};
 }
 function bCashflow(p){
@@ -1824,10 +1915,10 @@ function bCashflow(p){
 }
 function bBriefing(){
   const t=bRange('today'),w=bRange('week');
-  const today=bMetrics(LEDGER.filter(x=>inR(x.date,t)));const week=bMetrics(LEDGER.filter(x=>inR(x.date,w)));
-  const prevWeek=bMetrics(LEDGER.filter(x=>inR(x.date,bRange('lastweek'))));
+  const today=bMetrics(scope(LEDGER).filter(x=>inR(x.date,t)));const week=bMetrics(scope(LEDGER).filter(x=>inR(x.date,w)));
+  const prevWeek=bMetrics(scope(LEDGER).filter(x=>inR(x.date,bRange('lastweek'))));
   const low=(REP.products||[]).filter(p=>p.stock<=p.reorder);
-  const silent=STORES.filter(s=>!LEDGER.some(x=>x.date===D0&&x.store===s&&x.type==='sale'));
+  const silent=allowedBranches().filter(s=>!scope(LEDGER).some(x=>x.date===D0&&x.store===s&&x.type==='sale'));
   const anom=bAnomalies({period:bRange('week')});
   const items=[];
   if(low.length)items.push(`**Restock ${low.length} product${low.length>1?'s':''}** — ${low.slice(0,3).map(p=>`${p.name} (${p.stock} left)`).join(', ')}${low.length>3?`, +${low.length-3} more`:''}. Empty shelves are the one loss you can't recover.`);
@@ -1836,7 +1927,7 @@ function bBriefing(){
   if(wd.pct!=null&&Math.abs(wd.pct)>8)items.push(`**Revenue is ${wd.up?'up':'down'} ${Math.abs(wd.pct).toFixed(0)}% week-on-week** (${money(week.sales)} vs ${money(prevWeek.sales)}). ${wd.up?'Worth knowing what worked.':'Worth knowing what broke.'}`);
   if(week.profit<0)items.push(`**You ran at a loss this week** (${money(week.profit)}). Purchases of ${money(week.purchases)} are the usual cause — stock bought now, sold later.`);
   if(/worth a look/.test(anom.text))items.push(`**${anom.text.match(/\*\*(\d+) thing/)?RegExp.$1:'Some'} flagged transactions** this week — duplicates or oversized entries. Ask me to *show unusual transactions*.`);
-  const tax=LEDGER.filter(x=>inR(x.date,bRange('month'))).reduce((a,x)=>a+(x.tax||0),0);
+  const tax=scope(LEDGER).filter(x=>inR(x.date,bRange('month'))).reduce((a,x)=>a+(x.tax||0),0);
   items.push(`**${money(tax)} of sales tax** is sitting in your accounts for the state. Filing is Jul 20 — don't spend it.`);
   return {text:`Good morning Hassan. Here's where the business actually stands.\n\nToday you've booked **${money(today.sales)}** across ${today.txns} transactions. The last 7 days: **${money(week.sales)}** revenue, **${money(week.profit)}** net profit, ${week.margin.toFixed(1)}% gross margin.\n\n**What deserves your attention, in order:**\n\n`+items.slice(0,5).map((s,i)=>`${i+1}. ${s}`).join('\n\n'),
     chips:{field:'shortcut',items:['What should I reorder?','Show unusual transactions','Why is my profit lower?']},
@@ -1847,7 +1938,7 @@ function bSummary(p){
   const q={...p,period:per};const M=bMetrics(bRows(q));
   const prev=bMetrics(bRows({...q,period:bRange(PREV[per.key]||'lastmonth')}));
   const dl=bDelta(M.sales,prev.sales);
-  const byStore=STORES.map(s=>({s,...bMetrics(bRows({...q,store:s}))})).sort((a,b)=>b.profit-a.profit);
+  const byStore=allowedBranches().map(s=>({s,...bMetrics(bRows({...q,store:s}))})).sort((a,b)=>b.profit-a.profit);
   const low=(REP.products||[]).filter(x=>x.stock<=x.reorder).length;
   return {text:`## Business summary — ${per.label}\n\n**Revenue ${money(M.sales)}** ${dl.pct!=null?`(${dl.up?'up':'down'} ${Math.abs(dl.pct).toFixed(1)}% on the prior period)`:''}, against ${money(M.cogs)} of goods sold — a **gross margin of ${M.margin.toFixed(1)}%**.\n\nAfter ${money(M.expenses)} of operating expenses, ${money(M.payroll)} of payroll and ${money(M.purchases)} of stock purchases, the business made **${money(M.profit)}** in net profit.\n\n**${byStore[0].s}** is your strongest store on profit (${money(byStore[0].profit)}); **${byStore[byStore.length-1].s}** is weakest (${money(byStore[byStore.length-1].profit)}).\n\nYou are holding **${money(M.tax)}** of sales tax for the state${low?`, and **${low} products** are at or below their reorder point`:''}.`,
     card:bCard('P&L · '+per.label,money(M.profit),[['Revenue',money(M.sales)],['Refunds',money(M.refunds)],['Cost of goods',money(M.cogs)],
@@ -1861,9 +1952,9 @@ function bExplainReport(p){
   const rep=(typeof RCATALOG!=='undefined'&&RCATALOG)?RCATALOG.find(r=>r.id===REP.current):null;
   if(!rep)return null;
   const f=REP.filters;const per=bRange(f.period==='month'?'month':f.period==='week'?'week':f.period==='today'?'today':f.period==='quarter'?'quarter':'year');
-  const rows=LEDGER.filter(x=>inR(x.date,per)&&(f.store==='all'||x.store===f.store));
+  const rows=scope(LEDGER).filter(x=>inR(x.date,per)&&(f.store==='all'||x.store===f.store));
   const M=bMetrics(rows);
-  const prev=bMetrics(LEDGER.filter(x=>inR(x.date,bRange(PREV[per.key]||'lastmonth'))&&(f.store==='all'||x.store===f.store)));
+  const prev=bMetrics(scope(LEDGER).filter(x=>inR(x.date,bRange(PREV[per.key]||'lastmonth'))&&(f.store==='all'||x.store===f.store)));
   const dl=bDelta(M.sales,prev.sales);
   const anom=bAnomalies({period:per,store:f.store==='all'?null:f.store});
   const flagged=/worth a look/.test(anom.text);
@@ -1909,7 +2000,7 @@ function bSearch(p){
   const d=p._raw.toLowerCase();
   const hits=[];
   (REP.products||[]).forEach(x=>{if(d.includes(x.name.toLowerCase().split(' ')[0]))hits.push(['Product',x.name,`${x.stock} in stock · ${money(x.rev)} revenue`]);});
-  VENDORS.forEach(v=>{if(d.includes(v.toLowerCase().split(' ')[0]))hits.push(['Supplier',v,`${LEDGER.filter(x=>x.vendor===v).length} purchases`]);});
+  VENDORS.forEach(v=>{if(d.includes(v.toLowerCase().split(' ')[0]))hits.push(['Supplier',v,`${scope(LEDGER).filter(x=>x.vendor===v).length} purchases`]);});
   EMPLOYEES.forEach(e=>{if(d.includes(e.name.toLowerCase().split(' ')[0]))hits.push(['Employee',e.name,`${e.store} · ${money(e.gross)} gross`]);});
   if(!hits.length)return {text:`I couldn't find anything matching that in products, suppliers or employees. I'd rather tell you that than invent a result — try a product, supplier or employee name.`};
   return {text:`Found **${hits.length}** match${hits.length>1?'es':''}:`,card:bTable('Search results',['Type','Name','Detail'],hits.map(h=>[h[0],`<b>${h[1]}</b>`,h[2]])),
@@ -1940,7 +2031,7 @@ function bCatVariance(p){
     actions:[{label:'Open Expenses',act:'nav',val:'expenses'},{label:'⬇ Export CSV',act:'csv'}]};
 }
 function bSeasonality(p){
-  const rows=LEDGER.filter(x=>x.type==='sale'&&inR(x.date,bRange('year'))&&(!p.store||x.store===p.store));
+  const rows=scope(LEDGER).filter(x=>x.type==='sale'&&inR(x.date,bRange('year'))&&(!p.store||x.store===p.store));
   if(!rows.length)return {text:`I don't have enough sales history to read a seasonal pattern.`};
   const DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const byDow=DOW.map(d=>{const f=rows.filter(x=>(x.weekday||DOW[new Date(x.date).getDay()])===d);
@@ -1955,12 +2046,12 @@ function bSeasonality(p){
 }
 function bGrowth(p){
   const per=bRange('month');
-  const prods=(REP.products||[]).map(x=>{const f=LEDGER.filter(y=>y.type==='sale'&&y.product===x.name&&inR(y.date,per));
+  const prods=(REP.products||[]).map(x=>{const f=scope(LEDGER).filter(y=>y.type==='sale'&&y.product===x.name&&inR(y.date,per));
     const rev=f.reduce((a,y)=>a+y.amount,0);const marg=(x.price-x.cost)/x.price*100;
     return {...x,rev,marg};});
   const highMarginLowVolume=prods.filter(x=>x.marg>40).sort((a,b)=>a.rev-b.rev)[0];
   const stockoutRisk=prods.filter(x=>x.stock<=x.reorder).sort((a,b)=>b.rev-a.rev)[0];
-  const stores=STORES.map(s=>({s,...bMetrics(bRows({period:per,store:s}))})).sort((a,b)=>b.sales-a.sales);
+  const stores=allowedBranches().map(s=>({s,...bMetrics(bRows({period:per,store:s}))})).sort((a,b)=>b.sales-a.sales);
   const gap=stores[0].sales-stores[stores.length-1].sales;
   const deadCap=prods.sort((a,b)=>a.turnover-b.turnover).slice(0,3).reduce((a,x)=>a+x.value,0);
   const ideas=[];
@@ -1974,7 +2065,7 @@ function bGrowth(p){
 }
 function bPayrollCheck(p){
   const per=p.period.key==='today'?bRange('quarter'):p.period;
-  const runs=LEDGER.filter(x=>x.type==='payroll'&&inR(x.date,per));
+  const runs=scope(LEDGER).filter(x=>x.type==='payroll'&&inR(x.date,per));
   if(!runs.length)return {text:`No payroll runs posted in ${per.label}. If you've paid staff, the run hasn't been recorded — that would understate your costs and overstate profit.`,
     actions:[{label:'Open Payroll',act:'nav',val:'payroll',pri:true}]};
   const byDate={};runs.forEach(x=>byDate[x.date]=(byDate[x.date]||0)+x.amount);
@@ -2089,8 +2180,21 @@ function brainRespond(text){
 }
 
 // ---------------- Settings ----------------
-function renderSettings(){document.getElementById('storeList').innerHTML=STORES.map(s=>`<div style="display:flex;justify-content:space-between;padding:8px 10px;border:1px solid var(--line);border-radius:9px;margin-bottom:7px;font-size:13px">${s}<span style="color:var(--muted)">store</span></div>`).join('');
-  document.getElementById('acctList').innerHTML=ACCOUNTS.map(a=>`<div style="display:flex;justify-content:space-between;padding:8px 10px;border:1px solid var(--line);border-radius:9px;margin-bottom:7px;font-size:13px">${a}<span style="color:var(--muted)">account</span></div>`).join('');}
+function renderSettings(){document.getElementById('storeList').innerHTML=STORES.map(s=>`<div style="display:flex;justify-content:space-between;padding:8px 10px;border:1px solid var(--line);border-radius:9px;margin-bottom:7px;font-size:13px">${s}<span style="color:var(--muted)">branch</span></div>`).join('');
+  document.getElementById('acctList').innerHTML=ACCOUNTS.map(a=>`<div style="display:flex;justify-content:space-between;padding:8px 10px;border:1px solid var(--line);border-radius:9px;margin-bottom:7px;font-size:13px">${a}<span style="color:var(--muted)">account</span></div>`).join('');
+  renderRolePanel();}
+function renderRolePanel(){const el=document.getElementById('rolePanel');if(!el)return;
+  const roles=[['owner','Owner / Admin','All branches'],['manager','Branch manager','Assigned branches'],['employee','Employee','Own branch only']];
+  const assignable=(ROLE.kind!=='owner');
+  el.innerHTML=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:${assignable?'10px':'0'}">`+
+    roles.map(r=>`<button class="btn ${ROLE.kind===r[0]?'p':'g'}" style="flex:1 1 30%;min-width:0;flex-direction:column;align-items:flex-start;gap:2px;padding:10px" onclick="setRole('${r[0]}')"><b>${r[1]}</b><span style="font-size:11px;opacity:.8">${r[2]}</span></button>`).join('')+`</div>`+
+    (assignable?`<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Assigned branches (tap to toggle):</div><div style="display:flex;gap:6px;flex-wrap:wrap">`+
+      STORES.map(s=>{const on=allowedBranches().includes(s);return `<button class="btn ${on?'p':'g'}" style="padding:6px 12px" onclick="toggleAssign('${s}')">${on?'✓ ':''}${s}</button>`;}).join('')+`</div>`:'');}
+function toggleAssign(s){let list=ROLE.branches==='all'?STORES.slice():(Array.isArray(ROLE.branches)?ROLE.branches.slice():[ROLE.branches]);
+  if(list.includes(s))list=list.filter(x=>x!==s);else list.push(s);
+  if(ROLE.kind==='employee')list=list.slice(-1);            // employee = exactly one branch
+  if(!list.length)list=[STORES[0]];
+  setRole(ROLE.kind,list);renderSettings();}
 function addStore(){const v=document.getElementById('newStore').value.trim();if(!v)return;STORES.push(v);document.getElementById('newStore').value='';fillStores();renderSettings();toast('Store added: '+v);}
 function addAcct(){const v=document.getElementById('newAcct').value.trim();if(!v)return;ACCOUNTS.push(v);document.getElementById('newAcct').value='';fillStores();renderSettings();toast('Account added: '+v);}
 
@@ -2139,7 +2243,7 @@ function unifyWarehouse(){
   LEDGER = REP.tx;                                   // alias: one array, one truth
   uid = REP.tx.reduce((m,x)=>Math.max(m,x.id),0)+1;  // new entries never collide
 }
-function init(){unifyWarehouse();fillStores();document.getElementById('pDate').value=daysAgo(0);renderSettings();refreshAll();brainInit();copInit();mInit();}
+function init(){unifyWarehouse();restoreBranchState();fillStores();document.getElementById('pDate').value=daysAgo(0);renderSettings();refreshAll();brainInit();copInit();mInit();syncBranchUI();}
 init();
 </script>
 </body>
