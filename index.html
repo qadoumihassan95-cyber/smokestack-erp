@@ -350,7 +350,107 @@
     .rep-kpis{grid-template-columns:1fr}
     .mbot button{font-size:9px}
   }
+  /* ===================== INTERACTION LAYER (clickable / detail / edit) ===================== */
+  tr.clk{cursor:pointer}
+  tr.clk:hover{background:var(--panel2)}
+  tr.clk:focus-visible{outline:2px solid var(--brand);outline-offset:-2px}
+  .card.kpi.drill{cursor:pointer;transition:transform .08s ease,border-color .12s ease}
+  .card.kpi.drill:hover{transform:translateY(-2px);border-color:var(--brand)}
+  .card.kpi.drill:focus-visible{outline:2px solid var(--brand)}
+  .rlink{color:var(--brand);cursor:pointer;text-decoration:none;border-bottom:1px dotted transparent}
+  .rlink:hover{border-bottom-color:var(--brand)}
+  .rowact{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--muted);cursor:pointer;font-size:14px}
+  .rowact:hover{background:var(--panel2);color:var(--txt)}
+  /* scrim shared by drawer + menu + dialog */
+  .ov-scrim{position:fixed;inset:0;background:rgba(4,7,14,.55);z-index:300;opacity:0;pointer-events:none;transition:opacity .18s ease}
+  .ov-scrim.on{opacity:1;pointer-events:auto}
+  /* detail drawer (desktop right-side) → bottom sheet (mobile) */
+  .drw{position:fixed;top:0;right:0;bottom:0;width:440px;max-width:92vw;background:var(--panel);border-left:1px solid var(--line);z-index:310;
+    transform:translateX(102%);transition:transform .22s cubic-bezier(.4,0,.2,1);display:flex;flex-direction:column;box-shadow:-16px 0 40px rgba(0,0,0,.4)}
+  .drw.on{transform:none}
+  .drw-h{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid var(--line);flex:0 0 auto}
+  .drw-h h3{margin:0;font-size:16px}
+  .drw-h .x{width:34px;height:34px;border:none;background:var(--panel2);color:var(--txt);border-radius:9px;font-size:18px;cursor:pointer}
+  .drw-b{overflow-y:auto;padding:16px 18px;flex:1 1 auto;-webkit-overflow-scrolling:touch}
+  .drw-kv{display:grid;grid-template-columns:130px 1fr;gap:8px 12px;font-size:13.5px;align-items:center}
+  .drw-kv .k{color:var(--muted)}
+  .drw-kv .v{font-weight:600;word-break:break-word}
+  .drw-sec{margin-top:18px;font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);font-weight:700;border-top:1px solid var(--line);padding-top:14px}
+  .drw-acts{display:flex;flex-wrap:wrap;gap:8px;padding:14px 18px;border-top:1px solid var(--line);flex:0 0 auto}
+  .drw-acts button{flex:1 1 auto;min-width:88px;padding:10px;border-radius:9px;border:1px solid var(--line);background:var(--panel2);color:var(--txt);font-weight:600;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px}
+  .drw-acts button:hover:not(:disabled){border-color:var(--brand)}
+  .drw-acts button.pri{background:linear-gradient(135deg,var(--brand),var(--brand2));color:#1a1000;border:none}
+  .drw-acts button.danger{color:var(--bad);border-color:var(--bad)}
+  .drw-acts button:disabled{opacity:.4;cursor:not-allowed}
+  .audit-row{font-size:12px;padding:8px 0;border-bottom:1px solid var(--line);color:var(--muted)}
+  .audit-row b{color:var(--txt)}
+  .voided-badge{display:inline-block;font-size:10px;font-weight:800;color:var(--bad);border:1px solid var(--bad);border-radius:5px;padding:1px 6px;margin-left:6px;text-transform:uppercase}
+  /* editable field */
+  .edf{display:inline-flex;align-items:center;gap:6px}
+  .edf .pen{opacity:0;font-size:11px;cursor:pointer;transition:opacity .12s}
+  .edf:hover .pen{opacity:.7}
+  .edf input,.edf select{background:var(--panel);border:1px solid var(--brand);color:var(--txt);border-radius:6px;padding:4px 7px;font-size:13px;min-width:90px}
+  .edf .ok{color:var(--ok);cursor:pointer}.edf .no{color:var(--bad);cursor:pointer}
+  /* confirm dialog */
+  .dlg{position:fixed;left:50%;top:50%;transform:translate(-50%,-46%);z-index:320;width:400px;max-width:92vw;background:var(--panel);border:1px solid var(--line);border-radius:14px;opacity:0;pointer-events:none;transition:opacity .16s,transform .16s}
+  .dlg.on{opacity:1;pointer-events:auto;transform:translate(-50%,-50%)}
+  .dlg h3{margin:0 0 8px;font-size:16px;padding:18px 18px 0}
+  .dlg p{margin:0;padding:0 18px;font-size:13.5px;color:var(--muted);line-height:1.6}
+  .dlg textarea{width:calc(100% - 36px);margin:12px 18px 0;background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:9px;padding:9px;font-size:13px;font-family:inherit;resize:vertical;min-height:60px}
+  .dlg-acts{display:flex;gap:9px;padding:16px 18px}
+  .dlg-acts button{flex:1;padding:10px;border-radius:9px;font-weight:600;font-size:13.5px;cursor:pointer;border:1px solid var(--line);background:var(--panel2);color:var(--txt)}
+  .dlg-acts button.danger{background:var(--bad);border:none;color:#fff}
+  .dlg-acts button.pri{background:linear-gradient(135deg,var(--brand),var(--brand2));border:none;color:#1a1000}
+  .dlg-acts button:disabled{opacity:.5;cursor:not-allowed}
+  /* actions popover menu */
+  .amenu{position:fixed;z-index:325;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:6px;min-width:170px;box-shadow:0 12px 34px rgba(0,0,0,.45);opacity:0;pointer-events:none;transform:scale(.97);transition:opacity .12s,transform .12s}
+  .amenu.on{opacity:1;pointer-events:auto;transform:none}
+  .amenu button{display:flex;align-items:center;gap:9px;width:100%;padding:8px 10px;border:none;background:none;color:var(--txt);font-size:13px;border-radius:7px;cursor:pointer;text-align:left}
+  .amenu button:hover{background:var(--panel2)}
+  .amenu button.danger{color:var(--bad)}
+  .amenu button:disabled{opacity:.4;cursor:not-allowed}
+  .amenu .sep{height:1px;background:var(--line);margin:4px 0}
+  @media(max-width:860px){
+    /* drawer becomes a bottom sheet; dialog & menu bottom-anchored for thumb reach */
+    .drw{top:auto;left:0;right:0;bottom:0;width:100%;max-width:100%;height:88dvh;border-left:none;border-top:1px solid var(--line);
+      border-radius:18px 18px 0 0;transform:translateY(102%);padding-bottom:env(safe-area-inset-bottom)}
+    .drw.on{transform:none}
+    .drw-acts button{min-height:46px}
+    .amenu{left:8px!important;right:8px!important;top:auto!important;bottom:calc(12px + env(safe-area-inset-bottom));min-width:0}
+    .amenu button{padding:12px 10px;font-size:14.5px}
+    .dlg{bottom:0;top:auto;left:0;transform:translateY(102%);width:100%;max-width:100%;border-radius:18px 18px 0 0}
+    .dlg.on{transform:none}
+    .rowact{width:38px;height:38px}
+  }
+  /* ===== Print / PDF page tools ===== */
+  .ptools{display:inline-flex;gap:8px;align-items:center}
+  .ptool{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:var(--txt);font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap;min-height:38px}
+  .ptool:hover:not(:disabled){border-color:var(--brand)}
+  .ptool:disabled{opacity:.55;cursor:progress}
+  .ptool .sp{width:12px;height:12px;border:2px solid var(--muted);border-top-color:transparent;border-radius:50%;display:inline-block;animation:spin .7s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @media(max-width:860px){.ptool{min-height:44px;padding:10px 12px}}
+  /* ===== Inventory ===== */
+  .inv-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 16px;overflow-x:auto}
+  .inv-tab{padding:8px 14px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:var(--muted);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
+  .inv-tab.on{background:var(--brand);color:#1a1000;border-color:var(--brand)}
+  .inv-toolbar{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-bottom:13px}
+  .inv-toolbar input,.inv-toolbar select{background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:9px;padding:9px 11px;font-size:13px}
+  .inv-toolbar .grow{flex:1;min-width:140px}
+  .prodimg{width:34px;height:34px;border-radius:8px;object-fit:cover;background:var(--panel2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:16px}
+  .stockpill{font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px}
+  .stockpill.ok{color:var(--ok);border:1px solid var(--ok)}
+  .stockpill.low{color:var(--warn);border:1px solid var(--warn)}
+  .stockpill.out{color:var(--bad);border:1px solid var(--bad)}
+  .inv-form{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .inv-form label{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--muted);font-weight:600}
+  .inv-form label.full{grid-column:1/-1}
+  .inv-form input,.inv-form select,.inv-form textarea{background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:9px;padding:9px 11px;font-size:13.5px;font-family:inherit}
+  @media(max-width:860px){.inv-form{grid-template-columns:1fr}}
 </style>
+<!-- Real (selectable-text) PDF generation — structured data, not screenshots -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 </head>
 <body>
 <!-- ===== MOBILE CHROME (hidden on desktop) ===== -->
@@ -386,10 +486,10 @@
       <a data-v="tax">🧮 Sales Tax</a>
       <a data-v="payroll">👥 Payroll</a>
       <div class="grp">More</div>
+      <a data-v="inventory">📦 Inventory</a>
       <a data-v="reports">📈 Reports</a>
       <a data-v="telegram">✈️ Telegram</a>
       <a data-v="settings">⚙️ Settings</a>
-      <a class="lock" title="Coming in Version 2">🔒 Inventory (V2)</a>
     </nav>
     <div class="foot">Accounting-first · AI-driven<br>Not legal or tax advice.</div>
   </aside>
@@ -568,11 +668,27 @@
         <div style="font-size:11.5px;color:var(--warn);margin-top:10px;line-height:1.6">⚠️ This is a front-end (UI) access control for demonstration. It is <b>not</b> a security boundary — real enforcement requires the server-side branch scoping described in the deployment notes. Anyone with the file can change roles.</div>
       </div>
       <div class="card" style="margin-top:13px"><h3>What changed in V1</h3>
-        <div style="font-size:13px;color:var(--muted);line-height:1.8">Removed for simplicity: Average Basket, Average Margin, Customer Management, Loyalty. Inventory moved to a future module. The system is now accounting-first: sales, expenses, purchases, tax, payroll, and reports — driven by Claude and Telegram.</div></div>
+        <div style="font-size:13px;color:var(--muted);line-height:1.8">Removed for simplicity: Average Basket, Average Margin, Customer Management, Loyalty. The system is now accounting-first: sales, expenses, purchases, tax, payroll, reports and inventory — driven by Claude and Telegram.</div></div>
+    </section>
+    <!-- INVENTORY -->
+    <section class="view" id="v-inventory">
+      <div class="top"><div><h1>Inventory</h1><div class="sub" id="invSub">Per-branch stock, movements & transfers</div></div></div>
+      <div class="inv-tabs" id="invTabs"></div>
+      <div id="invBody"></div>
     </section>
   </main>
 </div>
 <div class="toast" id="toast"></div>
+<!-- ===== INTERACTION LAYER: scrim, detail drawer, actions menu, confirm dialog ===== -->
+<div class="ov-scrim" id="ovScrim" onclick="uiCloseAll()"></div>
+<aside class="drw" id="drw" role="dialog" aria-modal="true" aria-labelledby="drwTitle">
+  <div class="drw-h"><h3 id="drwTitle">Record</h3><button class="x" aria-label="Close" onclick="drwClose()">✕</button></div>
+  <div class="drw-b" id="drwBody"></div>
+  <div class="drw-acts" id="drwActs"></div>
+</aside>
+<div class="amenu" id="aMenu"></div>
+<div class="dlg" id="dlg" role="dialog" aria-modal="true"><h3 id="dlgTitle"></h3><p id="dlgMsg"></p><textarea id="dlgReason" style="display:none" placeholder="Reason (required)…"></textarea>
+  <div class="dlg-acts"><button onclick="dlgCancel()">Cancel</button><button id="dlgOk" class="pri" onclick="dlgConfirm()">Confirm</button></div></div>
 
 <script>
 /* ==========================================================================
@@ -616,13 +732,16 @@ let ROLE={kind:'owner',branches:'all'};             // owner | manager | employe
 const LS={branch:'ss_branch',role:'ss_role'};
 function lsGet(k){try{return localStorage.getItem(k);}catch(e){return null;}}
 function lsSet(k,v){try{localStorage.setItem(k,v);}catch(e){}}
+// roles that are, by definition, scoped to a single branch
+const SINGLE_BRANCH_ROLES=['employee','cashier'];
 // branches this role is allowed to see, intersected with existing stores
 function allowedBranches(){
-  if(ROLE.kind==='owner')return STORES.slice();
-  const list=(ROLE.branches==='all'?STORES:(Array.isArray(ROLE.branches)?ROLE.branches:[ROLE.branches])).filter(b=>STORES.includes(b));
-  return ROLE.kind==='employee'?list.slice(0,1):list;   // employee = exactly one (own) branch
+  const raw=(ROLE.branches==='all'||!ROLE.branches)?STORES.slice():(Array.isArray(ROLE.branches)?ROLE.branches:[ROLE.branches]).filter(b=>STORES.includes(b));
+  const base=raw.length?raw:STORES.slice();
+  return SINGLE_BRANCH_ROLES.includes(ROLE.kind)?base.slice(0,1):base;   // cashier/employee = exactly one branch
 }
-function canSeeAll(){return allowedBranches().length>1;}
+// "All branches" is offered ONLY to roles with the view_all_branches permission (spec §5)
+function canSeeAll(){return can('view_all_branches')&&allowedBranches().length>1;}
 // THE branch/role gate: every view funnels its rows through scope() before rendering.
 // Even with BRANCH='all', a restricted role only ever sees its allowed branches → no leakage.
 function scope(rows){const allow=allowedBranches();const sel=BRANCH;
@@ -695,8 +814,15 @@ function setBranch(v){
   if(REP){REP.filters.store=(v==='all'?'all':v);REP.current=REP.current;}  // reports follow the branch
   syncBranchUI();refreshAll();
 }
+// roles that see everything by default get 'all' branches; single-branch roles get one; others two
+const ALLBRANCH_ROLES=['owner','admin','accountant'];
 function setRole(kind,branches){
-  ROLE={kind,branches:branches||(kind==='owner'?'all':allowedBranches().slice(0, kind==='employee'?1:2))};
+  let def;
+  if(branches)def=branches;
+  else if(ALLBRANCH_ROLES.includes(kind))def='all';
+  else if(SINGLE_BRANCH_ROLES.includes(kind))def=[STORES[0]];
+  else def=STORES.slice(0,2);
+  ROLE={kind,branches:def};
   lsSet(LS.role,JSON.stringify(ROLE));
   // clamp current selection into the newly-allowed set
   if(!canSeeAll())BRANCH=allowedBranches()[0]||'all';
@@ -729,20 +855,22 @@ function renderDash(){curStore=BRANCH;const rows=scope(LEDGER);
     ["Profit (MTD)",money(profit),profit>=0?"var(--ok)":"var(--bad)","sales − costs"],
     ["Tax Payable",money(taxPayable),"var(--brand)","sales tax MTD"],
     ["Purchases (MTD)",money(purMonth),"var(--txt)","cost of goods"]];
-  document.getElementById('kpis').innerHTML=K.slice(0,8).map(k=>`<div class="card kpi"><div class="l">${k[0]}</div><div class="v" style="color:${k[2]}">${k[1]}</div><div class="s">${k[3]}</div></div>`).join('');
+  document.getElementById('kpis').innerHTML=K.slice(0,8).map(k=>`<div class="card kpi drill" tabindex="0" role="button" data-drill="${k[0]}" aria-label="${k[0]} — open source"><div class="l">${k[0]}</div><div class="v" style="color:${k[2]}">${k[1]}</div><div class="s">${k[3]}</div></div>`).join('');
   document.getElementById('dashSub').textContent=branchLabel()+' · '+daysAgo(0);
   // recent
   const rec=[...rows].sort((a,b)=>b.id-a.id).slice(0,8);
-  document.getElementById('recentTbl').innerHTML=`<thead><tr><th>Date</th><th>Store</th><th>Account</th><th>Type</th><th>Memo</th><th style="text-align:end">Amount</th></tr></thead><tbody>`+
-    rec.map(x=>`<tr><td>${x.date.slice(5)}</td><td>${x.store}</td><td>${x.account}</td><td><span class="chip ${TYPECHIP[x.type]}">${x.type}</span></td><td>${x.memo||x.category}</td><td style="text-align:end;color:${x.type==='sale'||x.type==='deposit'?'var(--ok)':'var(--txt)'}"><b>${money(x.amount)}</b></td></tr>`).join('')+`</tbody>`;
+  document.getElementById('recentTbl').innerHTML=`<thead><tr><th>Date</th><th>Store</th><th>Account</th><th>Type</th><th>Memo</th><th style="text-align:end">Amount</th><th></th></tr></thead><tbody>`+
+    rec.map(x=>`<tr data-txid="${x.id}"><td>${x.date.slice(5)}</td><td>${x.store}</td><td>${x.account}</td><td><span class="chip ${TYPECHIP[x.type]}">${x.type}</span></td><td>${x.memo||x.category}${x.voided?'<span class="voided-badge">void</span>':''}</td><td style="text-align:end;color:${x.type==='sale'||x.type==='deposit'?'var(--ok)':'var(--txt)'}"><b>${money(x.amount)}</b></td><td style="text-align:center"><button class="rowact" data-rowmenu="${x.id}" aria-label="Actions for #${x.id}">⋯</button></td></tr>`).join('')+`</tbody>`;
+  rowify('recentTbl','transaction');
   document.getElementById('pending').innerHTML=`🔵 <b>${money(cash>4000?cash-1000:0)}</b> cash ready to deposit<br>🟡 Store C hasn't reported today<br>🟢 Payroll due in 3 days<br>🟠 Sales-tax filing in 12 days`;
   document.getElementById('taxMini').innerHTML=`Taxable sales (MTD): <b>${money(sum(monthRows,'sale'))}</b><br>Tax collected: <b style="color:var(--brand)">${money(taxPayable)}</b><br>Filing status: <b style="color:var(--warn)">Open</b>`;
 }
 
 // ---------------- Daily Sales ----------------
 function renderSales(){const rows=scope(LEDGER).filter(x=>x.type==='sale').sort((a,b)=>b.id-a.id).slice(0,12);
-  document.getElementById('salesTbl').innerHTML=`<thead><tr><th>Date</th><th>Store</th><th>Account</th><th>Tax</th><th style="text-align:end">Amount</th></tr></thead><tbody>`+
-    rows.map(x=>`<tr><td>${x.date.slice(5)}</td><td>${x.store}</td><td>${x.account}</td><td>${x.tax?money2(x.tax):'—'}</td><td style="text-align:end"><b>${money(x.amount)}</b></td></tr>`).join('')+`</tbody>`;}
+  document.getElementById('salesTbl').innerHTML=`<thead><tr><th>Date</th><th>Store</th><th>Account</th><th>Tax</th><th style="text-align:end">Amount</th><th></th></tr></thead><tbody>`+
+    rows.map(x=>`<tr data-txid="${x.id}"><td>${x.date.slice(5)}</td><td>${x.store}</td><td>${x.account}</td><td>${x.tax?money2(x.tax):'—'}</td><td style="text-align:end"><b>${money(x.amount)}</b>${x.voided?'<span class="voided-badge">void</span>':''}</td><td style="text-align:center"><button class="rowact" data-rowmenu="${x.id}" aria-label="Actions for #${x.id}">⋯</button></td></tr>`).join('')+`</tbody>`;
+  rowify('salesTbl','sale');}
 function submitDailySales(){const store=document.getElementById('sStore').value;const cash=+document.getElementById('sCash').value||0;const card=+document.getElementById('sCard').value||0;const taxable=document.getElementById('sTaxable').value==='1';
   const total=cash+card;if(!total)return toast('Enter a sales amount');const tax=taxable?+(total*0.0825/1.0825).toFixed(2):0;
   if(cash)LEDGER.push({id:++uid,date:daysAgo(0),store,account:"Cash",type:"sale",category:"Sales",amount:cash,memo:"Daily cash sales",tax:+(tax*cash/(total||1)).toFixed(2)});
@@ -751,16 +879,18 @@ function submitDailySales(){const store=document.getElementById('sStore').value;
 
 // ---------------- Expenses ----------------
 function renderExp(){const rows=scope(LEDGER).filter(x=>x.type==='expense'||x.type==='payroll').sort((a,b)=>b.id-a.id).slice(0,12);
-  document.getElementById('expTbl').innerHTML=`<thead><tr><th>Date</th><th>Store</th><th>Category</th><th>Account</th><th style="text-align:end">Amount</th></tr></thead><tbody>`+
-    rows.map(x=>`<tr><td>${x.date.slice(5)}</td><td>${x.store}</td><td>${x.category}</td><td>${x.account}</td><td style="text-align:end;color:var(--bad)"><b>${money(x.amount)}</b></td></tr>`).join('')+`</tbody>`;}
+  document.getElementById('expTbl').innerHTML=`<thead><tr><th>Date</th><th>Store</th><th>Category</th><th>Account</th><th style="text-align:end">Amount</th><th></th></tr></thead><tbody>`+
+    rows.map(x=>`<tr data-txid="${x.id}"><td>${x.date.slice(5)}</td><td>${x.store}</td><td>${x.category}</td><td>${x.account}</td><td style="text-align:end;color:var(--bad)"><b>${money(x.amount)}</b>${x.voided?'<span class="voided-badge">void</span>':''}</td><td style="text-align:center"><button class="rowact" data-rowmenu="${x.id}" aria-label="Actions for #${x.id}">⋯</button></td></tr>`).join('')+`</tbody>`;
+  rowify('expTbl','expense');}
 function submitExpense(){const amt=+document.getElementById('eAmt').value||0;if(!amt)return toast('Enter an amount');
   LEDGER.push({id:++uid,date:daysAgo(0),store:document.getElementById('eStore').value,account:document.getElementById('eAcct').value,type:"expense",category:document.getElementById('eCat').value,amount:amt,memo:document.getElementById('eVendor').value||document.getElementById('eCat').value});
   document.getElementById('eAmt').value='';document.getElementById('eVendor').value='';renderExp();renderDash();toast('Expense saved: '+money(amt));}
 
 // ---------------- Purchases ----------------
 function renderPur(){const rows=scope(LEDGER).filter(x=>x.type==='purchase').sort((a,b)=>b.id-a.id).slice(0,12);
-  document.getElementById('purTbl').innerHTML=`<thead><tr><th>Date</th><th>Vendor</th><th>Store</th><th>Description</th><th style="text-align:end">Amount</th></tr></thead><tbody>`+
-    rows.map(x=>`<tr><td>${x.date.slice(5)}</td><td><b>${x.vendor||x.memo}</b></td><td>${x.store}</td><td>${x.desc||'—'}</td><td style="text-align:end"><b>${money(x.amount)}</b></td></tr>`).join('')+`</tbody>`;}
+  document.getElementById('purTbl').innerHTML=`<thead><tr><th>Date</th><th>Vendor</th><th>Store</th><th>Description</th><th style="text-align:end">Amount</th><th></th></tr></thead><tbody>`+
+    rows.map(x=>`<tr data-txid="${x.id}"><td>${x.date.slice(5)}</td><td><b>${x.vendor||x.memo}</b></td><td>${x.store}</td><td>${x.desc||'—'}</td><td style="text-align:end"><b>${money(x.amount)}</b>${x.voided?'<span class="voided-badge">void</span>':''}</td><td style="text-align:center"><button class="rowact" data-rowmenu="${x.id}" aria-label="Actions for #${x.id}">⋯</button></td></tr>`).join('')+`</tbody>`;
+  rowify('purTbl','purchase');}
 function submitPurchase(){const amt=+document.getElementById('pAmt').value||0;if(!amt)return toast('Enter an amount');
   LEDGER.push({id:++uid,date:document.getElementById('pDate').value||daysAgo(0),store:document.getElementById('pStore').value,account:document.getElementById('pAcct').value,type:"purchase",category:"Inventory Purchase",amount:amt,vendor:document.getElementById('pVendor').value,desc:document.getElementById('pDesc').value,memo:document.getElementById('pNotes').value||document.getElementById('pVendor').value});
   ['pAmt','pVendor','pDesc','pNotes'].forEach(id=>document.getElementById(id).value='');renderPur();renderDash();toast('Purchase saved: '+money(amt));}
@@ -781,7 +911,7 @@ function renderTax(){const [st,rate]=document.getElementById('taxState').value.s
   const month=scope(LEDGER).filter(x=>inPeriod(x.date,'month'));
   const taxable=sum(month,'sale');const collected=month.reduce((a,x)=>a+(x.tax||0),0);
   const K=[["Taxable Sales (MTD)",money(taxable),"var(--txt)"],["Tax Rate",r+"%","var(--txt)"],["Tax Collected",money(collected),"var(--brand)"],["Tax Payable",money(collected),"var(--warn)"]];
-  document.getElementById('taxKpis').innerHTML=K.map(k=>`<div class="card kpi"><div class="l">${k[0]}</div><div class="v" style="color:${k[2]}">${k[1]}</div><div class="s">state: ${st} · ${branchLabel()}</div></div>`).join('');
+  document.getElementById('taxKpis').innerHTML=K.map(k=>{const dr=KPI_DRILL[k[0]];return `<div class="card kpi${dr?' drill':''}" ${dr?`tabindex="0" role="button" data-drill="${k[0]}"`:''}><div class="l">${k[0]}</div><div class="v" style="color:${k[2]}">${k[1]}</div><div class="s">state: ${st} · ${branchLabel()}</div></div>`;}).join('');
   const byStore=allowedBranches().filter(s=>BRANCH==='all'||s===BRANCH).map(s=>{const rows=month.filter(x=>x.store===s);return [s,sum(rows,'sale'),rows.reduce((a,x)=>a+(x.tax||0),0)];});
   document.getElementById('taxStoreTbl').innerHTML=`<thead><tr><th>Store</th><th style="text-align:end">Taxable sales</th><th style="text-align:end">Tax collected</th></tr></thead><tbody>`+
     byStore.map(b=>`<tr><td><b>${b[0]}</b></td><td style="text-align:end">${money(b[1])}</td><td style="text-align:end;color:var(--brand)">${money(b[2])}</td></tr>`).join('')+`</tbody>`;
@@ -792,7 +922,7 @@ function renderTax(){const [st,rate]=document.getElementById('taxState').value.s
 function scopeEmp(){const allow=allowedBranches();return EMPLOYEES.filter(e=>allow.includes(e.store)&&(BRANCH==='all'||e.store===BRANCH));}
 function renderPay(){const emps=scopeEmp();const totalGross=emps.reduce((a,e)=>a+e.gross,0);const empTax=+(totalGross*0.0765).toFixed(0);const unemp=+(totalGross*0.02).toFixed(0);const net=totalGross-empTax;
   const K=[["Gross Payroll",money(totalGross),"var(--txt)"],["Employer FICA (7.65%)",money(empTax),"var(--brand)"],["Unemployment (~2%)",money(unemp),"var(--brand2)"],["Total Cost",money(totalGross+empTax+unemp),"var(--bad)"]];
-  document.getElementById('payKpis').innerHTML=K.map(k=>`<div class="card kpi"><div class="l">${k[0]}</div><div class="v" style="color:${k[2]}">${k[1]}</div><div class="s">${branchLabel()}</div></div>`).join('');
+  document.getElementById('payKpis').innerHTML=K.map(k=>{const dr=KPI_DRILL[k[0]];return `<div class="card kpi${dr?' drill':''}" ${dr?`tabindex="0" role="button" data-drill="${k[0]}"`:''}><div class="l">${k[0]}</div><div class="v" style="color:${k[2]}">${k[1]}</div><div class="s">${branchLabel()}</div></div>`;}).join('');
   document.getElementById('payTbl').innerHTML=`<thead><tr><th>Employee</th><th>Store</th><th style="text-align:end">Gross</th><th style="text-align:end">Empl. tax</th><th style="text-align:end">Net</th></tr></thead><tbody>`+
     (emps.length?emps.map(e=>{const t=+(e.gross*0.0765).toFixed(0);return `<tr><td><b>${e.name}</b></td><td>${e.store}</td><td style="text-align:end">${money(e.gross)}</td><td style="text-align:end;color:var(--brand)">${money(t)}</td><td style="text-align:end"><b>${money(e.gross-t)}</b></td></tr>`;}).join('')
       :`<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:16px">No employees at ${branchLabel()}.</td></tr>`)+`</tbody>`;}
@@ -1343,7 +1473,12 @@ function copAnswerActions(text){const d=text.toLowerCase();if(/tax|vat|profit|re
 // ---- actions ----
 function copUndo(txid){const i=LEDGER.findIndex(x=>x.id==txid);if(i<0)return copSay("That entry was already removed.");const r=LEDGER[i];LEDGER.splice(i,1);refreshAll();COP.lastTx=null;copSay(`Reversed ✓ Removed the ${r.type} of **${money(r.amount)}** at ${r.store}. Your books are back to where they were.`);toast('Transaction reversed');copSide();}
 function copDup(txid){const r=LEDGER.find(x=>x.id==txid);if(!r)return;COP.pending={intent:r.type,amount:r.amount,store:r.store,account:r.account,category:r.category,vendor:r.vendor,desc:r.desc,date:daysAgo(0),step:'preview'};copSay('Duplicated — review and save the copy.',{card:copPreviewCard(COP.pending),actions:[{label:'✓ Save',act:'save',pri:true},{label:'Cancel',act:'cancel'}]});}
-function copOpenEdit(txid){const r=LEDGER.find(x=>x.id==txid);if(!r)return;const i=LEDGER.findIndex(x=>x.id==txid);LEDGER.splice(i,1);COP.pending={intent:r.type,amount:r.amount,store:r.store,account:r.account,category:r.category,vendor:r.vendor,desc:r.desc,date:r.date,step:'preview'};copSay('Editing that entry — change anything and save.',{card:copPreviewCard(COP.pending),actions:[{label:'✓ Save changes',act:'save',pri:true},{label:'Cancel',act:'cancel'}]});}
+/* ROOT-CAUSE FIX: the old copOpenEdit removed the record (splice) and recreated it on save,
+   which changed the id, dropped the original, and lost data on cancel. It now routes to the
+   shared in-place editRecord() primitive — same id, preserved audit trail, safe cancel. */
+function copOpenEdit(txid){const r=LEDGER.find(x=>x.id==txid);if(!r)return;
+  copSay(`Opening entry #${txid} for editing — change any field and Save. The record keeps its id.`);
+  setTimeout(()=>editRecord(txid),120);}
 function copCopy(mid){const m=COP.msgs.find(x=>x.id==mid);if(!m)return;try{navigator.clipboard&&navigator.clipboard.writeText(m.text);}catch(e){}toast('Copied to clipboard');}
 function copEditMsg(mid){const idx=COP.msgs.findIndex(x=>x.id==mid);if(idx<0)return;const m=COP.msgs[idx];COP.msgs=COP.msgs.slice(0,idx);COP.pending=null;copRender();const ta=document.getElementById('copTa');ta.value=m.text;ta.focus();copResize();}
 function copRetry(){const last=[...COP.msgs].reverse().find(x=>x.who==='user');if(last){COP.thinking=true;copRender();setTimeout(()=>{COP.thinking=false;copRespond(last.text);},400);}}
@@ -2180,29 +2315,809 @@ function brainRespond(text){
 }
 
 // ---------------- Settings ----------------
-function renderSettings(){document.getElementById('storeList').innerHTML=STORES.map(s=>`<div style="display:flex;justify-content:space-between;padding:8px 10px;border:1px solid var(--line);border-radius:9px;margin-bottom:7px;font-size:13px">${s}<span style="color:var(--muted)">branch</span></div>`).join('');
-  document.getElementById('acctList').innerHTML=ACCOUNTS.map(a=>`<div style="display:flex;justify-content:space-between;padding:8px 10px;border:1px solid var(--line);border-radius:9px;margin-bottom:7px;font-size:13px">${a}<span style="color:var(--muted)">account</span></div>`).join('');
+function renderSettings(){
+  const canB=(typeof can==='function'&&can('manage_branches')), canA=(typeof can==='function'&&can('edit'));
+  document.getElementById('storeList').innerHTML=STORES.map(s=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:9px;margin-bottom:7px;font-size:13px"><span class="edf">${canB?edFieldHtml('branchName',s):s}</span><span style="color:var(--muted)">branch</span></div>`).join('');
+  document.getElementById('acctList').innerHTML=ACCOUNTS.map(a=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:9px;margin-bottom:7px;font-size:13px"><span class="edf">${canA?edFieldHtml('acctName',a):a}</span><span style="color:var(--muted)">account</span></div>`).join('');
   renderRolePanel();}
+const ROLE_LABELS=[['owner','Owner','All branches · everything'],['admin','Admin','Assigned modules & branches'],
+  ['branch_manager','Branch manager','Assigned branches only'],['cashier','Cashier','Own branch · sales & returns'],
+  ['inventory_manager','Inventory manager','Stock, purchases, transfers'],['accountant','Accountant','Accounting, no stock edits'],
+  ['employee','Employee','Clock in/out · own records']];
 function renderRolePanel(){const el=document.getElementById('rolePanel');if(!el)return;
-  const roles=[['owner','Owner / Admin','All branches'],['manager','Branch manager','Assigned branches'],['employee','Employee','Own branch only']];
-  const assignable=(ROLE.kind!=='owner');
-  el.innerHTML=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:${assignable?'10px':'0'}">`+
-    roles.map(r=>`<button class="btn ${ROLE.kind===r[0]?'p':'g'}" style="flex:1 1 30%;min-width:0;flex-direction:column;align-items:flex-start;gap:2px;padding:10px" onclick="setRole('${r[0]}')"><b>${r[1]}</b><span style="font-size:11px;opacity:.8">${r[2]}</span></button>`).join('')+`</div>`+
-    (assignable?`<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Assigned branches (tap to toggle):</div><div style="display:flex;gap:6px;flex-wrap:wrap">`+
-      STORES.map(s=>{const on=allowedBranches().includes(s);return `<button class="btn ${on?'p':'g'}" style="padding:6px 12px" onclick="toggleAssign('${s}')">${on?'✓ ':''}${s}</button>`;}).join('')+`</div>`:'');}
+  const assignable=!ALLBRANCH_ROLES.includes(ROLE.kind);
+  const perms=(PERMS[ROLE.kind]||[]);
+  el.innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:12px">`+
+    ROLE_LABELS.map(r=>`<button class="btn ${ROLE.kind===r[0]?'p':'g'}" style="min-width:0;flex-direction:column;align-items:flex-start;gap:2px;padding:10px" onclick="setRole('${r[0]}')"><b>${r[1]}</b><span style="font-size:11px;opacity:.8">${r[2]}</span></button>`).join('')+`</div>`+
+    (assignable?`<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Assigned branches (tap to toggle):</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">`+
+      STORES.map(s=>{const on=allowedBranches().includes(s);return `<button class="btn ${on?'p':'g'}" style="padding:6px 12px" onclick="toggleAssign('${s}')">${on?'✓ ':''}${s}</button>`;}).join('')+`</div>`:'')
+    +`<div style="font-size:11px;color:var(--muted);margin-bottom:5px">Granted permissions (${perms.length}/${ALL_PERMS.length}):</div>`
+    +`<div style="display:flex;gap:5px;flex-wrap:wrap">`+ALL_PERMS.map(p=>`<span style="font-size:10.5px;padding:3px 7px;border-radius:6px;border:1px solid var(--line);${perms.includes(p)?'color:var(--ok);border-color:var(--ok)':'color:var(--muted);opacity:.5'}">${perms.includes(p)?'✓':'○'} ${p}</span>`).join('')+`</div>`;}
 function toggleAssign(s){let list=ROLE.branches==='all'?STORES.slice():(Array.isArray(ROLE.branches)?ROLE.branches.slice():[ROLE.branches]);
   if(list.includes(s))list=list.filter(x=>x!==s);else list.push(s);
-  if(ROLE.kind==='employee')list=list.slice(-1);            // employee = exactly one branch
+  if(SINGLE_BRANCH_ROLES.includes(ROLE.kind))list=list.slice(-1);   // cashier/employee = one branch
   if(!list.length)list=[STORES[0]];
   setRole(ROLE.kind,list);renderSettings();}
 function addStore(){const v=document.getElementById('newStore').value.trim();if(!v)return;STORES.push(v);document.getElementById('newStore').value='';fillStores();renderSettings();toast('Store added: '+v);}
 function addAcct(){const v=document.getElementById('newAcct').value.trim();if(!v)return;ACCOUNTS.push(v);document.getElementById('newAcct').value='';fillStores();renderSettings();toast('Account added: '+v);}
 
+/* ==========================================================================
+   INTERACTION LAYER — clickable records, detail drawer, inline edit, audit.
+   Shared, reused components: PermissionGate (can), AuditHistory (AUDIT/audit),
+   DetailDrawer (drwOpenTx), ActionsMenu (aMenuOpen), ConfirmDialog (dlgAsk),
+   EditableField (edField), ClickableRow (rowify), KPI drill-down (kpiDrill).
+   SAFETY: posted ledger entries are never silently overwritten — Edit on a
+   financial field routes to a void+reason workflow that preserves the original
+   and writes an audit record. Only memo/notes are inline-editable in place.
+   HONESTY: permissions gate the UI at the data layer, but this is a front-end
+   app with no server — real enforcement needs the backend (see deploy notes). */
+
+// ---- PermissionGate: 7 roles × 20 granular permissions (spec §3) ----
+const ALL_PERMS=['view','create','edit','delete','approve','void','refund','print','export','view_cost','edit_cost','view_profit','view_payroll','manage_users','manage_permissions','manage_branches','transfer_stock','adjust_stock','close_shift','view_all_branches'];
+const PERMS={
+  owner: ALL_PERMS.slice(),                                    // everything
+  admin: ['view','create','edit','delete','approve','void','refund','print','export','view_cost','view_profit','view_payroll','manage_branches','transfer_stock','adjust_stock','close_shift','view_all_branches'],
+  branch_manager: ['view','create','edit','approve','void','print','export','view_cost','transfer_stock','adjust_stock','close_shift'],
+  manager: ['view','create','edit','approve','void','print','export','view_cost','transfer_stock','adjust_stock','close_shift'], // legacy alias of branch_manager
+  cashier: ['view','create','refund','print','close_shift'],
+  inventory_manager: ['view','create','edit','print','export','transfer_stock','adjust_stock','view_cost'],
+  accountant: ['view','create','edit','void','refund','print','export','view_cost','view_profit','view_payroll','view_all_branches'],
+  employee: ['view','print']
+};
+function can(p){return (PERMS[ROLE.kind]||[]).includes(p);}
+
+// ---- AuditHistory ----
+let AUDIT=[],AUDID=1;
+function nowStamp(){const d=new Date();return d.toISOString().slice(0,16).replace('T',' ');}
+// audit records carry the source (WEB / TELEGRAM) and the acting role, per spec §6
+function audit(action,entity,ref,detail,source){AUDIT.unshift({id:AUDID++,ts:nowStamp(),user:ROLE.kind,source:source||'WEB',action,entity,ref,detail:detail||''});}
+function auditFor(entity,ref){return AUDIT.filter(a=>a.entity===entity&&String(a.ref)===String(ref));}
+
+// ---- overlay plumbing ----
+function scrim(on){document.getElementById('ovScrim').classList.toggle('on',on);}
+function uiCloseAll(){drwClose();aMenuClose();dlgCancel();}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')uiCloseAll();});
+
+// ---- ConfirmDialog (optionally reason-required) ----
+let _dlgCb=null,_dlgReason=false;
+function dlgAsk(title,msg,{danger,okLabel,reason}={},cb){
+  _dlgCb=cb;_dlgReason=!!reason;
+  document.getElementById('dlgTitle').textContent=title;
+  document.getElementById('dlgMsg').textContent=msg;
+  const ta=document.getElementById('dlgReason');ta.style.display=reason?'block':'none';ta.value='';
+  const ok=document.getElementById('dlgOk');ok.textContent=okLabel||'Confirm';ok.className=danger?'danger':'pri';
+  document.getElementById('dlg').classList.add('on');scrim(true);
+  setTimeout(()=>(reason?ta:ok).focus(),60);
+}
+function dlgCancel(){document.getElementById('dlg').classList.remove('on');if(!document.getElementById('drw').classList.contains('on'))scrim(false);_dlgCb=null;}
+function dlgConfirm(){const ta=document.getElementById('dlgReason');
+  if(_dlgReason&&!ta.value.trim()){ta.style.borderColor='var(--bad)';ta.focus();return;}
+  const reason=ta.value.trim();const cb=_dlgCb;document.getElementById('dlg').classList.remove('on');_dlgCb=null;
+  if(!document.getElementById('drw').classList.contains('on'))scrim(false);
+  if(cb)cb(reason);
+}
+
+// ---- ActionsMenu (popover) ----
+function aMenuOpen(ev,items){ev.stopPropagation();
+  const m=document.getElementById('aMenu');
+  m.innerHTML=items.map(i=>i==='sep'?'<div class="sep"></div>':
+    `<button ${i.disabled?'disabled':''} class="${i.danger?'danger':''}" data-i="${i.k}">${i.ic||''} ${i.label}</button>`).join('');
+  m.querySelectorAll('button[data-i]').forEach(b=>b.onclick=e=>{e.stopPropagation();const it=items.find(x=>x.k===b.dataset.i);aMenuClose();if(it&&it.run)it.run();});
+  const r=ev.currentTarget.getBoundingClientRect();
+  if(!window.matchMedia('(max-width:860px)').matches){
+    m.style.top=Math.min(r.bottom+6,innerHeight-260)+'px';m.style.left=Math.max(8,r.right-176)+'px';
+  }
+  m.classList.add('on');scrim(true);
+}
+function aMenuClose(){const m=document.getElementById('aMenu');if(m)m.classList.remove('on');
+  if(!document.getElementById('drw').classList.contains('on')&&!document.getElementById('dlg').classList.contains('on'))scrim(false);}
+
+// ---- DetailDrawer for a ledger transaction ----
+let _drwTx=null;
+function txById(id){return LEDGER.find(x=>String(x.id)===String(id));}
+function drwOpenTx(id){const x=txById(id);if(!x)return;
+  // branch/role guard — never open a record outside the user's allowed branches
+  if(x.store&&!allowedBranches().includes(x.store)){toast('You do not have access to that branch');return;}
+  _drwTx=x;
+  document.getElementById('drwTitle').innerHTML=`${cap(x.type)} #${x.id}${x.voided?'<span class="voided-badge">Voided</span>':''}`;
+  const kv=[['Type',`<span class="chip ${TYPECHIP[x.type]||''}">${x.type}</span>`],['Branch',x.store||'—'],['Date',x.date],
+    ['Account',x.account||'—'],['Category',x.category||'—'],x.vendor?['Vendor',x.vendor]:null,x.employee?['Employee',x.employee]:null,
+    x.product?['Product',x.product]:null,['Amount',`<b>${money(x.amount)}</b>`],x.tax?['Sales tax',money2(x.tax)]:null,
+    x.reversalOf?['Reverses','#'+x.reversalOf]:null];
+  // memo is the one safe, in-place editable field
+  const memoEditable=can('edit')&&!x.voided;
+  const memoHtml=memoEditable
+    ? `<span class="edf" id="drwMemo">${edFieldHtml('memo',x.memo||'—')}</span>`
+    : (x.memo||'—');
+  const rows=kv.filter(Boolean).map(([k,v])=>`<div class="k">${k}</div><div class="v">${v}</div>`).join('')
+    +`<div class="k">Memo / notes</div><div class="v">${memoHtml}</div>`;
+  const hist=auditFor('tx',x.id);
+  document.getElementById('drwBody').innerHTML=`<div class="drw-kv">${rows}</div>`
+    +`<div class="drw-sec">Audit history</div>`
+    +(hist.length?hist.map(a=>`<div class="audit-row"><b>${a.action}</b> — ${a.ts} · ${a.user}${a.detail?' · '+a.detail:''}</div>`).join('')
+      :`<div class="audit-row">Created on ${x.date}. No changes recorded.</div>`);
+  // actions, permission-gated
+  const acts=[];
+  if(can('edit')&&!x.voided)acts.push(`<button class="pri" onclick="editRecord(${x.id})">✎ Edit</button>`);
+  acts.push(`<button onclick="drwPrint()">🖨️ Print</button>`);
+  if((x.type==='purchase'||x.type==='expense')&&can('create'))acts.push(`<button onclick="drwDuplicate()">⧉ Duplicate</button>`);
+  if(can('void')&&!x.voided)acts.push(`<button class="danger" onclick="drwVoid()">⛔ Void / correct</button>`);
+  if(!can('edit'))acts.push(`<button disabled title="Your role is view-only for this record">🔒 View only</button>`);
+  document.getElementById('drwActs').innerHTML=acts.join('');
+  document.getElementById('drw').classList.add('on');scrim(true);
+  audit('view','tx',x.id);
+}
+function drwClose(){document.getElementById('drw').classList.remove('on');_drwTx=null;
+  if(!document.getElementById('dlg').classList.contains('on'))scrim(false);}
+function drwPrint(){if(_drwTx)printRecord(_drwTx);}
+function drwDuplicate(){const x=_drwTx;if(!x)return;drwClose();
+  // safe duplicate: pre-fill the matching form for review rather than silently posting
+  if(x.type==='purchase'){go('purchases');setTimeout(()=>{setVal('pStore',x.store);setVal('pVendor',x.vendor||'');setVal('pAmt',x.amount);setVal('pDesc',x.desc||'');toast('Purchase pre-filled from #'+x.id+' — review and save');},120);}
+  else if(x.type==='expense'){go('expenses');setTimeout(()=>{setVal('eStore',x.store);setVal('eCat',x.category||'Other');setVal('eAmt',x.amount);toast('Expense pre-filled from #'+x.id+' — review and save');},120);}
+  audit('duplicate','tx',x.id);
+}
+/* THE SHARED EDIT PRIMITIVE — updates an existing record IN PLACE (same id).
+   Root-cause fix: the copilot's old edit did splice()+recreate, which changed the id,
+   dropped the original, and broke on cancel. This never deletes or duplicates.
+   Financial fields on posted records are read-only here — changing an amount routes to
+   the void/correction workflow, per accounting safety. Save→close+refresh+success;
+   fail→keep values, show error, stay open; Cancel→discard. */
+const EDIT_SAFE={ // which fields each type exposes for in-place edit
+  sale:['memo','account','date'],
+  expense:['memo','category','account','date'],
+  purchase:['memo','vendor','desc','account','date'],
+  deposit:['memo','account','date'],payroll:['memo','date'],refund:['memo','date'],transfer:['memo','date']
+};
+let _editErr='';
+function editRecord(id){const x=txById(id);if(!x)return;
+  if(!can('edit'))return toast('Your role cannot edit records');
+  if(x.store&&!allowedBranches().includes(x.store))return toast('You do not have access to that branch');
+  if(x.voided)return toast('Voided records cannot be edited');
+  _drwTx=x;_editErr='';
+  const fields=EDIT_SAFE[x.type]||['memo','date'];
+  const F=[];
+  if(fields.includes('date'))F.push(['Date',`<input id="edDate" type="date" value="${x.date}">`]);
+  if(fields.includes('account'))F.push(['Account',`<select id="edAccount">${ACCOUNTS.map(a=>`<option ${a===x.account?'selected':''}>${a}</option>`).join('')}</select>`]);
+  if(fields.includes('category'))F.push(['Category',`<select id="edCategory">${EXPCATS.map(c=>`<option ${c===x.category?'selected':''}>${c}</option>`).join('')}</select>`]);
+  if(fields.includes('vendor'))F.push(['Vendor',`<input id="edVendor" value="${escAttr(x.vendor||'')}">`]);
+  if(fields.includes('desc'))F.push(['Description',`<input id="edDesc" value="${escAttr(x.desc||'')}">`]);
+  if(fields.includes('memo'))F.push(['Memo / notes',`<input id="edMemo" value="${escAttr(x.memo||'')}">`]);
+  // financial fields shown read-only with the safe path to change them
+  const fin=`<div class="k">Amount</div><div class="v"><b>${money(x.amount)}</b> <span style="color:var(--muted);font-size:11px">— read-only; use Void / re-enter to change</span></div>`
+    +(x.tax?`<div class="k">Sales tax</div><div class="v">${money2(x.tax)}</div>`:'');
+  document.getElementById('drwTitle').innerHTML=`Edit ${x.type} #${x.id}`;
+  document.getElementById('drwBody').innerHTML=
+    (_editErr?`<div style="color:var(--bad);font-size:12.5px;margin-bottom:10px">⚠️ ${_editErr}</div>`:'')
+    +`<div class="drw-kv" style="grid-template-columns:130px 1fr;align-items:center">`
+    +F.map(([k,v])=>`<div class="k">${k}</div><div class="v">${v}</div>`).join('')+fin+`</div>`
+    +`<div class="drw-sec">Editing #${x.id} in place — the record keeps its id and audit trail.</div>`;
+  document.getElementById('drwActs').innerHTML=
+    `<button class="pri" id="edSaveBtn" onclick="editSave(${x.id})">💾 Save changes</button>`
+    +`<button onclick="drwOpenTx(${x.id})">Cancel</button>`;
+  document.getElementById('drw').classList.add('on');scrim(true);
+}
+function editSave(id){const x=txById(id);if(!x)return;
+  const btn=document.getElementById('edSaveBtn');if(btn){if(btn.disabled)return;btn.disabled=true;btn.textContent='Saving…';}
+  const get=i=>{const el=document.getElementById(i);return el?el.value:undefined;};
+  const before={date:x.date,account:x.account,category:x.category,vendor:x.vendor,desc:x.desc,memo:x.memo};
+  const next={};
+  ['date','account','category','vendor','desc','memo'].forEach(f=>{const id2='ed'+f[0].toUpperCase()+f.slice(1);const v=get(id2);if(v!==undefined)next[f]=v.trim();});
+  // validation — on failure keep the entered values, show the real error, stay open
+  const fail=m=>{_editErr=m;if(btn){btn.disabled=false;btn.textContent='💾 Save changes';}toast('⚠️ '+m,true);
+    const bd=document.getElementById('drwBody');if(bd&&!bd.querySelector('.ed-err')){const d=document.createElement('div');d.className='ed-err';d.style.cssText='color:var(--bad);font-size:12.5px;margin:0 0 10px';d.textContent='⚠️ '+m;bd.prepend(d);}return false;};
+  if('date' in next){if(!/^\d{4}-\d{2}-\d{2}$/.test(next.date))return fail('Enter a valid date.');if(next.date>daysAgo(0))return fail('Date cannot be in the future.');}
+  if('vendor' in next && x.type==='purchase' && !next.vendor)return fail('Vendor is required for a purchase.');
+  // compute a field-level diff for the audit trail
+  const changes=Object.keys(next).filter(f=>String(before[f]??'')!==String(next[f]??''));
+  if(!changes.length){drwOpenTx(id);toast('No changes to save');return;}
+  // APPLY IN PLACE — same object, same id. Never splice/recreate.
+  changes.forEach(f=>{x[f]=next[f];});
+  audit('edit','tx',x.id,changes.map(f=>`${f}: "${before[f]??''}" → "${x[f]??''}"`).join('; ')+' [source: WEB]');
+  refreshAll();drwClose();toast('Saved changes to #'+x.id);
+}
+function drwVoid(){const x=_drwTx;if(!x)return;
+  if(!can('void'))return toast('Your role cannot void records');
+  dlgAsk('Void transaction #'+x.id,
+    `This preserves the original and posts a reversing entry of ${money(x.amount)}. Totals will update. This cannot be undone.`,
+    {danger:true,okLabel:'Void with reason',reason:true},
+    (reason)=>{
+      x.voided=true;x.voidReason=reason;
+      // reversing entry (opposite amount) — nets the original out of every total, original kept
+      LEDGER.push({id:++uid,date:daysAgo(0),store:x.store,account:x.account,type:x.type,category:x.category,
+        amount:-x.amount,tax:x.tax?-x.tax:0,memo:'Reversal of #'+x.id,reversalOf:x.id,vendor:x.vendor,employee:x.employee,product:x.product});
+      audit('void','tx',x.id,'reason: '+reason);
+      audit('reversal','tx',uid,'reverses #'+x.id);
+      refreshAll();drwClose();toast('Voided #'+x.id+' — reversing entry posted');
+    });
+}
+
+// ---- EditableField (in-place) ----
+function edFieldHtml(field,val){return `<span data-v="${escAttr(val)}">${val}</span><span class="pen" onclick="edStart(this,'${field}')">✎</span>`;}
+function escAttr(s){return String(s).replace(/"/g,'&quot;');}
+function setVal(id,v){const el=document.getElementById(id);if(el)el.value=v;}
+function edStart(pen,field){const wrap=pen.parentElement;const span=wrap.querySelector('span[data-v]');const cur=span.dataset.v;
+  wrap.innerHTML=`<input value="${escAttr(cur)}" aria-label="Edit ${field}"><span class="ok" title="Save (Enter)">✓</span><span class="no" title="Cancel (Esc)">✕</span>`;
+  const inp=wrap.querySelector('input');inp.focus();inp.select();
+  const save=()=>edCommit(wrap,field,inp.value,cur);const cancel=()=>edCancel(wrap,field,cur);
+  wrap.querySelector('.ok').onclick=save;wrap.querySelector('.no').onclick=cancel;
+  inp.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();save();}if(e.key==='Escape'){e.preventDefault();cancel();}};
+}
+function edCancel(wrap,field,prev){wrap.innerHTML=edFieldHtml(field,prev);}
+function edCommit(wrap,field,val,old){
+  val=val.trim();
+  if(field==='memo'){
+    if(!_drwTx)return;const prev=_drwTx.memo||'';
+    if(val===prev){edCancel(wrap,field,prev||'—');return;}
+    _drwTx.memo=val;audit('edit','tx',_drwTx.id,`memo: "${prev}" → "${val}"`);
+    wrap.innerHTML=edFieldHtml(field,val||'—');refreshAll();toast('Saved');
+  } else if(field==='branchName'){
+    if(!can('manage_branches')){toast('Your role cannot rename branches');edCancel(wrap,field,old);return;}
+    if(!val||val===old){edCancel(wrap,field,old);return;}
+    if(STORES.includes(val)){toast('A branch with that name already exists');edCancel(wrap,field,old);return;}
+    STORES=STORES.map(s=>s===old?val:s);
+    LEDGER.forEach(x=>{if(x.store===old)x.store=val;});EMPLOYEES.forEach(e=>{if(e.store===old)e.store=val;});
+    if(BRANCH===old)BRANCH=val;if(Array.isArray(ROLE.branches))ROLE.branches=ROLE.branches.map(b=>b===old?val:b);
+    audit('rename','branch',old,`"${old}" → "${val}"`);
+    fillStores();refreshAll();renderSettings();toast('Branch renamed to '+val);
+  } else if(field==='acctName'){
+    if(!can('edit')){toast('Your role cannot rename accounts');edCancel(wrap,field,old);return;}
+    if(!val||val===old){edCancel(wrap,field,old);return;}
+    if(ACCOUNTS.includes(val)){toast('An account with that name already exists');edCancel(wrap,field,old);return;}
+    ACCOUNTS=ACCOUNTS.map(a=>a===old?val:a);LEDGER.forEach(x=>{if(x.account===old)x.account=val;});
+    audit('rename','account',old,`"${old}" → "${val}"`);
+    fillStores();refreshAll();renderSettings();toast('Account renamed to '+val);
+  }
+}
+
+// ---- Print a single record (A4-ish, print-only) ----
+function printRecord(x){
+  const w=window.open('','_blank','width=720,height=900');
+  if(!w){toast('Allow pop-ups to print');return;}
+  const rows=[['Transaction','#'+x.id],['Type',x.type],['Branch',x.store||'—'],['Date',x.date],['Account',x.account||'—'],
+    ['Category',x.category||'—'],x.vendor?['Vendor',x.vendor]:null,['Amount',money(x.amount)],x.tax?['Sales tax',money2(x.tax)]:null,
+    x.voided?['Status','VOIDED — '+(x.voidReason||'')]:null].filter(Boolean);
+  w.document.write(`<!doctype html><html><head><title>SmokeStack — ${x.type} #${x.id}</title>
+    <style>@page{size:A4;margin:18mm}body{font-family:system-ui,Arial;color:#111}h1{font-size:20px;margin:0}
+    .sub{color:#666;font-size:12px;margin:2px 0 20px}table{width:100%;border-collapse:collapse}
+    td{padding:9px 6px;border-bottom:1px solid #ddd;font-size:14px}td:first-child{color:#666;width:38%}
+    .ft{margin-top:30px;font-size:11px;color:#888;border-top:1px solid #ccc;padding-top:10px}</style></head>
+    <body><h1>🔥 SmokeStack</h1><div class="sub">${branchLabel()} · Printed ${nowStamp()}</div>
+    <table>${rows.map(r=>`<tr><td>${r[0]}</td><td><b>${r[1]}</b></td></tr>`).join('')}</table>
+    <div class="ft">Accounting-first ERP · Not legal or tax advice · Record printed for reference.</div>
+    <script>window.onload=function(){window.print();}<\/script></body></html>`);
+  w.document.close();audit('print','tx',x.id);
+}
+
+// ---- ClickableRow: attach open/keyboard to a table, guarding inner controls ----
+function rowify(tblId,view){const tbl=document.getElementById(tblId);if(!tbl)return;
+  tbl.querySelectorAll('tbody tr[data-txid]').forEach(tr=>{
+    tr.classList.add('clk');tr.tabIndex=0;tr.setAttribute('role','button');
+    tr.setAttribute('aria-label',(view||'record')+' '+tr.dataset.txid);
+  });
+}
+// one delegated handler for every clickable row + row-action button + KPI drill in the app
+document.addEventListener('click',e=>{
+  const drill=e.target.closest('[data-drill]');
+  if(drill){return kpiDrill(drill.dataset.drill);}
+  const act=e.target.closest('[data-rowmenu]');
+  if(act){e.stopPropagation();const id=act.dataset.rowmenu;return openRowMenu(e,id);}
+  const tr=e.target.closest('tr[data-txid]');
+  if(tr&&!e.target.closest('button,a,input,select,.rowact,.edf'))drwOpenTx(tr.dataset.txid);
+});
+document.addEventListener('keydown',e=>{if(e.key!=='Enter')return;const tr=e.target.closest&&e.target.closest('tr[data-txid]');
+  if(tr&&document.activeElement===tr)drwOpenTx(tr.dataset.txid);});
+function openRowMenu(e,id){const x=txById(id);if(!x)return;
+  aMenuOpen(e,[
+    {k:'view',ic:'👁',label:'View',run:()=>drwOpenTx(id)},
+    {k:'edit',ic:'✎',label:'Edit',disabled:!can('edit')||x.voided,run:()=>editRecord(id)},
+    (x.type==='purchase'||x.type==='expense')&&can('create')?{k:'dup',ic:'⧉',label:'Duplicate',run:()=>{_drwTx=x;drwDuplicate();}}:null,
+    {k:'print',ic:'🖨️',label:'Print',run:()=>printRecord(x)},
+    'sep',
+    {k:'void',ic:'⛔',label:'Void / correct',danger:true,disabled:!can('void')||x.voided,run:()=>{_drwTx=x;drwVoid();}}
+  ].filter(Boolean));
+}
+
+// ---- KPI drill-down: card → source view (carries the active branch automatically) ----
+const KPI_DRILL={"Today's Sales":'sales','This Week':'sales','Cash Balance':'recon','Bank Balance':'recon',
+  'Expenses (MTD)':'expenses','Profit (MTD)':'reports','Tax Payable':'tax','Purchases (MTD)':'purchases',
+  'Taxable Sales (MTD)':'tax','Tax Collected':'tax','Tax Payable ':'tax','Gross Payroll':'payroll','Total Cost':'payroll'};
+function kpiDrill(label){const v=KPI_DRILL[label];if(v){go(v);toast('Opened '+label+' → '+branchLabel());}}
+
+/* ==========================================================================
+   INVENTORY MODULE — per-branch stock, movement ledger, transfers, reports.
+   Branch/role scoped (reuses allowedBranches/scope/can). Every stock change goes
+   through invMove() → records before/change/after + audit; negative stock blocked
+   unless INV_ALLOW_NEG. Product costs gated by view_cost. ======================= */
+let INV={products:[],moves:[],transfers:[],inited:false,tab:'dash',q:'',cat:'all',seq:0,tseq:0};
+let INV_ALLOW_NEG=false;   // system setting: block negative inventory by default
+function invVendorFor(cat){return {Cigarettes:'Altria',Pouches:'Republic Brands',Vape:'Local Vape Wholesale',Cigars:'Altria',Accessories:'Costco'}[cat]||VENDORS[0];}
+function invSeed(){
+  if(INV.inited)return;
+  const uom={Cigarettes:'pack',Pouches:'can',Vape:'unit',Cigars:'unit',Accessories:'unit'};
+  const brand={Cigarettes:'Marlboro',Pouches:'Zyn',Vape:'Elf Bar',Cigars:'Backwoods',Accessories:'RAW'};
+  (REP.products||[]).forEach((p,i)=>{
+    const per={};let rem=p.stock;
+    STORES.forEach((s,si)=>{const w=[0.4,0.35,0.25][si]||1/STORES.length;const share=si===STORES.length-1?Math.max(0,rem):Math.round(p.stock*w);per[s]=Math.max(0,share);rem-=share;});
+    INV.products.push({id:++INV.seq,sku:'SK-'+(1000+i),barcode:String(700000000000+i*137),name:p.name,cat:p.cat,
+      brand:brand[p.cat]||'—',supplier:invVendorFor(p.cat),desc:p.name+' · '+p.cat,cost:p.cost,price:p.price,taxCat:'Standard (8.25%)',
+      stock:per,min:p.reorder||25,reorder:Math.max(20,(p.reorder||25)*2),uom:uom[p.cat]||'unit',shelf:'A'+(i%9+1),
+      status:'active',image:'',created:daysAgo(60-(i%40)),updated:daysAgo(i%14),sold:p.sold||0,rev:p.rev||0});
+  });
+  // a few seed movements so the ledger isn't empty
+  INV.products.slice(0,6).forEach((p,i)=>{const b=STORES[i%STORES.length];
+    INV.moves.push({id:++INV.seq,ref:'MV-'+(1000+i),date:nowStamp(),product:p.name,sku:p.sku,branch:b,type:'receive',
+      before:(p.stock[b]||0)-20,change:20,after:p.stock[b]||0,cost:p.cost,value:20*p.cost,user:'owner',notes:'Opening receipt'});});
+  INV.inited=true;
+}
+// ---- branch-scoped helpers ----
+function invVisibleStock(p){const allow=allowedBranches();if(BRANCH==='all')return allow.reduce((a,b)=>a+(p.stock[b]||0),0);return p.stock[BRANCH]||0;}
+function invStatus(p){const s=invVisibleStock(p);return s<=0?'out':s<=p.min?'low':'ok';}
+function invActive(){return INV.products.filter(p=>p.status!=='deleted');}
+function invMovesScoped(){const allow=allowedBranches();return INV.moves.filter(m=>allow.includes(m.branch)&&(BRANCH==='all'||m.branch===BRANCH));}
+function invTransfersScoped(){const allow=allowedBranches();return INV.transfers.filter(t=>allow.includes(t.from)||allow.includes(t.to));}
+function invFindSku(sku,exceptId){return INV.products.find(p=>p.sku.toLowerCase()===String(sku).toLowerCase()&&p.id!==exceptId&&p.status!=='deleted');}
+function invFindBarcode(bc,exceptId){return INV.products.find(p=>p.barcode===String(bc)&&p.id!==exceptId&&p.status!=='deleted');}
+// ---- movement recorder (the single write path for stock) ----
+function invMove(p,branch,type,change,notes,ref){
+  const before=p.stock[branch]||0;const after=before+change;
+  if(after<0&&!INV_ALLOW_NEG)return {err:`Blocked: would make ${p.name} stock negative at ${branch} (${before}${change} = ${after}).`};
+  p.stock[branch]=after;p.updated=daysAgo(0);
+  const r=ref||('MV-'+(1000+(++INV.tseq)));
+  INV.moves.unshift({id:++INV.seq,ref:r,date:nowStamp(),product:p.name,sku:p.sku,branch,type,before,change,after,cost:p.cost,value:Math.abs(change)*p.cost,user:ROLE.kind,notes:notes||''});
+  audit('stock:'+type,'product',p.sku,`${branch} ${before}→${after} (${change>=0?'+':''}${change}) ${notes||''}`);
+  return {ok:true,after,ref:r};
+}
+// ---- KPIs ----
+function invKpis(){
+  const ps=invActive();const allow=allowedBranches();
+  const branches=BRANCH==='all'?allow:[BRANCH];
+  let units=0,costVal=0,retail=0;
+  ps.forEach(p=>{branches.forEach(b=>{const q=p.stock[b]||0;units+=q;costVal+=q*p.cost;retail+=q*p.price;});});
+  const low=ps.filter(p=>invStatus(p)==='low').length,out=ps.filter(p=>invStatus(p)==='out').length;
+  return {count:ps.length,units,costVal,retail,profit:retail-costVal,low,out};
+}
+// ---- render ----
+const INV_TABS=[['dash','Dashboard'],['products','Products'],['movements','Movements'],['transfers','Transfers'],['reports','Reports']];
+function renderInventory(){
+  invSeed();
+  const tabsEl=document.getElementById('invTabs');if(!tabsEl)return;
+  document.getElementById('invSub').textContent=branchLabel()+' · '+invActive().length+' products';
+  tabsEl.innerHTML=INV_TABS.map(t=>`<button class="inv-tab ${INV.tab===t[0]?'on':''}" onclick="invGo('${t[0]}')">${t[1]}</button>`).join('');
+  const body=document.getElementById('invBody');
+  if(INV.tab==='dash')body.innerHTML=invDashHTML();
+  else if(INV.tab==='products')body.innerHTML=invProductsHTML();
+  else if(INV.tab==='movements')body.innerHTML=invMovesHTML();
+  else if(INV.tab==='transfers')body.innerHTML=invTransfersHTML();
+  else if(INV.tab==='reports')body.innerHTML=invReportsHTML();
+  if(INV.tab==='products'){const t=document.getElementById('invProdTbl');if(t)rowifyInv(t);}
+}
+function invGo(tab){INV.tab=tab;renderInventory();}
+function invMoney(n){return can('view_cost')?money(n):'••••';}
+function invDashHTML(){
+  const k=invKpis();
+  const K=[['Products',k.count,'var(--txt)'],['Units in stock',k.units.toLocaleString(),'var(--brand2)'],
+    ['Inventory cost',invMoney(k.costVal),'var(--txt)'],['Retail value',money(k.retail),'var(--ok)'],
+    ['Potential gross profit',invMoney(k.profit),'var(--ok)'],['Low stock',k.low,k.low?'var(--warn)':'var(--muted)'],
+    ['Out of stock',k.out,k.out?'var(--bad)':'var(--muted)']];
+  const kpis=`<div class="grid g4">`+K.map(x=>`<div class="card kpi"><div class="l">${x[0]}</div><div class="v" style="color:${x[2]}">${x[1]}</div><div class="s">${branchLabel()}</div></div>`).join('')+`</div>`;
+  // value by branch
+  const byBranch=allowedBranches().map(b=>{let units=0,cost=0;invActive().forEach(p=>{const q=p.stock[b]||0;units+=q;cost+=q*p.cost;});return [b,units,cost];});
+  const vbb=`<div class="card" style="margin-top:14px"><h3>Inventory value by branch</h3><table><thead><tr><th>Branch</th><th style="text-align:end">Units</th><th style="text-align:end">Cost value</th></tr></thead><tbody>`+
+    byBranch.map(r=>`<tr><td><b>${r[0]}</b></td><td style="text-align:end">${r[1].toLocaleString()}</td><td style="text-align:end">${invMoney(r[2])}</td></tr>`).join('')+`</tbody></table></div>`;
+  // low-stock alerts
+  const low=invActive().filter(p=>invStatus(p)!=='ok').sort((a,b)=>invVisibleStock(a)-invVisibleStock(b)).slice(0,8);
+  const lowHtml=`<div class="card" style="margin-top:14px"><h3>⚠️ Low / out of stock</h3>`+(low.length?`<table><thead><tr><th>Product</th><th>Branch</th><th style="text-align:end">On hand</th><th style="text-align:end">Min</th><th>Status</th></tr></thead><tbody>`+
+    low.map(p=>`<tr data-invsku="${p.sku}"><td><b>${p.name}</b></td><td>${branchLabel()}</td><td style="text-align:end">${invVisibleStock(p)}</td><td style="text-align:end">${p.min}</td><td><span class="stockpill ${invStatus(p)}">${invStatus(p)==='out'?'OUT':'LOW'}</span></td></tr>`).join('')+`</tbody></table>`
+    :`<div style="color:var(--muted);font-size:13px;padding:8px 0">Everything is above its minimum. 👍</div>`)+`</div>`;
+  // recent movements
+  const rm=invMovesScoped().slice(0,6);
+  const rmHtml=`<div class="card" style="margin-top:14px"><h3>Recent inventory movements</h3>`+(rm.length?`<table><thead><tr><th>Ref</th><th>Product</th><th>Branch</th><th>Type</th><th style="text-align:end">Change</th><th style="text-align:end">After</th></tr></thead><tbody>`+
+    rm.map(m=>`<tr><td>${m.ref}</td><td>${m.product}</td><td>${m.branch}</td><td>${m.type}</td><td style="text-align:end;color:${m.change>=0?'var(--ok)':'var(--bad)'}">${m.change>=0?'+':''}${m.change}</td><td style="text-align:end">${m.after}</td></tr>`).join('')+`</tbody></table>`
+    :`<div style="color:var(--muted);font-size:13px;padding:8px 0">No movements yet.</div>`)+`</div>`;
+  return kpis+vbb+lowHtml+rmHtml;
+}
+function invProductsHTML(){
+  const cats=['all',...new Set(invActive().map(p=>p.cat))];
+  const toolbar=`<div class="inv-toolbar">
+    <input class="grow" id="invSearch" placeholder="Search name, SKU, barcode, brand…" value="${escAttr(INV.q)}" oninput="INV.q=this.value;invRenderProdTable()">
+    <select id="invCat" onchange="INV.cat=this.value;invRenderProdTable()">${cats.map(c=>`<option value="${c}" ${c===INV.cat?'selected':''}>${c==='all'?'All categories':c}</option>`).join('')}</select>
+    ${can('edit')?`<button class="btn p" onclick="invProductForm()">+ Add product</button>`:''}
+    ${can('export')?`<button class="ptool" onclick="invExportProducts(this)">⬇ Export CSV</button>`:''}
+  </div><div id="invProdWrap">${invProdTable()}</div>`;
+  return toolbar;
+}
+function invProdList(){let ps=invActive();
+  if(INV.cat!=='all')ps=ps.filter(p=>p.cat===INV.cat);
+  if(INV.q){const q=INV.q.toLowerCase();ps=ps.filter(p=>[p.name,p.sku,p.barcode,p.brand,p.supplier].some(v=>String(v).toLowerCase().includes(q)));}
+  return ps;
+}
+function invProdTable(){
+  const ps=invProdList();
+  if(!ps.length)return `<div class="card" style="text-align:center;color:var(--muted);padding:30px">No products match your search.</div>`;
+  return `<div class="card"><table id="invProdTbl"><thead><tr><th></th><th>Product</th><th>SKU</th><th>Category</th><th>Brand</th><th style="text-align:end">On hand</th><th style="text-align:end">Cost</th><th style="text-align:end">Price</th><th>Status</th><th></th></tr></thead><tbody>`+
+    ps.map(p=>`<tr data-invsku="${p.sku}"><td><div class="prodimg">${p.image?`<img src="${p.image}" style="width:100%;height:100%;border-radius:8px;object-fit:cover">`:'📦'}</div></td><td><b>${p.name}</b></td><td>${p.sku}</td><td>${p.cat}</td><td>${p.brand}</td><td style="text-align:end"><b>${invVisibleStock(p)}</b> ${p.uom}</td><td style="text-align:end">${invMoney(p.cost)}</td><td style="text-align:end">${money(p.price)}</td><td><span class="stockpill ${invStatus(p)}">${invStatus(p).toUpperCase()}</span></td><td style="text-align:center"><button class="rowact" data-invmenu="${p.sku}" aria-label="Actions">⋯</button></td></tr>`).join('')+`</tbody></table></div>`;
+}
+function invRenderProdTable(){const w=document.getElementById('invProdWrap');if(w){w.innerHTML=invProdTable();const t=document.getElementById('invProdTbl');if(t)rowifyInv(t);}}
+function rowifyInv(tbl){tbl.querySelectorAll('tbody tr[data-invsku]').forEach(tr=>{tr.classList.add('clk');tr.tabIndex=0;tr.setAttribute('role','button');});}
+function invMovesHTML(){
+  const ms=invMovesScoped();
+  return `<div class="card"><h3>Stock movement ledger</h3>`+(ms.length?`<table><thead><tr><th>Ref</th><th>Date</th><th>Product</th><th>Branch</th><th>Type</th><th style="text-align:end">Before</th><th style="text-align:end">Change</th><th style="text-align:end">After</th><th style="text-align:end">Value</th><th>User</th></tr></thead><tbody>`+
+    ms.slice(0,200).map(m=>`<tr><td>${m.ref}</td><td>${m.date}</td><td><b>${m.product}</b></td><td>${m.branch}</td><td>${m.type}</td><td style="text-align:end">${m.before}</td><td style="text-align:end;color:${m.change>=0?'var(--ok)':'var(--bad)'}">${m.change>=0?'+':''}${m.change}</td><td style="text-align:end">${m.after}</td><td style="text-align:end">${invMoney(m.value)}</td><td>${m.user}</td></tr>`).join('')+`</tbody></table>`
+    :`<div style="color:var(--muted);padding:14px 0">No movements recorded yet.</div>`)+`</div>`;
+}
+function invTransfersHTML(){
+  const ts=invTransfersScoped();
+  const add=can('transfer_stock')?`<div class="inv-toolbar"><button class="btn p" onclick="invTransferForm()">+ New transfer</button></div>`:'';
+  return add+`<div class="card"><h3>Branch transfers</h3>`+(ts.length?`<table><thead><tr><th>Ref</th><th>Product</th><th>From</th><th>To</th><th style="text-align:end">Qty</th><th>Status</th><th></th></tr></thead><tbody>`+
+    ts.map(t=>`<tr><td>${t.ref}</td><td><b>${t.product}</b></td><td>${t.from}</td><td>${t.to}</td><td style="text-align:end">${t.qty}</td><td><span class="stockpill ${t.status==='received'?'ok':t.status==='cancelled'?'out':'low'}">${t.status}</span></td><td style="text-align:center">${invTransferActions(t)}</td></tr>`).join('')+`</tbody></table>`
+    :`<div style="color:var(--muted);padding:14px 0">No transfers yet. Create one to move stock between branches.</div>`)+`</div>`;
+}
+function invTransferActions(t){
+  if(!can('transfer_stock'))return '—';
+  const next={pending:'approved',approved:'shipped',shipped:'received'}[t.status];
+  const lbl={approved:'Approve',shipped:'Ship',received:'Receive'}[next];
+  let h='';
+  if(next)h+=`<button class="rowact" title="${lbl}" onclick="invAdvanceTransfer(${t.id})">${next==='received'?'✓':'→'}</button>`;
+  if(t.status!=='received'&&t.status!=='cancelled')h+=` <button class="rowact" title="Cancel" onclick="invCancelTransfer(${t.id})">✕</button>`;
+  return h||'—';
+}
+// ---------------- product CRUD ----------------
+function invProductBySku(sku){return INV.products.find(p=>p.sku===sku);}
+function invOpenProduct(sku){const p=invProductBySku(sku);if(!p)return;
+  const branches=allowedBranches();
+  const stockRows=branches.map(b=>`<div class="k">Stock · ${b}</div><div class="v">${p.stock[b]||0} ${p.uom}</div>`).join('');
+  const kv=[['Name',p.name],['SKU',p.sku],['Barcode',p.barcode],['Category',p.cat],['Brand',p.brand],['Supplier',p.supplier],
+    ['Cost',invMoney(p.cost)],['Price',money(p.price)],['Tax',p.taxCat],['Min level',p.min+' '+p.uom],['Reorder qty',p.reorder],
+    ['UoM',p.uom],['Shelf',p.shelf],['Status',p.status],['Created',p.created],['Updated',p.updated]]
+    .map(([k,v])=>`<div class="k">${k}</div><div class="v">${v}</div>`).join('');
+  document.getElementById('drwTitle').innerHTML=`${p.name} <span style="color:var(--muted);font-size:12px">${p.sku}</span>`;
+  document.getElementById('drwBody').innerHTML=`<div class="drw-kv">${kv}${stockRows}</div>`
+    +`<div class="drw-sec">Total on hand: ${Object.values(p.stock).reduce((a,b)=>a+b,0)} ${p.uom} · value ${invMoney(Object.entries(p.stock).reduce((a,[,q])=>a+q*p.cost,0))}</div>`
+    +`<div class="drw-sec">Recent movements</div>`+ (INV.moves.filter(m=>m.sku===p.sku).slice(0,5).map(m=>`<div class="audit-row"><b>${m.type}</b> ${m.branch} ${m.change>=0?'+':''}${m.change} → ${m.after} · ${m.date}</div>`).join('')||`<div class="audit-row">No movements.</div>`);
+  const acts=[];
+  if(can('edit'))acts.push(`<button class="pri" onclick="invProductForm('${p.sku}')">✎ Edit</button>`);
+  if(can('adjust_stock'))acts.push(`<button onclick="invAdjustForm('${p.sku}')">± Adjust stock</button>`);
+  if(can('print'))acts.push(`<button onclick="invPrintProduct('${p.sku}')">🖨️ Print</button>`);
+  if(can('edit'))acts.push(`<button onclick="invDuplicate('${p.sku}')">⧉ Duplicate</button>`);
+  if(can('delete'))acts.push(`<button class="danger" onclick="invDelete('${p.sku}')">🗑 Delete</button>`);
+  document.getElementById('drwActs').innerHTML=acts.join('');
+  document.getElementById('drw').classList.add('on');scrim(true);audit('view','product',p.sku);
+}
+function invProductForm(sku){
+  const p=sku?invProductBySku(sku):null;
+  if(p&&!can('edit'))return toast('No permission to edit products');
+  if(!p&&!can('edit'))return toast('No permission to add products');
+  const v=(f,d)=>p?escAttr(p[f]):(d||'');
+  const branch=BRANCH==='all'?allowedBranches()[0]:BRANCH;
+  document.getElementById('drwTitle').textContent=p?('Edit '+p.name):'Add product';
+  document.getElementById('drwBody').innerHTML=`<div id="invFormErr" style="color:var(--bad);font-size:12.5px;margin-bottom:8px;display:none"></div>
+  <div class="inv-form">
+    <label class="full">Product name<input id="pfName" value="${v('name')}" required></label>
+    <label>SKU<input id="pfSku" value="${v('sku','SK-'+(1000+INV.products.length))}"></label>
+    <label>Barcode / UPC<input id="pfBarcode" value="${v('barcode')}"></label>
+    <label>Category<input id="pfCat" value="${v('cat','Accessories')}"></label>
+    <label>Brand<input id="pfBrand" value="${v('brand')}"></label>
+    <label>Supplier<select id="pfSupplier">${VENDORS.map(x=>`<option ${p&&p.supplier===x?'selected':''}>${x}</option>`).join('')}</select></label>
+    <label>Unit of measure<input id="pfUom" value="${v('uom','unit')}"></label>
+    ${can('view_cost')?`<label>Purchase cost<input id="pfCost" type="number" step="0.01" value="${p?p.cost:''}" ${can('edit_cost')||!p?'':'disabled'}></label>`:''}
+    <label>Selling price<input id="pfPrice" type="number" step="0.01" value="${p?p.price:''}"></label>
+    <label>Min stock level<input id="pfMin" type="number" value="${p?p.min:25}"></label>
+    <label>Reorder qty<input id="pfReorder" type="number" value="${p?p.reorder:50}"></label>
+    <label>Shelf / location<input id="pfShelf" value="${v('shelf','A1')}"></label>
+    <label>Status<select id="pfStatus"><option value="active" ${!p||p.status==='active'?'selected':''}>Active</option><option value="inactive" ${p&&p.status==='inactive'?'selected':''}>Inactive</option></select></label>
+    ${!p?`<label>Opening qty · ${branch}<input id="pfQty" type="number" value="0"></label>`:''}
+    <label class="full">Description<textarea id="pfDesc" rows="2">${v('desc')}</textarea></label>
+    <label class="full">Product image<input id="pfImg" type="file" accept="image/*" onchange="invPreviewImg(this)"><div id="pfImgPrev" style="margin-top:6px">${p&&p.image?`<img src="${p.image}" style="height:54px;border-radius:8px">`:''}</div></label>
+  </div>`;
+  document.getElementById('drwActs').innerHTML=`<button class="pri" id="pfSaveBtn" onclick="invSaveProduct(${p?p.id:'null'})">💾 Save</button><button onclick="${p?`invOpenProduct('${p.sku}')`:'drwClose()'}">Cancel</button>`;
+  document.getElementById('drw').classList.add('on');scrim(true);
+}
+let _pfImg='';
+function invPreviewImg(inp){const f=inp.files&&inp.files[0];if(!f)return;const r=new FileReader();r.onload=e=>{_pfImg=e.target.result;document.getElementById('pfImgPrev').innerHTML=`<img src="${_pfImg}" style="height:54px;border-radius:8px">`;};r.readAsDataURL(f);}
+function invFormErr(m){const e=document.getElementById('invFormErr');if(e){e.style.display='block';e.textContent='⚠️ '+m;}const b=document.getElementById('pfSaveBtn');if(b){b.disabled=false;b.textContent='💾 Save';}return false;}
+function invSaveProduct(id){
+  const btn=document.getElementById('pfSaveBtn');if(btn){if(btn.disabled)return;btn.disabled=true;btn.textContent='Saving…';}
+  const g=i=>{const el=document.getElementById(i);return el?el.value.trim():'';};
+  const name=g('pfName'),sku=g('pfSku'),barcode=g('pfBarcode');
+  const price=+g('pfPrice'),cost=can('view_cost')?+g('pfCost'):(id?invProductBySku0(id).cost:0);
+  if(!name)return invFormErr('Product name is required.');
+  if(!sku)return invFormErr('SKU is required.');
+  if(invFindSku(sku,id||-1))return invFormErr('SKU "'+sku+'" already exists — must be unique.');
+  if(barcode&&invFindBarcode(barcode,id||-1))return invFormErr('Barcode "'+barcode+'" already exists — must be unique.');
+  if(!(price>0))return invFormErr('Selling price must be greater than 0.');
+  const fields={name,sku,barcode,cat:g('pfCat'),brand:g('pfBrand'),supplier:g('pfSupplier'),uom:g('pfUom'),
+    price,min:+g('pfMin')||0,reorder:+g('pfReorder')||0,shelf:g('pfShelf'),status:g('pfStatus'),desc:g('pfDesc'),updated:daysAgo(0)};
+  if(can('view_cost'))fields.cost=cost;
+  if(_pfImg)fields.image=_pfImg;
+  if(id){const p=INV.products.find(x=>x.id===id);const before={...p};Object.assign(p,fields);
+    audit('edit','product',p.sku,'updated product fields [source: WEB]');_pfImg='';drwClose();refreshAll();toast('Product saved');
+  }else{
+    const branch=BRANCH==='all'?allowedBranches()[0]:BRANCH;
+    const stock={};STORES.forEach(s=>stock[s]=0);const q=+g('pfQty')||0;   // start at 0; invMove records the opening receipt
+    const np={id:++INV.seq,taxCat:'Standard (8.25%)',cost:can('view_cost')?cost:0,stock,image:_pfImg||'',created:daysAgo(0),sold:0,rev:0,...fields};
+    INV.products.push(np);
+    if(q>0)invMove(np,branch,'receive',q,'Opening stock');
+    audit('create','product',np.sku,'new product [source: WEB]');_pfImg='';drwClose();refreshAll();toast('Product added: '+name);
+  }
+}
+function invProductBySku0(id){return INV.products.find(x=>x.id===id)||{cost:0};}
+function invPrintProduct(sku){const p=invProductBySku(sku);if(!p)return;
+  const rows=[['Product',p.name],['SKU',p.sku],['Barcode',p.barcode],['Category',p.cat],['Brand',p.brand],['Supplier',p.supplier],
+    can('view_cost')?['Cost',money2(p.cost)]:null,['Price',money2(p.price)],['UoM',p.uom],['Shelf',p.shelf],['Status',p.status]]
+    .concat(allowedBranches().map(b=>['Stock · '+b,(p.stock[b]||0)+' '+p.uom])).filter(Boolean);
+  const w=window.open('','_blank','width=720,height=900');if(!w)return toast('Allow pop-ups to print');
+  w.document.write(`<!doctype html><html><head><title>SmokeStack — ${p.name}</title>
+    <style>@page{size:A4;margin:18mm}body{font-family:system-ui,Arial;color:#111}h1{font-size:20px;margin:0}
+    .s{color:#666;font-size:12px;margin:2px 0 18px}table{width:100%;border-collapse:collapse}
+    td{padding:8px 6px;border-bottom:1px solid #ddd;font-size:14px}td:first-child{color:#666;width:40%}
+    .ft{margin-top:26px;font-size:11px;color:#888;border-top:1px solid #ccc;padding-top:8px}</style></head>
+    <body><h1>🔥 SmokeStack — Product</h1><div class="s">${branchLabel()} · ${nowStamp()}</div>
+    <table>${rows.map(r=>`<tr><td>${r[0]}</td><td><b>${r[1]}</b></td></tr>`).join('')}</table>
+    <div class="ft">Inventory record · Not legal or tax advice.</div>
+    <script>window.onload=function(){window.print();}<\/script></body></html>`);
+  w.document.close();audit('print','product',p.sku);}
+function invDuplicate(sku){const p=invProductBySku(sku);if(!p||!can('edit'))return;
+  let n=1,ns=p.sku+'-COPY';while(invFindSku(ns))ns=p.sku+'-COPY'+(++n);
+  const stock={};STORES.forEach(s=>stock[s]=0);
+  const np={...p,id:++INV.seq,sku:ns,barcode:'',name:p.name+' (copy)',stock,created:daysAgo(0),updated:daysAgo(0),sold:0,rev:0};
+  INV.products.push(np);audit('duplicate','product',np.sku,'from '+p.sku);refreshAll();toast('Duplicated → '+ns);invProductForm(ns);
+}
+function invDelete(sku){const p=invProductBySku(sku);if(!p||!can('delete'))return toast('No permission to delete');
+  dlgAsk('Delete '+p.name+'?','This deactivates the product and removes it from active inventory. Movement history is preserved.',
+    {danger:true,okLabel:'Delete product',reason:true},(reason)=>{p.status='deleted';p.updated=daysAgo(0);
+      audit('delete','product',p.sku,'reason: '+reason+' [source: WEB]');drwClose();refreshAll();toast('Product deleted');});
+}
+function invExportProducts(btn){busy(btn,true);
+  const cols=['sku','name','cat','brand','supplier','barcode','uom','cost','price','min','reorder','shelf','status'];
+  const rows=invProdList();const esc=v=>v==null?'':/[",\n]/.test(String(v))?`"${String(v).replace(/"/g,'""')}"`:String(v);
+  const csv=[cols.concat(['on_hand']).join(',')].concat(rows.map(p=>cols.map(c=>esc(p[c])).join(',')+','+invVisibleStock(p))).join('\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='SmokeStack_Products_'+pdfSafe(branchLabel())+'_'+daysAgo(0)+'.csv';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1200);
+  audit('export','product','list','CSV');busy(btn,false);toast('Products exported');
+}
+// ---------------- stock adjustment ----------------
+function invAdjustForm(sku){const p=invProductBySku(sku);if(!p)return;
+  if(!can('adjust_stock'))return toast('No permission to adjust stock');
+  const branch=BRANCH==='all'?allowedBranches()[0]:BRANCH;
+  document.getElementById('drwTitle').textContent='Adjust stock — '+p.name;
+  document.getElementById('drwBody').innerHTML=`<div id="adjErr" style="color:var(--bad);font-size:12.5px;margin-bottom:8px;display:none"></div>
+    <div class="inv-form"><label>Branch<select id="adjBranch">${allowedBranches().map(b=>`<option ${b===branch?'selected':''}>${b}</option>`).join('')}</select></label>
+    <label>Movement type<select id="adjType"><option value="add">Manual add</option><option value="reduce">Manual reduce</option><option value="damaged">Damaged</option><option value="expired">Expired</option><option value="lost">Lost / stolen</option><option value="count">Count adjustment</option><option value="receive">Purchase receiving</option><option value="return_customer">Customer return</option><option value="return_supplier">Purchase return</option></select></label>
+    <label>Quantity (units)<input id="adjQty" type="number" min="1" value="1"></label>
+    <label class="full">Reason / notes<input id="adjNote" placeholder="Required"></label></div>
+    <div class="drw-sec">On hand now: <span id="adjNow">${p.stock[branch]||0}</span> ${p.uom}</div>`;
+  const upd=()=>{const b=document.getElementById('adjBranch').value;document.getElementById('adjNow').textContent=p.stock[b]||0;};
+  document.getElementById('adjBranch').onchange=upd;
+  document.getElementById('drwActs').innerHTML=`<button class="pri" id="adjSave" onclick="invDoAdjust(${p.id})">💾 Apply adjustment</button><button onclick="invOpenProduct('${p.sku}')">Cancel</button>`;
+  document.getElementById('drw').classList.add('on');scrim(true);
+}
+function invDoAdjust(id){const p=INV.products.find(x=>x.id===id);if(!p)return;
+  const btn=document.getElementById('adjSave');if(btn){if(btn.disabled)return;btn.disabled=true;}
+  const branch=document.getElementById('adjBranch').value,type=document.getElementById('adjType').value;
+  const qty=+document.getElementById('adjQty').value,note=document.getElementById('adjNote').value.trim();
+  const err=m=>{const e=document.getElementById('adjErr');e.style.display='block';e.textContent='⚠️ '+m;if(btn)btn.disabled=false;return;};
+  if(!(qty>0))return err('Enter a quantity greater than 0.');
+  if(!note)return err('A reason is required for stock adjustments.');
+  const negative=['reduce','damaged','expired','lost','return_supplier'].includes(type);
+  const change=negative?-qty:qty;
+  const res=invMove(p,branch,type,change,note);
+  if(res.err)return err(res.err);
+  drwClose();refreshAll();toast(`Stock ${change>=0?'increased':'reduced'} — ${p.name} now ${res.after}`);
+}
+// ---------------- transfers ----------------
+function invTransferForm(){
+  if(!can('transfer_stock'))return toast('No permission to transfer stock');
+  const branches=allowedBranches();
+  if(branches.length<2)return toast('Transfers need at least two branches you can access');
+  document.getElementById('drwTitle').textContent='New branch transfer';
+  document.getElementById('drwBody').innerHTML=`<div id="trErr" style="color:var(--bad);font-size:12.5px;margin-bottom:8px;display:none"></div>
+    <div class="inv-form">
+    <label>From branch<select id="trFrom">${branches.map(b=>`<option>${b}</option>`).join('')}</select></label>
+    <label>To branch<select id="trTo">${branches.map((b,i)=>`<option ${i===1?'selected':''}>${b}</option>`).join('')}</select></label>
+    <label class="full">Product<select id="trProd">${invActive().map(p=>`<option value="${p.sku}">${p.name} (${p.sku})</option>`).join('')}</select></label>
+    <label>Quantity<input id="trQty" type="number" min="1" value="1"></label>
+    <label class="full">Notes<input id="trNote"></label></div>
+    <div class="drw-sec">Stock deducts from the source only when <b>shipped</b>, and adds to the destination only when <b>received</b>.</div>`;
+  document.getElementById('drwActs').innerHTML=`<button class="pri" id="trSave" onclick="invCreateTransfer()">💾 Create transfer</button><button onclick="drwClose()">Cancel</button>`;
+  document.getElementById('drw').classList.add('on');scrim(true);
+}
+function invCreateTransfer(){
+  const from=document.getElementById('trFrom').value,to=document.getElementById('trTo').value;
+  const sku=document.getElementById('trProd').value,qty=+document.getElementById('trQty').value,note=document.getElementById('trNote').value.trim();
+  const err=m=>{const e=document.getElementById('trErr');e.style.display='block';e.textContent='⚠️ '+m;};
+  if(from===to)return err('Source and destination must differ.');
+  if(!(qty>0))return err('Quantity must be greater than 0.');
+  const p=invProductBySku(sku);if(!p)return err('Pick a product.');
+  if((p.stock[from]||0)<qty)return err(`Only ${p.stock[from]||0} in stock at ${from} — cannot transfer ${qty}.`);
+  const t={id:++INV.seq,ref:'TR-'+(1000+(++INV.tseq)),product:p.name,sku,from,to,qty,status:'pending',note,history:[{s:'pending',ts:nowStamp(),by:ROLE.kind}]};
+  INV.transfers.unshift(t);audit('transfer:create','transfer',t.ref,`${qty} ${p.name} ${from}→${to} [source: WEB]`);
+  drwClose();INV.tab='transfers';renderInventory();toast('Transfer '+t.ref+' created (pending)');
+}
+function invAdvanceTransfer(id){const t=INV.transfers.find(x=>x.id===id);if(!t||!can('transfer_stock'))return;
+  const p=invProductBySku(t.sku);const flow={pending:'approved',approved:'shipped',shipped:'received'};const next=flow[t.status];if(!next)return;
+  if(next==='shipped'){if((p.stock[t.from]||0)<t.qty)return toast('Not enough stock at source to ship');
+    const r=invMove(p,t.from,'transfer_out',-t.qty,'Transfer '+t.ref+' → '+t.to);if(r.err)return toast(r.err);}
+  if(next==='received'){invMove(p,t.to,'transfer_in',t.qty,'Transfer '+t.ref+' ← '+t.from);}
+  t.status=next;t.history.push({s:next,ts:nowStamp(),by:ROLE.kind});
+  audit('transfer:'+next,'transfer',t.ref,`${t.from}→${t.to} ${t.qty}`);
+  renderInventory();toast('Transfer '+t.ref+' → '+next);
+}
+function invCancelTransfer(id){const t=INV.transfers.find(x=>x.id===id);if(!t||!can('transfer_stock'))return;
+  dlgAsk('Cancel transfer '+t.ref+'?','If it was already shipped, stock is returned to the source branch.',{danger:true,okLabel:'Cancel transfer',reason:true},(reason)=>{
+    if(t.status==='shipped'){const p=invProductBySku(t.sku);invMove(p,t.from,'transfer_cancel',t.qty,'Cancelled '+t.ref);}
+    t.status='cancelled';t.history.push({s:'cancelled',ts:nowStamp(),by:ROLE.kind,reason});
+    audit('transfer:cancel','transfer',t.ref,'reason: '+reason);renderInventory();toast('Transfer cancelled');});
+}
+// ---------------- inventory reports ----------------
+function invReportsHTML(){
+  if(!can('view')&&!can('export'))return '<div class="card">No permission to view reports.</div>';
+  const ps=invActive();const allow=allowedBranches();const inB=b=>BRANCH==='all'?allow.includes(b):b===BRANCH;
+  const tbl=(title,head,rows)=>`<div class="card" style="margin-top:14px"><h3>${title}</h3>`+(rows.length?`<table><thead><tr>${head.map((h,i)=>`<th${i?' style="text-align:end"':''}>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map((c,i)=>`<td${i?' style="text-align:end"':''}>${c}</td>`).join('')}</tr>`).join('')}</tbody></table>`:`<div style="color:var(--muted);padding:10px 0">No data.</div>`)+`</div>`;
+  const val=ps.map(p=>[p.name,invVisibleStock(p),invMoney(p.cost),invMoney(invVisibleStock(p)*p.cost),money(invVisibleStock(p)*p.price)]);
+  const low=ps.filter(p=>invStatus(p)==='low').map(p=>[p.name,invVisibleStock(p),p.min,p.reorder]);
+  const out=ps.filter(p=>invStatus(p)==='out').map(p=>[p.name,p.cat,p.supplier]);
+  const gp=ps.map(p=>[p.name,money(p.price),invMoney(p.cost),money(p.price-p.cost),((p.price-p.cost)/p.price*100).toFixed(1)+'%']).sort((a,b)=>parseFloat(b[4])-parseFloat(a[4]));
+  const best=[...ps].sort((a,b)=>b.sold-a.sold).slice(0,10).map(p=>[p.name,p.sold,money(p.rev)]);
+  const slow=[...ps].sort((a,b)=>a.sold-b.sold).slice(0,10).map(p=>[p.name,p.sold,invVisibleStock(p)]);
+  const dead=ps.filter(p=>p.sold===0).map(p=>[p.name,invVisibleStock(p),invMoney(invVisibleStock(p)*p.cost)]);
+  const byBranch=allow.map(b=>{let u=0,c=0;ps.forEach(p=>{u+=p.stock[b]||0;c+=(p.stock[b]||0)*p.cost;});return [b,u,invMoney(c)];});
+  const moves=invMovesScoped().slice(0,50).map(m=>[m.date,m.product,m.branch,m.type,(m.change>=0?'+':'')+m.change,m.after]);
+  return `<div style="font-size:12.5px;color:var(--muted);margin-bottom:6px">Reports reflect <b>${branchLabel()}</b>. Use the header Print / PDF buttons to export any of these.</div>`
+    +tbl('Stock valuation',['Product','On hand','Unit cost','Cost value','Retail value'],val)
+    +tbl('Inventory value by branch',['Branch','Units','Cost value'],byBranch)
+    +tbl('Low-stock products',['Product','On hand','Min','Reorder qty'],low)
+    +tbl('Out-of-stock products',['Product','Category','Supplier'],out)
+    +tbl('Gross profit by product',['Product','Price','Cost','Margin $','Margin %'],gp)
+    +tbl('Best-selling products',['Product','Units sold','Revenue'],best)
+    +tbl('Slow-moving products',['Product','Units sold','On hand'],slow)
+    +tbl('Dead stock (never sold)',['Product','On hand','Cost tied up'],dead)
+    +tbl('Recent inventory movements',['Date','Product','Branch','Type','Change','After'],moves);
+}
+// delegated clicks for inventory rows + menus (separate from the tx handler)
+document.addEventListener('click',e=>{
+  const menu=e.target.closest('[data-invmenu]');
+  if(menu){e.stopPropagation();return invRowMenu(e,menu.dataset.invmenu);}
+  const tr=e.target.closest('tr[data-invsku]');
+  if(tr&&!e.target.closest('button,a,input,select,.rowact')){invOpenProduct(tr.dataset.invsku);}
+});
+document.addEventListener('keydown',e=>{if(e.key!=='Enter')return;const tr=e.target.closest&&e.target.closest('tr[data-invsku]');if(tr&&document.activeElement===tr)invOpenProduct(tr.dataset.invsku);});
+function invRowMenu(e,sku){const p=invProductBySku(sku);if(!p)return;
+  aMenuOpen(e,[
+    {k:'view',ic:'👁',label:'View',run:()=>invOpenProduct(sku)},
+    {k:'edit',ic:'✎',label:'Edit',disabled:!can('edit'),run:()=>invProductForm(sku)},
+    {k:'adj',ic:'±',label:'Adjust stock',disabled:!can('adjust_stock'),run:()=>invAdjustForm(sku)},
+    {k:'dup',ic:'⧉',label:'Duplicate',disabled:!can('edit'),run:()=>invDuplicate(sku)},
+    'sep',
+    {k:'del',ic:'🗑',label:'Delete',danger:true,disabled:!can('delete'),run:()=>invDelete(sku)}
+  ]);
+}
+
+/* ==========================================================================
+   SHARED PRINT + PDF — one implementation for every page.
+   Extracts the visible view's title, KPI cards and tables from the DOM (so no
+   per-page wiring), then renders a branded, paginated, selectable-text output:
+   • Print  → clean print window (sidebar/nav/buttons excluded), @page rules,
+              repeating <thead>, rows never split across pages, light-readable.
+   • PDF    → jsPDF + autotable: real structured text (not a screenshot),
+              multi-page tables, landscape when wide, page numbers, totals,
+              meaningful filename. Falls back to Print if the library is offline. */
+const PAGE_TITLES={dash:'Dashboard Summary',sales:'Daily Sales',expenses:'Expenses',purchases:'Purchases',
+  recon:'Bank Reconciliation',tax:'Sales Tax',payroll:'Payroll & Payroll Tax',reports:'Report',inventory:'Inventory',settings:'Settings'};
+function pageMeta(view){
+  return {title:PAGE_TITLES[view]||'Report',branch:branchLabel(),
+    dateRange:(view==='reports'&&typeof REP!=='undefined')?cap(REP.filters.period):'as of '+daysAgo(0),
+    user:ROLE.kind,ts:nowStamp()};
+}
+// pull KPI cards + tables out of a rendered view; drop empty action columns
+function extractView(view){
+  const root=document.getElementById('v-'+view);if(!root)return {kpis:[],tables:[]};
+  const kpis=[...root.querySelectorAll('.card.kpi')].map(k=>{
+    const l=k.querySelector('.l'),v=k.querySelector('.v');return l&&v?[l.textContent.trim(),v.textContent.trim()]:null;}).filter(Boolean);
+  const tables=[...root.querySelectorAll('table')].map(tb=>{
+    const heads=[...tb.querySelectorAll('thead th')].map(th=>th.textContent.trim());
+    const drop=heads.map((h,i)=>h===''?i:-1).filter(i=>i>=0);   // empty header = actions col
+    const keep=(arr)=>arr.filter((_,i)=>!drop.includes(i));
+    const head=keep(heads);
+    const rows=[...tb.querySelectorAll('tbody tr')].map(tr=>keep([...tr.children].map(td=>td.textContent.replace(/⋯/g,'').trim())));
+    return head.length?{head,rows}:null;
+  }).filter(Boolean);
+  return {kpis,tables};
+}
+function pdfSafe(s){return String(s).replace(/[^\w.-]+/g,'-').replace(/^-+|-+$/g,'');}
+function busy(btn,on){if(!btn)return;btn.disabled=on;btn.dataset.label=btn.dataset.label||btn.innerHTML;
+  btn.innerHTML=on?`<span class="sp"></span> Working…`:btn.dataset.label;}
+// ---- Download PDF (real, selectable text) ----
+function downloadPDF(view,btn){
+  try{
+    const js=window.jspdf&&window.jspdf.jsPDF;
+    if(!js){toast('PDF library offline — opening print instead');return printView(view,btn);}
+    busy(btn,true);
+    const m=pageMeta(view),data=extractView(view);
+    const wide=data.tables.some(t=>t.head.length>6);
+    const doc=new js({orientation:wide?'landscape':'portrait',unit:'pt',format:'a4'});
+    const W=doc.internal.pageSize.getWidth();
+    // branded header
+    doc.setFontSize(16);doc.setTextColor(20);doc.text('🔥 SmokeStack',40,44);
+    doc.setFontSize(13);doc.text(m.title,40,64);
+    doc.setFontSize(9);doc.setTextColor(120);
+    doc.text(`Branch: ${m.branch}    Period: ${m.dateRange}    Generated by: ${m.user}    ${m.ts}`,40,80);
+    doc.setDrawColor(220);doc.line(40,88,W-40,88);
+    let y=104;
+    if(data.kpis.length){
+      doc.autoTable({startY:y,head:[['Metric','Value']],body:data.kpis,theme:'grid',
+        headStyles:{fillColor:[255,122,69]},styles:{fontSize:9,cellPadding:4},margin:{left:40,right:40}});
+      y=doc.lastAutoTable.finalY+16;
+    }
+    data.tables.forEach(t=>{
+      doc.autoTable({startY:y,head:[t.head],body:t.rows,theme:'striped',
+        headStyles:{fillColor:[40,48,66]},styles:{fontSize:8.5,cellPadding:3,overflow:'linebreak'},margin:{left:40,right:40}});
+      y=doc.lastAutoTable.finalY+16;
+    });
+    // page numbers
+    const pages=doc.internal.getNumberOfPages();
+    for(let i=1;i<=pages;i++){doc.setPage(i);doc.setFontSize(8);doc.setTextColor(150);
+      doc.text(`Page ${i} of ${pages}`,W-90,doc.internal.pageSize.getHeight()-20);
+      doc.text('Not legal or tax advice',40,doc.internal.pageSize.getHeight()-20);}
+    const fname=`SmokeStack_${pdfSafe(m.title)}_${pdfSafe(m.branch)}_${daysAgo(0)}.pdf`;
+    doc.save(fname);
+    audit('export','page',view,`PDF: ${fname}`);
+    busy(btn,false);toast('PDF downloaded');
+  }catch(e){busy(btn,false);toast('PDF failed: '+(e.message||'error'));}
+}
+// ---- Print (clean window, selectable, print-to-PDF friendly) ----
+function printView(view,btn){
+  try{
+    busy&&busy(btn,true);
+    const m=pageMeta(view),data=extractView(view);
+    const wide=data.tables.some(t=>t.head.length>6);
+    const kpiHtml=data.kpis.length?`<table class="kpi"><tbody>${data.kpis.map(k=>`<tr><td>${k[0]}</td><td class="v">${k[1]}</td></tr>`).join('')}</tbody></table>`:'';
+    const tblHtml=data.tables.map(t=>`<table><thead><tr>${t.head.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${t.rows.map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table>`).join('');
+    const w=window.open('','_blank','width=980,height=1100');
+    if(!w){busy&&busy(btn,false);return toast('Allow pop-ups to print');}
+    w.document.write(`<!doctype html><html><head><title>SmokeStack — ${m.title}</title>
+      <style>@page{size:A4 ${wide?'landscape':'portrait'};margin:14mm}
+      body{font-family:system-ui,Arial;color:#111;margin:0}
+      .hd{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #ff7a45;padding-bottom:8px}
+      .hd h1{font-size:19px;margin:0}.hd .t{font-size:13px;color:#444}.meta{font-size:11px;color:#666;margin:8px 0 16px}
+      table{width:100%;border-collapse:collapse;margin:0 0 18px;font-size:11.5px}
+      thead{display:table-header-group}tr{page-break-inside:avoid}
+      th{background:#283042;color:#fff;text-align:left;padding:7px 8px}
+      td{padding:6px 8px;border-bottom:1px solid #ddd}
+      table.kpi td{border:1px solid #ddd}table.kpi .v{font-weight:700;text-align:right}
+      .ft{position:fixed;bottom:8mm;left:14mm;right:14mm;font-size:10px;color:#888;display:flex;justify-content:space-between;border-top:1px solid #ccc;padding-top:6px}</style></head>
+      <body><div class="hd"><h1>🔥 SmokeStack</h1><div class="t">${m.title}</div></div>
+      <div class="meta">Branch: <b>${m.branch}</b> &nbsp;·&nbsp; Period: <b>${m.dateRange}</b> &nbsp;·&nbsp; Generated by: ${m.user} &nbsp;·&nbsp; ${m.ts}</div>
+      ${kpiHtml}${tblHtml||'<p style="color:#888">No tabular data on this page.</p>'}
+      <div class="ft"><span>SmokeStack · Not legal or tax advice</span><span>${m.ts}</span></div>
+      <script>window.onload=function(){setTimeout(function(){window.print();},120);}<\/script></body></html>`);
+    w.document.close();audit('print','page',view,m.title);
+    busy&&busy(btn,false);
+  }catch(e){busy&&busy(btn,false);toast('Print failed');}
+}
+// Print + PDF buttons for a page header (permission-gated)
+function pageTools(view){
+  const t=[];
+  if(can('print'))t.push(`<button class="ptool" onclick="printView('${view}',this)" aria-label="Print ${view}">🖨️ Print</button>`);
+  if(can('export'))t.push(`<button class="ptool" onclick="downloadPDF('${view}',this)" aria-label="Download PDF ${view}">⬇ PDF</button>`);
+  return t.length?`<div class="ptools">${t.join('')}</div>`:'';
+}
+// inject the tools into every page header once (idempotent)
+function mountPageTools(){
+  const map={'v-dash':'dash','v-sales':'sales','v-expenses':'expenses','v-purchases':'purchases','v-recon':'recon',
+    'v-tax':'tax','v-payroll':'payroll','v-reports':'reports','v-inventory':'inventory'};
+  Object.entries(map).forEach(([vid,view])=>{
+    const sec=document.getElementById(vid);if(!sec)return;const top=sec.querySelector('.top');if(!top||top.querySelector('.ptools'))return;
+    const holder=document.createElement('div');holder.style.cssText='margin-left:auto;display:flex;align-items:center;gap:9px';
+    holder.innerHTML=pageTools(view);
+    // if the header already has a right-side control group, append there; else add holder
+    top.appendChild(holder);
+  });
+}
+
 // ---------------- boot ----------------
-function refreshAll(){renderDash();renderSales();renderExp();renderPur();renderRecon();renderTax();renderPay();renderReports();renderClock();}
+function refreshAll(){renderDash();renderSales();renderExp();renderPur();renderRecon();renderTax();renderPay();renderReports();renderClock();if(typeof renderInventory==='function')renderInventory();mountPageTools();}
 // ===================== MOBILE CONTROLLER =====================
 const MTABS=[['dash','\u{1F4CA}','Home'],['ai','\u2726','Claude'],['sales','\u{1F4B5}','Sales'],['reports','\u{1F4C8}','Reports'],['__more','\u2630','More']];
-const MTITLES={dash:'Dashboard',ai:'Ask Claude',sales:'Daily Sales',expenses:'Expenses',purchases:'Purchases',recon:'Bank Reconciliation',tax:'Sales Tax',payroll:'Payroll',reports:'Report Center',telegram:'Telegram',settings:'Settings'};
+const MTITLES={dash:'Dashboard',ai:'Ask Claude',sales:'Daily Sales',expenses:'Expenses',purchases:'Purchases',recon:'Bank Reconciliation',tax:'Sales Tax',payroll:'Payroll',reports:'Report Center',inventory:'Inventory',telegram:'Telegram',settings:'Settings'};
 function mDrawer(open){document.body.classList.toggle('drawer-open',open);}
 function mSync(v){
   const t=document.getElementById('mTitle');if(t)t.textContent=MTITLES[v]||'SmokeStack';
