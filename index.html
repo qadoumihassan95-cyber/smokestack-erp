@@ -2628,7 +2628,7 @@ function kpiDrill(label){const v=KPI_DRILL[label];if(v){go(v);toast('Opened '+la
    Branch/role scoped (reuses allowedBranches/scope/can). Every stock change goes
    through invMove() → records before/change/after + audit; negative stock blocked
    unless INV_ALLOW_NEG. Product costs gated by view_cost. ======================= */
-let INV={products:[],moves:[],transfers:[],inited:false,tab:'dash',q:'',cat:'all',seq:0,tseq:0};
+let INV={products:[],moves:[],transfers:[],inited:false,tab:'dash',q:'',cat:'all',fbranch:'all',fstatus:'all',sortBy:'name',sortDir:1,page:1,per:12,seq:0,tseq:0};
 let INV_ALLOW_NEG=false;   // system setting: block negative inventory by default
 function invVendorFor(cat){return {Cigarettes:'Altria',Pouches:'Republic Brands',Vape:'Local Vape Wholesale',Cigars:'Altria',Accessories:'Costco'}[cat]||VENDORS[0];}
 function invSeed(){
@@ -2690,8 +2690,19 @@ function renderInventory(){
   else if(INV.tab==='transfers')body.innerHTML=invTransfersHTML();
   else if(INV.tab==='reports')body.innerHTML=invReportsHTML();
   if(INV.tab==='products'){const t=document.getElementById('invProdTbl');if(t)rowifyInv(t);}
+  invMountHeaderBtn();
 }
-function invGo(tab){INV.tab=tab;renderInventory();}
+// put a clearly visible "+ Add Product" button in the page header, beside Print / PDF
+function invMountHeaderBtn(){
+  const top=document.querySelector('#v-inventory .top');if(!top)return;
+  const holder=top.querySelector('.ptools')?top.querySelector('.ptools').parentElement:top;
+  if(!can('edit')){const ex=document.getElementById('invAddHeaderBtn');if(ex)ex.remove();return;}
+  if(document.getElementById('invAddHeaderBtn'))return;
+  const b=document.createElement('button');b.id='invAddHeaderBtn';b.className='ptool';b.style.cssText='background:linear-gradient(135deg,var(--brand),var(--brand2));color:#1a1000;border:none;font-weight:700';
+  b.textContent='+ Add Product';b.onclick=()=>{INV.tab='products';renderInventory();invProductForm();};
+  holder.insertBefore(b,holder.firstChild);
+}
+function invGo(tab){INV.tab=tab;INV.page=1;renderInventory();}
 function invMoney(n){return can('view_cost')?money(n):'••••';}
 function invDashHTML(){
   const k=invKpis();
@@ -2718,24 +2729,49 @@ function invDashHTML(){
 }
 function invProductsHTML(){
   const cats=['all',...new Set(invActive().map(p=>p.cat))];
+  const sortOpts=[['name','Name'],['qty','Quantity'],['cost','Cost'],['price','Price']];
   const toolbar=`<div class="inv-toolbar">
-    <input class="grow" id="invSearch" placeholder="Search name, SKU, barcode, brand…" value="${escAttr(INV.q)}" oninput="INV.q=this.value;invRenderProdTable()">
-    <select id="invCat" onchange="INV.cat=this.value;invRenderProdTable()">${cats.map(c=>`<option value="${c}" ${c===INV.cat?'selected':''}>${c==='all'?'All categories':c}</option>`).join('')}</select>
-    ${can('edit')?`<button class="btn p" onclick="invProductForm()">+ Add product</button>`:''}
+    <input class="grow" id="invSearch" inputmode="search" placeholder="Search name, SKU, barcode, brand…" value="${escAttr(INV.q)}" oninput="INV.q=this.value;INV.page=1;invRenderProdTable()">
+    <select id="invCat" onchange="INV.cat=this.value;INV.page=1;invRenderProdTable()">${cats.map(c=>`<option value="${c}" ${c===INV.cat?'selected':''}>${c==='all'?'All categories':c}</option>`).join('')}</select>
+    <select id="invFBranch" onchange="INV.fbranch=this.value;INV.page=1;invRenderProdTable()"><option value="all" ${INV.fbranch==='all'?'selected':''}>All my branches</option>${allowedBranches().map(b=>`<option ${b===INV.fbranch?'selected':''}>${b}</option>`).join('')}</select>
+    <select id="invFStatus" onchange="INV.fstatus=this.value;INV.page=1;invRenderProdTable()">${[['all','Any status'],['ok','In stock'],['low','Low stock'],['out','Out of stock'],['inactive','Inactive']].map(s=>`<option value="${s[0]}" ${INV.fstatus===s[0]?'selected':''}>${s[1]}</option>`).join('')}</select>
+    <select id="invSort" onchange="INV.sortBy=this.value;INV.page=1;invRenderProdTable()">${sortOpts.map(s=>`<option value="${s[0]}" ${INV.sortBy===s[0]?'selected':''}>Sort: ${s[1]}</option>`).join('')}</select>
+    <button class="ptool" title="Toggle direction" onclick="INV.sortDir*=-1;invRenderProdTable()">${INV.sortDir>0?'↑':'↓'}</button>
+    ${can('edit')?`<button class="btn p" onclick="invProductForm()">+ Add Product</button>`:''}
     ${can('export')?`<button class="ptool" onclick="invExportProducts(this)">⬇ Export CSV</button>`:''}
   </div><div id="invProdWrap">${invProdTable()}</div>`;
   return toolbar;
 }
-function invProdList(){let ps=invActive();
+function invProdList(){let ps=INV.products.filter(p=>p.status!=='deleted');
   if(INV.cat!=='all')ps=ps.filter(p=>p.cat===INV.cat);
+  // fbranch changes which branch's on-hand the table shows (see invRowStock); it does not remove products
+  if(INV.fstatus!=='all')ps=ps.filter(p=>INV.fstatus==='inactive'?p.status==='inactive':(p.status==='active'&&invStatus(p)===INV.fstatus));
   if(INV.q){const q=INV.q.toLowerCase();ps=ps.filter(p=>[p.name,p.sku,p.barcode,p.brand,p.supplier].some(v=>String(v).toLowerCase().includes(q)));}
+  const key={name:p=>p.name.toLowerCase(),qty:p=>invRowStock(p),cost:p=>p.cost,price:p=>p.price}[INV.sortBy]||(p=>p.name);
+  ps.sort((a,b)=>{const x=key(a),y=key(b);return (x>y?1:x<y?-1:0)*INV.sortDir;});
   return ps;
 }
+// stock shown in the products table respects the branch filter (or the global branch)
+function invRowStock(p){if(INV.fbranch!=='all')return p.stock[INV.fbranch]||0;return invVisibleStock(p);}
+function invRowBranch(){return INV.fbranch!=='all'?INV.fbranch:branchLabel();}
 function invProdTable(){
-  const ps=invProdList();
-  if(!ps.length)return `<div class="card" style="text-align:center;color:var(--muted);padding:30px">No products match your search.</div>`;
-  return `<div class="card"><table id="invProdTbl"><thead><tr><th></th><th>Product</th><th>SKU</th><th>Category</th><th>Brand</th><th style="text-align:end">On hand</th><th style="text-align:end">Cost</th><th style="text-align:end">Price</th><th>Status</th><th></th></tr></thead><tbody>`+
-    ps.map(p=>`<tr data-invsku="${p.sku}"><td><div class="prodimg">${p.image?`<img src="${p.image}" style="width:100%;height:100%;border-radius:8px;object-fit:cover">`:'📦'}</div></td><td><b>${p.name}</b></td><td>${p.sku}</td><td>${p.cat}</td><td>${p.brand}</td><td style="text-align:end"><b>${invVisibleStock(p)}</b> ${p.uom}</td><td style="text-align:end">${invMoney(p.cost)}</td><td style="text-align:end">${money(p.price)}</td><td><span class="stockpill ${invStatus(p)}">${invStatus(p).toUpperCase()}</span></td><td style="text-align:center"><button class="rowact" data-invmenu="${p.sku}" aria-label="Actions">⋯</button></td></tr>`).join('')+`</tbody></table></div>`;
+  const all=invProdList();const total=all.length;
+  const pages=Math.max(1,Math.ceil(total/INV.per));if(INV.page>pages)INV.page=pages;
+  const ps=all.slice((INV.page-1)*INV.per,INV.page*INV.per);
+  if(!total)return `<div class="card" style="text-align:center;color:var(--muted);padding:30px">No products match your filters.</div>`;
+  const rows=ps.map(p=>{const on=invRowStock(p);const val=on*p.cost;const inactive=p.status==='inactive';
+    return `<tr data-invsku="${p.sku}" style="${inactive?'opacity:.55':''}"><td><div class="prodimg">${p.image?`<img src="${p.image}" style="width:100%;height:100%;border-radius:8px;object-fit:cover">`:'📦'}</div></td>`
+    +`<td><b>${p.name}</b></td><td>${p.cat}</td><td>${p.sku}</td><td style="font-size:11px;color:var(--muted)">${p.barcode||'—'}</td><td>${invRowBranch()}</td>`
+    +`<td style="text-align:end"><b>${on}</b> ${p.uom}</td><td style="text-align:end">${p.min}</td><td style="text-align:end">${invMoney(p.cost)}</td><td style="text-align:end">${money(p.price)}</td><td style="text-align:end">${invMoney(val)}</td>`
+    +`<td><span class="stockpill ${inactive?'out':invStatus(p)}">${inactive?'INACTIVE':invStatus(p).toUpperCase()}</span></td>`
+    +`<td style="white-space:nowrap;text-align:center">`
+    +(can('edit')?`<button class="rowact" title="Edit" onclick="event.stopPropagation();invProductForm('${p.sku}')">✎</button> `:'')
+    +(can('adjust_stock')?`<button class="rowact" title="Add stock" onclick="event.stopPropagation();invAddStockForm('${p.sku}')">＋</button> `:'')
+    +`<button class="rowact" data-invmenu="${p.sku}" title="More actions">⋯</button></td></tr>`;}).join('');
+  const pager=pages>1?`<div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:12.5px;color:var(--muted)">
+    <span>${(INV.page-1)*INV.per+1}–${Math.min(INV.page*INV.per,total)} of ${total}</span>
+    <span style="display:flex;gap:6px"><button class="ptool" ${INV.page<=1?'disabled':''} onclick="INV.page--;invRenderProdTable()">‹ Prev</button><button class="ptool" ${INV.page>=pages?'disabled':''} onclick="INV.page++;invRenderProdTable()">Next ›</button></span></div>`:'';
+  return `<div class="card"><table id="invProdTbl"><thead><tr><th></th><th>Product</th><th>Category</th><th>SKU</th><th>Barcode</th><th>Branch</th><th style="text-align:end">On hand</th><th style="text-align:end">Min</th><th style="text-align:end">Cost</th><th style="text-align:end">Price</th><th style="text-align:end">Stock value</th><th>Status</th><th>Actions</th></tr></thead><tbody>${rows}</tbody></table>${pager}</div>`;
 }
 function invRenderProdTable(){const w=document.getElementById('invProdWrap');if(w){w.innerHTML=invProdTable();const t=document.getElementById('invProdTbl');if(t)rowifyInv(t);}}
 function rowifyInv(tbl){tbl.querySelectorAll('tbody tr[data-invsku]').forEach(tr=>{tr.classList.add('clk');tr.tabIndex=0;tr.setAttribute('role','button');});}
@@ -2765,20 +2801,41 @@ function invTransferActions(t){
 function invProductBySku(sku){return INV.products.find(p=>p.sku===sku);}
 function invOpenProduct(sku){const p=invProductBySku(sku);if(!p)return;
   const branches=allowedBranches();
+  const totalStock=branches.reduce((a,b)=>a+(p.stock[b]||0),0);
+  const profit=p.price-p.cost;const margin=p.price?(profit/p.price*100):0;
+  const img=p.image?`<div style="text-align:center;margin-bottom:12px"><img src="${p.image}" style="max-height:120px;border-radius:12px"></div>`:'';
   const stockRows=branches.map(b=>`<div class="k">Stock · ${b}</div><div class="v">${p.stock[b]||0} ${p.uom}</div>`).join('');
-  const kv=[['Name',p.name],['SKU',p.sku],['Barcode',p.barcode],['Category',p.cat],['Brand',p.brand],['Supplier',p.supplier],
-    ['Cost',invMoney(p.cost)],['Price',money(p.price)],['Tax',p.taxCat],['Min level',p.min+' '+p.uom],['Reorder qty',p.reorder],
-    ['UoM',p.uom],['Shelf',p.shelf],['Status',p.status],['Created',p.created],['Updated',p.updated]]
+  const kv=[['Name',p.name],['SKU',p.sku],['Barcode',p.barcode||'—'],['Category',p.cat],['Brand',p.brand],['Supplier',p.supplier],
+    ['Cost',invMoney(p.cost)],['Price',money(p.price)],['Est. profit / unit',can('view_cost')?money(profit)+' ('+margin.toFixed(1)+'%)':'••••'],
+    ['Tax',p.taxCat],['Min level',p.min+' '+p.uom],['Reorder qty',p.reorder],['UoM',p.uom],['Shelf',p.shelf],
+    ['Status',p.status],['Created',p.created],['Updated',p.updated]].concat(p.notes?[['Notes',p.notes]]:[])
     .map(([k,v])=>`<div class="k">${k}</div><div class="v">${v}</div>`).join('');
-  document.getElementById('drwTitle').innerHTML=`${p.name} <span style="color:var(--muted);font-size:12px">${p.sku}</span>`;
-  document.getElementById('drwBody').innerHTML=`<div class="drw-kv">${kv}${stockRows}</div>`
-    +`<div class="drw-sec">Total on hand: ${Object.values(p.stock).reduce((a,b)=>a+b,0)} ${p.uom} · value ${invMoney(Object.entries(p.stock).reduce((a,[,q])=>a+q*p.cost,0))}</div>`
-    +`<div class="drw-sec">Recent movements</div>`+ (INV.moves.filter(m=>m.sku===p.sku).slice(0,5).map(m=>`<div class="audit-row"><b>${m.type}</b> ${m.branch} ${m.change>=0?'+':''}${m.change} → ${m.after} · ${m.date}</div>`).join('')||`<div class="audit-row">No movements.</div>`);
+  // history sections
+  const mv=INV.moves.filter(m=>m.sku===p.sku);
+  const hist=(title,list,fmt,empty)=>`<div class="drw-sec">${title}</div>`+(list.length?list.slice(0,6).map(fmt).join(''):`<div class="audit-row">${empty}</div>`);
+  const receipts=mv.filter(m=>m.type==='receive');
+  const adjusts=mv.filter(m=>!['receive','transfer_in','transfer_out'].includes(m.type));
+  const transfersP=INV.transfers.filter(t=>t.sku===p.sku);
+  const salesP=(REP&&REP.tx?REP.tx.filter(x=>x.product===p.name&&x.type==='sale'):[]);
+  const aud=auditFor('product',p.sku);
+  document.getElementById('drwTitle').innerHTML=`${p.name} <span style="color:var(--muted);font-size:12px">${p.sku}</span>${p.status==='inactive'?'<span class="voided-badge">inactive</span>':''}`;
+  document.getElementById('drwBody').innerHTML=img+`<div class="drw-kv">${kv}${stockRows}</div>`
+    +`<div class="drw-sec">Total on hand: ${totalStock} ${p.uom} · value ${invMoney(totalStock*p.cost)}</div>`
+    +hist('Recent movements',mv,m=>`<div class="audit-row"><b>${m.type}</b> ${m.branch} ${m.change>=0?'+':''}${m.change} → ${m.after} · ${m.date} · ${m.user}</div>`,'No movements.')
+    +hist('Purchase / receiving history',receipts,m=>`<div class="audit-row"><b>+${m.change}</b> ${m.branch} · ${m.notes||'received'} · ${m.date}</div>`,'No receipts yet.')
+    +hist('Adjustment history',adjusts,m=>`<div class="audit-row"><b>${m.type}</b> ${m.change>=0?'+':''}${m.change} @ ${m.branch} · ${m.notes||''} · ${m.date}</div>`,'No adjustments.')
+    +hist('Transfer history',transfersP,t=>`<div class="audit-row"><b>${t.ref}</b> ${t.from}→${t.to} ×${t.qty} · <i>${t.status}</i></div>`,'No transfers.')
+    +hist('Sales history',salesP,x=>`<div class="audit-row">${x.date} · ${x.store} · ${money(x.amount)}</div>`,'No line-item sales (sales are recorded as daily branch totals in V1).')
+    +hist('Audit log',aud,a=>`<div class="audit-row"><b>${a.action}</b> · ${a.ts} · ${a.user} · <i>${a.source}</i>${a.detail?' · '+a.detail:''}</div>`,'No changes recorded.');
   const acts=[];
   if(can('edit'))acts.push(`<button class="pri" onclick="invProductForm('${p.sku}')">✎ Edit</button>`);
-  if(can('adjust_stock'))acts.push(`<button onclick="invAdjustForm('${p.sku}')">± Adjust stock</button>`);
+  if(can('adjust_stock'))acts.push(`<button onclick="invAddStockForm('${p.sku}')">＋ Add stock</button>`);
+  if(can('adjust_stock'))acts.push(`<button onclick="invAdjustForm('${p.sku}')">± Adjust</button>`);
+  if(can('transfer_stock'))acts.push(`<button onclick="drwClose();invTransferForm()">⇄ Transfer</button>`);
   if(can('print'))acts.push(`<button onclick="invPrintProduct('${p.sku}')">🖨️ Print</button>`);
   if(can('edit'))acts.push(`<button onclick="invDuplicate('${p.sku}')">⧉ Duplicate</button>`);
+  if(can('edit')&&p.status==='active')acts.push(`<button onclick="invDeactivate('${p.sku}')">⏸ Deactivate</button>`);
+  if(can('edit')&&p.status==='inactive')acts.push(`<button onclick="invReactivate('${p.sku}')">▶ Reactivate</button>`);
   if(can('delete'))acts.push(`<button class="danger" onclick="invDelete('${p.sku}')">🗑 Delete</button>`);
   document.getElementById('drwActs').innerHTML=acts.join('');
   document.getElementById('drw').classList.add('on');scrim(true);audit('view','product',p.sku);
@@ -2790,23 +2847,28 @@ function invProductForm(sku){
   const v=(f,d)=>p?escAttr(p[f]):(d||'');
   const branch=BRANCH==='all'?allowedBranches()[0]:BRANCH;
   document.getElementById('drwTitle').textContent=p?('Edit '+p.name):'Add product';
+  const TAXCATS=['Standard (8.25%)','Reduced','Exempt'];
   document.getElementById('drwBody').innerHTML=`<div id="invFormErr" style="color:var(--bad);font-size:12.5px;margin-bottom:8px;display:none"></div>
+  <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Fields marked * are required.</div>
   <div class="inv-form">
-    <label class="full">Product name<input id="pfName" value="${v('name')}" required></label>
-    <label>SKU<input id="pfSku" value="${v('sku','SK-'+(1000+INV.products.length))}"></label>
-    <label>Barcode / UPC<input id="pfBarcode" value="${v('barcode')}"></label>
-    <label>Category<input id="pfCat" value="${v('cat','Accessories')}"></label>
+    <label class="full">Product name *<input id="pfName" value="${v('name')}" required></label>
+    <label>SKU *<input id="pfSku" value="${v('sku','SK-'+(1000+INV.products.length))}"></label>
+    <label>Barcode / UPC<input id="pfBarcode" inputmode="numeric" value="${v('barcode')}"></label>
+    <label>Category *<input id="pfCat" value="${v('cat','Accessories')}"></label>
     <label>Brand<input id="pfBrand" value="${v('brand')}"></label>
     <label>Supplier<select id="pfSupplier">${VENDORS.map(x=>`<option ${p&&p.supplier===x?'selected':''}>${x}</option>`).join('')}</select></label>
     <label>Unit of measure<input id="pfUom" value="${v('uom','unit')}"></label>
-    ${can('view_cost')?`<label>Purchase cost<input id="pfCost" type="number" step="0.01" value="${p?p.cost:''}" ${can('edit_cost')||!p?'':'disabled'}></label>`:''}
-    <label>Selling price<input id="pfPrice" type="number" step="0.01" value="${p?p.price:''}"></label>
-    <label>Min stock level<input id="pfMin" type="number" value="${p?p.min:25}"></label>
-    <label>Reorder qty<input id="pfReorder" type="number" value="${p?p.reorder:50}"></label>
+    ${can('view_cost')?`<label>Purchase cost<input id="pfCost" type="number" inputmode="decimal" step="0.01" min="0" value="${p?p.cost:''}" ${can('edit_cost')||!p?'':'disabled'}></label>`:''}
+    <label>Selling price *<input id="pfPrice" type="number" inputmode="decimal" step="0.01" min="0" value="${p?p.price:''}"></label>
+    <label>Tax category<select id="pfTax">${TAXCATS.map(t=>`<option ${p&&p.taxCat===t?'selected':''}>${t}</option>`).join('')}</select></label>
+    <label>Min stock level<input id="pfMin" type="number" inputmode="numeric" min="0" value="${p?p.min:25}"></label>
+    <label>Reorder qty<input id="pfReorder" type="number" inputmode="numeric" min="0" value="${p?p.reorder:50}"></label>
     <label>Shelf / location<input id="pfShelf" value="${v('shelf','A1')}"></label>
+    <label>Branch *<select id="pfBranch">${allowedBranches().map(b=>`<option ${b===branch?'selected':''}>${b}</option>`).join('')}</select></label>
     <label>Status<select id="pfStatus"><option value="active" ${!p||p.status==='active'?'selected':''}>Active</option><option value="inactive" ${p&&p.status==='inactive'?'selected':''}>Inactive</option></select></label>
-    ${!p?`<label>Opening qty · ${branch}<input id="pfQty" type="number" value="0"></label>`:''}
+    ${!p?`<label>Opening quantity<input id="pfQty" type="number" inputmode="numeric" min="0" value="0"></label>`:''}
     <label class="full">Description<textarea id="pfDesc" rows="2">${v('desc')}</textarea></label>
+    <label class="full">Notes<textarea id="pfNotes" rows="2">${v('notes')}</textarea></label>
     <label class="full">Product image<input id="pfImg" type="file" accept="image/*" onchange="invPreviewImg(this)"><div id="pfImgPrev" style="margin-top:6px">${p&&p.image?`<img src="${p.image}" style="height:54px;border-radius:8px">`:''}</div></label>
   </div>`;
   document.getElementById('drwActs').innerHTML=`<button class="pri" id="pfSaveBtn" onclick="invSaveProduct(${p?p.id:'null'})">💾 Save</button><button onclick="${p?`invOpenProduct('${p.sku}')`:'drwClose()'}">Cancel</button>`;
@@ -2820,24 +2882,34 @@ function invSaveProduct(id){
   const g=i=>{const el=document.getElementById(i);return el?el.value.trim():'';};
   const name=g('pfName'),sku=g('pfSku'),barcode=g('pfBarcode');
   const price=+g('pfPrice'),cost=can('view_cost')?+g('pfCost'):(id?invProductBySku0(id).cost:0);
+  const selBranch=g('pfBranch')||(BRANCH==='all'?allowedBranches()[0]:BRANCH);
   if(!name)return invFormErr('Product name is required.');
   if(!sku)return invFormErr('SKU is required.');
   if(invFindSku(sku,id||-1))return invFormErr('SKU "'+sku+'" already exists — must be unique.');
   if(barcode&&invFindBarcode(barcode,id||-1))return invFormErr('Barcode "'+barcode+'" already exists — must be unique.');
   if(!(price>0))return invFormErr('Selling price must be greater than 0.');
+  if(can('view_cost')&&cost<0)return invFormErr('Purchase cost cannot be negative.');
+  if(!selBranch||!allowedBranches().includes(selBranch))return invFormErr('A valid branch is required.');
+  const q=+g('pfQty')||0;
+  if(q<0&&!INV_ALLOW_NEG)return invFormErr('Opening quantity cannot be negative.');
   const fields={name,sku,barcode,cat:g('pfCat'),brand:g('pfBrand'),supplier:g('pfSupplier'),uom:g('pfUom'),
-    price,min:+g('pfMin')||0,reorder:+g('pfReorder')||0,shelf:g('pfShelf'),status:g('pfStatus'),desc:g('pfDesc'),updated:daysAgo(0)};
+    price,taxCat:g('pfTax')||'Standard (8.25%)',min:+g('pfMin')||0,reorder:+g('pfReorder')||0,shelf:g('pfShelf'),
+    status:g('pfStatus'),desc:g('pfDesc'),notes:g('pfNotes'),updated:daysAgo(0)};
   if(can('view_cost'))fields.cost=cost;
   if(_pfImg)fields.image=_pfImg;
-  if(id){const p=INV.products.find(x=>x.id===id);const before={...p};Object.assign(p,fields);
-    audit('edit','product',p.sku,'updated product fields [source: WEB]');_pfImg='';drwClose();refreshAll();toast('Product saved');
+  if(id){const p=INV.products.find(x=>x.id===id);
+    // field-level diff for the audit log; NEVER touch stock here (that's the adjust workflow)
+    const changed=Object.keys(fields).filter(f=>f!=='updated'&&String(p[f]??'')!==String(fields[f]??''))
+      .map(f=>`${f}: "${p[f]??''}"→"${fields[f]??''}"`);
+    Object.assign(p,fields);
+    audit('edit','product',p.sku,(changed.length?changed.join('; '):'no change')+' [source: WEB]');
+    _pfImg='';drwClose();refreshAll();toast('Product saved');
   }else{
-    const branch=BRANCH==='all'?allowedBranches()[0]:BRANCH;
-    const stock={};STORES.forEach(s=>stock[s]=0);const q=+g('pfQty')||0;   // start at 0; invMove records the opening receipt
-    const np={id:++INV.seq,taxCat:'Standard (8.25%)',cost:can('view_cost')?cost:0,stock,image:_pfImg||'',created:daysAgo(0),sold:0,rev:0,...fields};
+    const stock={};STORES.forEach(s=>stock[s]=0);   // start at 0; invMove records the opening receipt
+    const np={id:++INV.seq,cost:can('view_cost')?cost:0,stock,image:_pfImg||'',created:daysAgo(0),sold:0,rev:0,...fields};
     INV.products.push(np);
-    if(q>0)invMove(np,branch,'receive',q,'Opening stock');
-    audit('create','product',np.sku,'new product [source: WEB]');_pfImg='';drwClose();refreshAll();toast('Product added: '+name);
+    if(q>0)invMove(np,selBranch,'receive',q,'Opening stock');
+    audit('create','product',np.sku,'new product · opening '+q+' @ '+selBranch+' [source: WEB]');_pfImg='';drwClose();refreshAll();toast('Product added: '+name);
   }
 }
 function invProductBySku0(id){return INV.products.find(x=>x.id===id)||{cost:0};}
@@ -2862,10 +2934,24 @@ function invDuplicate(sku){const p=invProductBySku(sku);if(!p||!can('edit'))retu
   const np={...p,id:++INV.seq,sku:ns,barcode:'',name:p.name+' (copy)',stock,created:daysAgo(0),updated:daysAgo(0),sold:0,rev:0};
   INV.products.push(np);audit('duplicate','product',np.sku,'from '+p.sku);refreshAll();toast('Duplicated → '+ns);invProductForm(ns);
 }
+function invHasHistory(p){return INV.moves.some(m=>m.sku===p.sku)||INV.transfers.some(t=>t.sku===p.sku)||LEDGER.some(x=>x.product===p.name);}
+function invDeactivate(sku){const p=invProductBySku(sku);if(!p)return;if(!can('edit'))return toast('No permission');
+  dlgAsk('Deactivate '+p.name+'?','It stays in the system with all history, but is hidden from active lists and cannot be sold. You can reactivate it any time.',
+    {okLabel:'Deactivate',reason:true},(reason)=>{p.status='inactive';p.updated=daysAgo(0);
+      audit('deactivate','product',p.sku,'reason: '+reason+' [source: WEB]');drwClose();refreshAll();toast(p.name+' deactivated');});
+}
+function invReactivate(sku){const p=invProductBySku(sku);if(!p||!can('edit'))return toast('No permission');
+  p.status='active';p.updated=daysAgo(0);audit('reactivate','product',p.sku,'[source: WEB]');refreshAll();toast(p.name+' reactivated');
+}
 function invDelete(sku){const p=invProductBySku(sku);if(!p||!can('delete'))return toast('No permission to delete');
-  dlgAsk('Delete '+p.name+'?','This deactivates the product and removes it from active inventory. Movement history is preserved.',
-    {danger:true,okLabel:'Delete product',reason:true},(reason)=>{p.status='deleted';p.updated=daysAgo(0);
-      audit('delete','product',p.sku,'reason: '+reason+' [source: WEB]');drwClose();refreshAll();toast('Product deleted');});
+  if(invHasHistory(p)){
+    dlgAsk('Cannot delete '+p.name,'This product has stock movements, transfers or sales history, so it cannot be permanently deleted (that would break your audit trail). You can deactivate it instead.',
+      {okLabel:'Deactivate instead'},()=>invDeactivate(sku));
+    return;
+  }
+  dlgAsk('Delete '+p.name+'?','This product has no history, so it can be permanently removed. This cannot be undone.',
+    {danger:true,okLabel:'Delete permanently',reason:true},(reason)=>{const i=INV.products.findIndex(x=>x.sku===sku);if(i>=0)INV.products.splice(i,1);
+      audit('delete','product',sku,'reason: '+reason+' [source: WEB]');drwClose();refreshAll();toast('Product deleted');});
 }
 function invExportProducts(btn){busy(btn,true);
   const cols=['sku','name','cat','brand','supplier','barcode','uom','cost','price','min','reorder','shelf','status'];
@@ -2875,18 +2961,29 @@ function invExportProducts(btn){busy(btn,true);
   audit('export','product','list','CSV');busy(btn,false);toast('Products exported');
 }
 // ---------------- stock adjustment ----------------
+const ADJ_NEG=['reduce','damaged','expired','lost','return_supplier'];
 function invAdjustForm(sku){const p=invProductBySku(sku);if(!p)return;
   if(!can('adjust_stock'))return toast('No permission to adjust stock');
   const branch=BRANCH==='all'?allowedBranches()[0]:BRANCH;
   document.getElementById('drwTitle').textContent='Adjust stock — '+p.name;
   document.getElementById('drwBody').innerHTML=`<div id="adjErr" style="color:var(--bad);font-size:12.5px;margin-bottom:8px;display:none"></div>
-    <div class="inv-form"><label>Branch<select id="adjBranch">${allowedBranches().map(b=>`<option ${b===branch?'selected':''}>${b}</option>`).join('')}</select></label>
-    <label>Movement type<select id="adjType"><option value="add">Manual add</option><option value="reduce">Manual reduce</option><option value="damaged">Damaged</option><option value="expired">Expired</option><option value="lost">Lost / stolen</option><option value="count">Count adjustment</option><option value="receive">Purchase receiving</option><option value="return_customer">Customer return</option><option value="return_supplier">Purchase return</option></select></label>
-    <label>Quantity (units)<input id="adjQty" type="number" min="1" value="1"></label>
-    <label class="full">Reason / notes<input id="adjNote" placeholder="Required"></label></div>
-    <div class="drw-sec">On hand now: <span id="adjNow">${p.stock[branch]||0}</span> ${p.uom}</div>`;
-  const upd=()=>{const b=document.getElementById('adjBranch').value;document.getElementById('adjNow').textContent=p.stock[b]||0;};
-  document.getElementById('adjBranch').onchange=upd;
+    <div class="inv-form"><label>Product<input value="${escAttr(p.name)}" disabled></label>
+    <label>Branch *<select id="adjBranch">${allowedBranches().map(b=>`<option ${b===branch?'selected':''}>${b}</option>`).join('')}</select></label>
+    <label>Adjustment type *<select id="adjType"><option value="add">Add stock</option><option value="reduce">Remove stock</option><option value="set">Set exact quantity</option><option value="damaged">Damaged</option><option value="expired">Expired</option><option value="lost">Lost / stolen</option><option value="count">Count correction</option><option value="opening">Opening balance</option><option value="return_customer">Customer return</option><option value="return_supplier">Purchase return</option></select></label>
+    <label>Quantity (units) *<input id="adjQty" type="number" inputmode="numeric" min="0" value="1"></label>
+    <label>Reference #<input id="adjRef" placeholder="Optional"></label>
+    <label class="full">Reason *<input id="adjNote" placeholder="Required for adjustments"></label>
+    <label>Date<input id="adjDate" type="date" value="${daysAgo(0)}"></label></div>
+    <div class="drw-sec">Current: <b id="adjNow">${p.stock[branch]||0}</b> ${p.uom} &nbsp;→&nbsp; After: <b id="adjAfter" style="color:var(--brand)">—</b> ${p.uom}</div>`;
+  const recompute=()=>{
+    const b=document.getElementById('adjBranch').value;const cur=p.stock[b]||0;
+    document.getElementById('adjNow').textContent=cur;
+    const type=document.getElementById('adjType').value;const qty=+document.getElementById('adjQty').value||0;
+    let after;if(type==='set')after=qty;else after=cur+(ADJ_NEG.includes(type)?-qty:qty);
+    const el=document.getElementById('adjAfter');el.textContent=after;el.style.color=after<0?'var(--bad)':'var(--brand)';
+  };
+  ['adjBranch','adjType','adjQty'].forEach(i=>{const el=document.getElementById(i);el.oninput=recompute;el.onchange=recompute;});
+  recompute();
   document.getElementById('drwActs').innerHTML=`<button class="pri" id="adjSave" onclick="invDoAdjust(${p.id})">💾 Apply adjustment</button><button onclick="invOpenProduct('${p.sku}')">Cancel</button>`;
   document.getElementById('drw').classList.add('on');scrim(true);
 }
@@ -2894,14 +2991,52 @@ function invDoAdjust(id){const p=INV.products.find(x=>x.id===id);if(!p)return;
   const btn=document.getElementById('adjSave');if(btn){if(btn.disabled)return;btn.disabled=true;}
   const branch=document.getElementById('adjBranch').value,type=document.getElementById('adjType').value;
   const qty=+document.getElementById('adjQty').value,note=document.getElementById('adjNote').value.trim();
+  const ref=document.getElementById('adjRef').value.trim();
   const err=m=>{const e=document.getElementById('adjErr');e.style.display='block';e.textContent='⚠️ '+m;if(btn)btn.disabled=false;return;};
-  if(!(qty>0))return err('Enter a quantity greater than 0.');
+  if(!(qty>=0)||(type!=='set'&&!(qty>0)))return err('Enter a valid quantity.');
   if(!note)return err('A reason is required for stock adjustments.');
-  const negative=['reduce','damaged','expired','lost','return_supplier'].includes(type);
-  const change=negative?-qty:qty;
-  const res=invMove(p,branch,type,change,note);
+  const cur=p.stock[branch]||0;
+  const change=type==='set'?(qty-cur):(ADJ_NEG.includes(type)?-qty:qty);
+  if(change===0){drwClose();return toast('No change to apply');}
+  const res=invMove(p,branch,type,change,note,ref||undefined);   // invMove blocks negative + records movement + audit
   if(res.err)return err(res.err);
-  drwClose();refreshAll();toast(`Stock ${change>=0?'increased':'reduced'} — ${p.name} now ${res.after}`);
+  drwClose();refreshAll();toast(`${p.name} at ${branch} → ${res.after} ${p.uom}`);
+}
+// ---------------- quick "+ Add Stock" (receiving) ----------------
+function invAddStockForm(sku){const p=invProductBySku(sku);if(!p)return;
+  if(!can('adjust_stock'))return toast('No permission to add stock');
+  const branch=BRANCH==='all'?allowedBranches()[0]:BRANCH;
+  document.getElementById('drwTitle').textContent='Add stock — '+p.name;
+  document.getElementById('drwBody').innerHTML=`<div id="asErr" style="color:var(--bad);font-size:12.5px;margin-bottom:8px;display:none"></div>
+    <div class="inv-form">
+    <label>Branch *<select id="asBranch">${allowedBranches().map(b=>`<option ${b===branch?'selected':''}>${b}</option>`).join('')}</select></label>
+    <label>Quantity received *<input id="asQty" type="number" inputmode="numeric" min="1" value="1"></label>
+    ${can('view_cost')?`<label>Unit purchase cost<input id="asCost" type="number" inputmode="decimal" step="0.01" value="${p.cost}"></label>`:''}
+    <label>Supplier<select id="asSupplier">${VENDORS.map(v=>`<option ${v===p.supplier?'selected':''}>${v}</option>`).join('')}</select></label>
+    <label>Reference / invoice #<input id="asRef" placeholder="Optional"></label>
+    <label>Date<input id="asDate" type="date" value="${daysAgo(0)}"></label>
+    <label class="full">Notes<input id="asNote"></label></div>
+    <div class="drw-sec">On hand at <span id="asNowB">${branch}</span>: <b id="asNow">${p.stock[branch]||0}</b> → <b id="asAfter" style="color:var(--ok)">${p.stock[branch]||0}</b> ${p.uom}</div>`;
+  const upd=()=>{const b=document.getElementById('asBranch').value;const cur=p.stock[b]||0;const q=+document.getElementById('asQty').value||0;
+    document.getElementById('asNowB').textContent=b;document.getElementById('asNow').textContent=cur;document.getElementById('asAfter').textContent=cur+q;};
+  ['asBranch','asQty'].forEach(i=>{document.getElementById(i).oninput=upd;document.getElementById(i).onchange=upd;});
+  document.getElementById('drwActs').innerHTML=`<button class="pri" id="asSave" onclick="invDoAddStock(${p.id})">💾 Receive stock</button><button onclick="invOpenProduct('${p.sku}')">Cancel</button>`;
+  document.getElementById('drw').classList.add('on');scrim(true);
+}
+function invDoAddStock(id){const p=INV.products.find(x=>x.id===id);if(!p)return;
+  const btn=document.getElementById('asSave');if(btn){if(btn.disabled)return;btn.disabled=true;}
+  const branch=document.getElementById('asBranch').value,qty=+document.getElementById('asQty').value;
+  const cost=can('view_cost')&&document.getElementById('asCost')?+document.getElementById('asCost').value:p.cost;
+  const supplier=document.getElementById('asSupplier').value,ref=document.getElementById('asRef').value.trim(),note=document.getElementById('asNote').value.trim();
+  const err=m=>{const e=document.getElementById('asErr');e.style.display='block';e.textContent='⚠️ '+m;if(btn)btn.disabled=false;return;};
+  if(!(qty>0))return err('Quantity received must be greater than 0.');
+  if(can('view_cost')&&cost<0)return err('Cost cannot be negative.');
+  // update latest purchase cost where appropriate, then record the receipt movement
+  if(can('view_cost')&&cost>0&&cost!==p.cost){audit('edit','product',p.sku,`cost updated ${p.cost}→${cost} on receipt`);p.cost=cost;}
+  if(supplier&&supplier!==p.supplier)p.supplier=supplier;
+  const res=invMove(p,branch,'receive',qty,`Received${ref?' ref '+ref:''}${supplier?' from '+supplier:''}${note?' · '+note:''}`,ref||undefined);
+  if(res.err)return err(res.err);
+  drwClose();refreshAll();toast(`Received ${qty} ${p.uom} — ${p.name} now ${res.after}`);
 }
 // ---------------- transfers ----------------
 function invTransferForm(){
@@ -2982,11 +3117,16 @@ document.addEventListener('click',e=>{
 document.addEventListener('keydown',e=>{if(e.key!=='Enter')return;const tr=e.target.closest&&e.target.closest('tr[data-invsku]');if(tr&&document.activeElement===tr)invOpenProduct(tr.dataset.invsku);});
 function invRowMenu(e,sku){const p=invProductBySku(sku);if(!p)return;
   aMenuOpen(e,[
-    {k:'view',ic:'👁',label:'View',run:()=>invOpenProduct(sku)},
+    {k:'view',ic:'👁',label:'View details',run:()=>invOpenProduct(sku)},
     {k:'edit',ic:'✎',label:'Edit',disabled:!can('edit'),run:()=>invProductForm(sku)},
+    {k:'add',ic:'＋',label:'Add stock',disabled:!can('adjust_stock'),run:()=>invAddStockForm(sku)},
     {k:'adj',ic:'±',label:'Adjust stock',disabled:!can('adjust_stock'),run:()=>invAdjustForm(sku)},
+    {k:'tr',ic:'⇄',label:'Transfer',disabled:!can('transfer_stock'),run:()=>invTransferForm()},
     {k:'dup',ic:'⧉',label:'Duplicate',disabled:!can('edit'),run:()=>invDuplicate(sku)},
+    {k:'print',ic:'🖨️',label:'Print',disabled:!can('print'),run:()=>invPrintProduct(sku)},
     'sep',
+    p.status==='active'?{k:'deact',ic:'⏸',label:'Deactivate',disabled:!can('edit'),run:()=>invDeactivate(sku)}
+      :{k:'react',ic:'▶',label:'Reactivate',disabled:!can('edit'),run:()=>invReactivate(sku)},
     {k:'del',ic:'🗑',label:'Delete',danger:true,disabled:!can('delete'),run:()=>invDelete(sku)}
   ]);
 }
