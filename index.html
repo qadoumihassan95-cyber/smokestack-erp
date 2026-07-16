@@ -447,10 +447,31 @@
   .inv-form label.full{grid-column:1/-1}
   .inv-form input,.inv-form select,.inv-form textarea{background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:9px;padding:9px 11px;font-size:13.5px;font-family:inherit}
   @media(max-width:860px){.inv-form{grid-template-columns:1fr}}
+  /* ===== Barcode scanner ===== */
+  .scan-wrap{position:relative;border-radius:14px;overflow:hidden;background:#000;margin-bottom:12px}
+  .scan-wrap video{width:100%;max-height:300px;display:block;object-fit:cover}
+  .scan-frame{position:absolute;inset:18% 12%;border:2px solid rgba(255,255,255,.85);border-radius:12px;box-shadow:0 0 0 2000px rgba(0,0,0,.28);pointer-events:none}
+  .scan-frame::after{content:"";position:absolute;left:6%;right:6%;top:50%;height:2px;background:var(--brand);box-shadow:0 0 8px var(--brand);animation:scanline 1.6s ease-in-out infinite}
+  @keyframes scanline{0%,100%{transform:translateY(-42px)}50%{transform:translateY(42px)}}
+  .scan-cam-tools{position:absolute;top:8px;right:8px;display:flex;gap:6px;z-index:2}
+  .scan-cam-tools button{width:38px;height:38px;border-radius:10px;border:none;background:rgba(0,0,0,.5);color:#fff;font-size:16px;cursor:pointer}
+  .bc-line{display:grid;grid-template-columns:1fr 74px 90px 34px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}
+  .bc-line input{width:100%;background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:6px;font-size:13px}
+  .bc-total{display:flex;justify-content:space-between;font-weight:700;padding:10px 0 2px;font-size:14px}
+  .fab-scan{position:fixed;right:16px;bottom:calc(72px + env(safe-area-inset-bottom));z-index:120;width:56px;height:56px;border-radius:50%;border:none;
+    background:linear-gradient(135deg,var(--brand),var(--brand2));color:#1a1000;font-size:24px;box-shadow:0 8px 22px rgba(0,0,0,.4);cursor:pointer;display:none}
+  @media(max-width:860px){body.inv-on .fab-scan{display:flex;align-items:center;justify-content:center}}
+  .lbl-preview{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+  .lbl-card{border:1px solid var(--line);border-radius:8px;padding:8px;text-align:center;background:#fff;color:#000}
+  .lbl-card svg{max-width:100%}
 </style>
 <!-- Real (selectable-text) PDF generation — structured data, not screenshots -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<!-- Barcode label rendering (structured, machine-readable — not screenshots) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
+<!-- Camera-decode fallback for browsers without the native BarcodeDetector API -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/zxing-js-library/0.21.3/index.min.js"></script>
 </head>
 <body>
 <!-- ===== MOBILE CHROME (hidden on desktop) ===== -->
@@ -687,6 +708,7 @@
   <div class="drw-acts" id="drwActs"></div>
 </aside>
 <div class="amenu" id="aMenu"></div>
+<button class="fab-scan" id="fabScan" aria-label="Scan barcode" onclick="invScanForm()">▤</button>
 <div class="dlg" id="dlg" role="dialog" aria-modal="true"><h3 id="dlgTitle"></h3><p id="dlgMsg"></p><textarea id="dlgReason" style="display:none" placeholder="Reason (required)…"></textarea>
   <div class="dlg-acts"><button onclick="dlgCancel()">Cancel</button><button id="dlgOk" class="pri" onclick="dlgConfirm()">Confirm</button></div></div>
 
@@ -783,6 +805,7 @@ function filt(store){return LEDGER.filter(x=>store==='all'||x.store===store);}
 function sum(rows,type){return rows.filter(x=>x.type===type).reduce((a,x)=>a+x.amount,0);}
 function go(v){document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('active',a.dataset.v===v));
   document.querySelectorAll('.view').forEach(s=>s.classList.remove('on'));document.getElementById('v-'+v).classList.add('on');
+  document.body.classList.toggle('inv-on',v==='inventory');   // shows the mobile floating Scan button
   mSync(v);window.scrollTo(0,0);}
 document.getElementById('nav').addEventListener('click',e=>{const a=e.target.closest('a');if(!a||!a.dataset.v)return;go(a.dataset.v);if(a.dataset.v==='ai')setTimeout(()=>document.getElementById('chatInput')?.focus(),50);});
 let tt;function toast(m){const t=document.getElementById('toast');t.className='toast show';t.textContent='✅ '+m;clearTimeout(tt);tt=setTimeout(()=>t.className='toast',2600);}
@@ -2134,6 +2157,11 @@ function bNavigate(p){
 function bSearch(p){
   const d=p._raw.toLowerCase();
   const hits=[];
+  // exact-barcode search → open the matching product straight away
+  const bcMatch=(d.match(/\b(\d{6,14})\b/)||[])[1];
+  if(bcMatch&&typeof INV!=='undefined'&&INV.products){const pr=INV.products.find(x=>x.status!=='deleted'&&String(x.barcode)===bcMatch);
+    if(pr){setTimeout(()=>{go('inventory');invOpenProduct(pr.sku);},400);
+      return {text:`Barcode **${bcMatch}** → **${pr.name}** (${pr.sku}). Opening it…`,actions:[{label:'Open Inventory',act:'nav',val:'inventory'}]};}}
   (REP.products||[]).forEach(x=>{if(d.includes(x.name.toLowerCase().split(' ')[0]))hits.push(['Product',x.name,`${x.stock} in stock · ${money(x.rev)} revenue`]);});
   VENDORS.forEach(v=>{if(d.includes(v.toLowerCase().split(' ')[0]))hits.push(['Supplier',v,`${scope(LEDGER).filter(x=>x.vendor===v).length} purchases`]);});
   EMPLOYEES.forEach(e=>{if(d.includes(e.name.toLowerCase().split(' ')[0]))hits.push(['Employee',e.name,`${e.store} · ${money(e.gross)} gross`]);});
@@ -2353,14 +2381,14 @@ function addAcct(){const v=document.getElementById('newAcct').value.trim();if(!v
    app with no server — real enforcement needs the backend (see deploy notes). */
 
 // ---- PermissionGate: 7 roles × 20 granular permissions (spec §3) ----
-const ALL_PERMS=['view','create','edit','delete','approve','void','refund','print','export','view_cost','edit_cost','view_profit','view_payroll','manage_users','manage_permissions','manage_branches','transfer_stock','adjust_stock','close_shift','view_all_branches'];
+const ALL_PERMS=['view','create','edit','delete','approve','void','refund','print','export','view_cost','edit_cost','view_profit','view_payroll','manage_users','manage_permissions','manage_branches','transfer_stock','adjust_stock','close_shift','view_all_branches','scan_barcode','print_labels','continuous_receiving'];
 const PERMS={
   owner: ALL_PERMS.slice(),                                    // everything
-  admin: ['view','create','edit','delete','approve','void','refund','print','export','view_cost','view_profit','view_payroll','manage_branches','transfer_stock','adjust_stock','close_shift','view_all_branches'],
-  branch_manager: ['view','create','edit','approve','void','print','export','view_cost','transfer_stock','adjust_stock','close_shift'],
-  manager: ['view','create','edit','approve','void','print','export','view_cost','transfer_stock','adjust_stock','close_shift'], // legacy alias of branch_manager
-  cashier: ['view','create','refund','print','close_shift'],
-  inventory_manager: ['view','create','edit','print','export','transfer_stock','adjust_stock','view_cost'],
+  admin: ['view','create','edit','delete','approve','void','refund','print','export','view_cost','view_profit','view_payroll','manage_branches','transfer_stock','adjust_stock','close_shift','view_all_branches','scan_barcode','print_labels','continuous_receiving'],
+  branch_manager: ['view','create','edit','approve','void','print','export','view_cost','transfer_stock','adjust_stock','close_shift','scan_barcode','print_labels','continuous_receiving'],
+  manager: ['view','create','edit','approve','void','print','export','view_cost','transfer_stock','adjust_stock','close_shift','scan_barcode','print_labels','continuous_receiving'], // legacy alias of branch_manager
+  cashier: ['view','create','refund','print','close_shift','scan_barcode'],
+  inventory_manager: ['view','create','edit','print','export','transfer_stock','adjust_stock','view_cost','scan_barcode','print_labels','continuous_receiving'],
   accountant: ['view','create','edit','void','refund','print','export','view_cost','view_profit','view_payroll','view_all_branches'],
   employee: ['view','print']
 };
@@ -2692,15 +2720,19 @@ function renderInventory(){
   if(INV.tab==='products'){const t=document.getElementById('invProdTbl');if(t)rowifyInv(t);}
   invMountHeaderBtn();
 }
-// put a clearly visible "+ Add Product" button in the page header, beside Print / PDF
+// put clearly visible "+ Add Product" and "Scan / Enter Barcode" buttons in the header, beside Print / PDF
 function invMountHeaderBtn(){
   const top=document.querySelector('#v-inventory .top');if(!top)return;
   const holder=top.querySelector('.ptools')?top.querySelector('.ptools').parentElement:top;
-  if(!can('edit')){const ex=document.getElementById('invAddHeaderBtn');if(ex)ex.remove();return;}
-  if(document.getElementById('invAddHeaderBtn'))return;
-  const b=document.createElement('button');b.id='invAddHeaderBtn';b.className='ptool';b.style.cssText='background:linear-gradient(135deg,var(--brand),var(--brand2));color:#1a1000;border:none;font-weight:700';
-  b.textContent='+ Add Product';b.onclick=()=>{INV.tab='products';renderInventory();invProductForm();};
-  holder.insertBefore(b,holder.firstChild);
+  if(can('scan_barcode')&&!document.getElementById('invScanHeaderBtn')){
+    const s=document.createElement('button');s.id='invScanHeaderBtn';s.className='ptool';s.style.cssText='font-weight:700';
+    s.innerHTML='▤ Scan / Enter Barcode';s.onclick=()=>invScanForm();holder.insertBefore(s,holder.firstChild);}
+  if(!can('scan_barcode')){const ex=document.getElementById('invScanHeaderBtn');if(ex)ex.remove();}
+  if(!can('edit')){const ex=document.getElementById('invAddHeaderBtn');if(ex)ex.remove();}
+  else if(!document.getElementById('invAddHeaderBtn')){
+    const b=document.createElement('button');b.id='invAddHeaderBtn';b.className='ptool';b.style.cssText='background:linear-gradient(135deg,var(--brand),var(--brand2));color:#1a1000;border:none;font-weight:700';
+    b.textContent='+ Add Product';b.onclick=()=>{INV.tab='products';renderInventory();invProductForm();};
+    holder.insertBefore(b,holder.firstChild);}
 }
 function invGo(tab){INV.tab=tab;INV.page=1;renderInventory();}
 function invMoney(n){return can('view_cost')?money(n):'••••';}
@@ -2737,6 +2769,8 @@ function invProductsHTML(){
     <select id="invFStatus" onchange="INV.fstatus=this.value;INV.page=1;invRenderProdTable()">${[['all','Any status'],['ok','In stock'],['low','Low stock'],['out','Out of stock'],['inactive','Inactive']].map(s=>`<option value="${s[0]}" ${INV.fstatus===s[0]?'selected':''}>${s[1]}</option>`).join('')}</select>
     <select id="invSort" onchange="INV.sortBy=this.value;INV.page=1;invRenderProdTable()">${sortOpts.map(s=>`<option value="${s[0]}" ${INV.sortBy===s[0]?'selected':''}>Sort: ${s[1]}</option>`).join('')}</select>
     <button class="ptool" title="Toggle direction" onclick="INV.sortDir*=-1;invRenderProdTable()">${INV.sortDir>0?'↑':'↓'}</button>
+    ${can('scan_barcode')?`<button class="ptool" onclick="invScanForm()">▤ Scan</button>`:''}
+    ${can('continuous_receiving')?`<button class="ptool" onclick="invScanForm({continuous:true})">🔁 Receive</button>`:''}
     ${can('edit')?`<button class="btn p" onclick="invProductForm()">+ Add Product</button>`:''}
     ${can('export')?`<button class="ptool" onclick="invExportProducts(this)">⬇ Export CSV</button>`:''}
   </div><div id="invProdWrap">${invProdTable()}</div>`;
@@ -2832,6 +2866,7 @@ function invOpenProduct(sku){const p=invProductBySku(sku);if(!p)return;
   if(can('adjust_stock'))acts.push(`<button onclick="invAddStockForm('${p.sku}')">＋ Add stock</button>`);
   if(can('adjust_stock'))acts.push(`<button onclick="invAdjustForm('${p.sku}')">± Adjust</button>`);
   if(can('transfer_stock'))acts.push(`<button onclick="drwClose();invTransferForm()">⇄ Transfer</button>`);
+  if(can('print_labels'))acts.push(`<button onclick="invLabelForm('${p.sku}')">▤ Barcode label</button>`);
   if(can('print'))acts.push(`<button onclick="invPrintProduct('${p.sku}')">🖨️ Print</button>`);
   if(can('edit'))acts.push(`<button onclick="invDuplicate('${p.sku}')">⧉ Duplicate</button>`);
   if(can('edit')&&p.status==='active')acts.push(`<button onclick="invDeactivate('${p.sku}')">⏸ Deactivate</button>`);
@@ -2840,8 +2875,9 @@ function invOpenProduct(sku){const p=invProductBySku(sku);if(!p)return;
   document.getElementById('drwActs').innerHTML=acts.join('');
   document.getElementById('drw').classList.add('on');scrim(true);audit('view','product',p.sku);
 }
-function invProductForm(sku){
+function invProductForm(sku,opts){opts=opts||{};
   const p=sku?invProductBySku(sku):null;
+  const prefillBc=opts.barcode||'';
   if(p&&!can('edit'))return toast('No permission to edit products');
   if(!p&&!can('edit'))return toast('No permission to add products');
   const v=(f,d)=>p?escAttr(p[f]):(d||'');
@@ -2853,7 +2889,7 @@ function invProductForm(sku){
   <div class="inv-form">
     <label class="full">Product name *<input id="pfName" value="${v('name')}" required></label>
     <label>SKU *<input id="pfSku" value="${v('sku','SK-'+(1000+INV.products.length))}"></label>
-    <label>Barcode / UPC<input id="pfBarcode" inputmode="numeric" value="${v('barcode')}"></label>
+    <label>Barcode / UPC<input id="pfBarcode" inputmode="numeric" value="${p?v('barcode'):escAttr(prefillBc)}"></label>
     <label>Category *<input id="pfCat" value="${v('cat','Accessories')}"></label>
     <label>Brand<input id="pfBrand" value="${v('brand')}"></label>
     <label>Supplier<select id="pfSupplier">${VENDORS.map(x=>`<option ${p&&p.supplier===x?'selected':''}>${x}</option>`).join('')}</select></label>
@@ -2909,7 +2945,12 @@ function invSaveProduct(id){
     const np={id:++INV.seq,cost:can('view_cost')?cost:0,stock,image:_pfImg||'',created:daysAgo(0),sold:0,rev:0,...fields};
     INV.products.push(np);
     if(q>0)invMove(np,selBranch,'receive',q,'Opening stock');
-    audit('create','product',np.sku,'new product · opening '+q+' @ '+selBranch+' [source: WEB]');_pfImg='';drwClose();refreshAll();toast('Product added: '+name);
+    audit('create','product',np.sku,'new product · opening '+q+' @ '+selBranch+' [source: WEB]');_pfImg='';
+    // if this was a "create unknown" during continuous receiving, resolve the line and return to the list
+    if(typeof BC!=='undefined'&&BC.pendingLine!=null&&BC.session){const i=BC.pendingLine;BC.pendingLine=null;
+      const l=BC.session.lines[i];if(l){l.sku=np.sku;l.name=np.name;l.cost=np.cost;l.barcode=np.barcode;l.unknown=false;}
+      drwClose();refreshAll();toast('Product added — back to receiving');invScanForm({continuous:true});return;}
+    drwClose();refreshAll();toast('Product added: '+name);
   }
 }
 function invProductBySku0(id){return INV.products.find(x=>x.id===id)||{cost:0};}
@@ -3014,7 +3055,9 @@ function invAddStockForm(sku){const p=invProductBySku(sku);if(!p)return;
     ${can('view_cost')?`<label>Unit purchase cost<input id="asCost" type="number" inputmode="decimal" step="0.01" value="${p.cost}"></label>`:''}
     <label>Supplier<select id="asSupplier">${VENDORS.map(v=>`<option ${v===p.supplier?'selected':''}>${v}</option>`).join('')}</select></label>
     <label>Reference / invoice #<input id="asRef" placeholder="Optional"></label>
-    <label>Date<input id="asDate" type="date" value="${daysAgo(0)}"></label>
+    <label>Received date<input id="asDate" type="date" value="${daysAgo(0)}"></label>
+    <label>Expiry date<input id="asExpiry" type="date" placeholder="If applicable"></label>
+    <label>Batch / lot #<input id="asBatch" placeholder="If applicable"></label>
     <label class="full">Notes<input id="asNote"></label></div>
     <div class="drw-sec">On hand at <span id="asNowB">${branch}</span>: <b id="asNow">${p.stock[branch]||0}</b> → <b id="asAfter" style="color:var(--ok)">${p.stock[branch]||0}</b> ${p.uom}</div>`;
   const upd=()=>{const b=document.getElementById('asBranch').value;const cur=p.stock[b]||0;const q=+document.getElementById('asQty').value||0;
@@ -3028,13 +3071,15 @@ function invDoAddStock(id){const p=INV.products.find(x=>x.id===id);if(!p)return;
   const branch=document.getElementById('asBranch').value,qty=+document.getElementById('asQty').value;
   const cost=can('view_cost')&&document.getElementById('asCost')?+document.getElementById('asCost').value:p.cost;
   const supplier=document.getElementById('asSupplier').value,ref=document.getElementById('asRef').value.trim(),note=document.getElementById('asNote').value.trim();
+  const expiry=(document.getElementById('asExpiry')||{}).value||'', batch=((document.getElementById('asBatch')||{}).value||'').trim();
   const err=m=>{const e=document.getElementById('asErr');e.style.display='block';e.textContent='⚠️ '+m;if(btn)btn.disabled=false;return;};
   if(!(qty>0))return err('Quantity received must be greater than 0.');
   if(can('view_cost')&&cost<0)return err('Cost cannot be negative.');
   // update latest purchase cost where appropriate, then record the receipt movement
   if(can('view_cost')&&cost>0&&cost!==p.cost){audit('edit','product',p.sku,`cost updated ${p.cost}→${cost} on receipt`);p.cost=cost;}
   if(supplier&&supplier!==p.supplier)p.supplier=supplier;
-  const res=invMove(p,branch,'receive',qty,`Received${ref?' ref '+ref:''}${supplier?' from '+supplier:''}${note?' · '+note:''}`,ref||undefined);
+  const meta=[ref?'ref '+ref:'',supplier?'from '+supplier:'',batch?'batch '+batch:'',expiry?'exp '+expiry:'',note].filter(Boolean).join(' · ');
+  const res=invMove(p,branch,'receive',qty,'Received'+(meta?' '+meta:''),ref||undefined);
   if(res.err)return err(res.err);
   drwClose();refreshAll();toast(`Received ${qty} ${p.uom} — ${p.name} now ${res.after}`);
 }
@@ -3123,12 +3168,279 @@ function invRowMenu(e,sku){const p=invProductBySku(sku);if(!p)return;
     {k:'adj',ic:'±',label:'Adjust stock',disabled:!can('adjust_stock'),run:()=>invAdjustForm(sku)},
     {k:'tr',ic:'⇄',label:'Transfer',disabled:!can('transfer_stock'),run:()=>invTransferForm()},
     {k:'dup',ic:'⧉',label:'Duplicate',disabled:!can('edit'),run:()=>invDuplicate(sku)},
+    {k:'label',ic:'▤',label:'Barcode label',disabled:!can('print_labels'),run:()=>invLabelForm(sku)},
     {k:'print',ic:'🖨️',label:'Print',disabled:!can('print'),run:()=>invPrintProduct(sku)},
     'sep',
     p.status==='active'?{k:'deact',ic:'⏸',label:'Deactivate',disabled:!can('edit'),run:()=>invDeactivate(sku)}
       :{k:'react',ic:'▶',label:'Reactivate',disabled:!can('edit'),run:()=>invReactivate(sku)},
     {k:'del',ic:'🗑',label:'Delete',danger:true,disabled:!can('delete'),run:()=>invDelete(sku)}
   ]);
+}
+
+/* ==========================================================================
+   BARCODE — scan / manual / hardware entry, receiving, and label printing.
+   Integrated with products, movements, permissions and audit. Camera uses the
+   native BarcodeDetector when available, else the ZXing fallback; manual entry
+   always works (and USB/Bluetooth scanners type into it + press Enter).
+   ==========================================================================*/
+const BC_FORMATS=['upc_a','upc_e','ean_8','ean_13','code_128','code_39','itf','qr_code'];
+const BC={stream:null,detector:null,zxing:null,raf:null,last:'',lastAt:0,cont:false,session:null};
+function bcClean(s){return String(s||'').replace(/[\x00-\x1F\x7F]/g,'').trim();}   // strip control/hidden chars from HW scanners
+function bcValid(s){return /^[0-9A-Za-z\-\.\/ ]{4,64}$/.test(s);}
+function bcFeedback(){try{navigator.vibrate&&navigator.vibrate(60);}catch(e){}
+  try{const a=new (window.AudioContext||window.webkitAudioContext)();const o=a.createOscillator();const g=a.createGain();o.connect(g);g.connect(a.destination);o.frequency.value=880;g.gain.value=.05;o.start();o.stop(a.currentTime+.12);}catch(e){}}
+
+// ---- the Scan / Enter Barcode modal ----
+function invScanForm(opts){opts=opts||{};
+  if(!can('scan_barcode'))return toast('Your role cannot scan barcodes');
+  BC.cont=!!opts.continuous;
+  const hasDetector=('BarcodeDetector' in window), hasZxing=!!(window.ZXing||window.ZXingBrowser);
+  const camOk=hasDetector||hasZxing;
+  document.getElementById('drwTitle').textContent=BC.cont?'Continuous receiving':'Scan / Enter Barcode';
+  document.getElementById('drwBody').innerHTML=`
+    <div id="scanErr" style="color:var(--bad);font-size:12.5px;margin-bottom:8px;display:none"></div>
+    ${BC.cont?bcSessionHeadHTML():''}
+    <div id="scanCam"></div>
+    <div class="inv-form" style="margin-top:4px"><label class="full">Barcode / UPC ${BC.cont?'(scan or type, Enter to add)':''}
+      <div style="display:flex;gap:8px"><input id="scanInput" inputmode="numeric" autocomplete="off" placeholder="Scan or type a barcode…" style="flex:1"
+        onkeydown="if(event.key==='Enter'){event.preventDefault();invBarcodeSubmit();}">
+        <button class="ptool" title="Clear" onclick="var i=document.getElementById('scanInput');i.value='';i.focus();">✕</button></div></label></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+      <button class="btn p" onclick="invBarcodeSubmit()">🔎 ${BC.cont?'Add':'Look up'}</button>
+      ${camOk?`<button class="ptool" id="scanCamBtn" onclick="invScanStart()">📷 Use camera</button>`:''}
+      ${!BC.cont&&can('continuous_receiving')?`<button class="ptool" onclick="invScanForm({continuous:true})">🔁 Continuous mode</button>`:''}
+    </div>
+    ${BC.cont?`<div id="bcLines"></div>`:''}
+    <div class="drw-sec">${camOk?'Camera decodes UPC-A/E, EAN-8/13, Code 128/39, ITF and QR.':'📷 Live camera scanning isn\'t supported in this browser — manual entry and USB/Bluetooth scanners work everywhere.'} A known barcode opens quick Add Stock; an unknown one starts a new product with it pre-filled.</div>`;
+  document.getElementById('drwActs').innerHTML=BC.cont
+    ? `<button class="pri" id="bcSaveBtn" onclick="invReceiveSave()">💾 Save receiving</button><button onclick="invScanClose()">Close</button>`
+    : `<button onclick="invScanClose()">Close</button>`;
+  document.getElementById('drw').classList.add('on');scrim(true);
+  if(BC.cont){BC.session=BC.session||{branch:(BRANCH==='all'?allowedBranches()[0]:BRANCH),supplier:VENDORS[0],invoice:'',lines:[]};bcRenderLines();}
+  setTimeout(()=>{const i=document.getElementById('scanInput');if(i)i.focus();},80);
+}
+function invScanErr(m){const e=document.getElementById('scanErr');if(e){e.style.display='block';e.textContent='⚠️ '+m;}}
+function invScanClose(){invScanStop();drwClose();}
+function invBarcodeSubmit(){const i=document.getElementById('scanInput');if(!i)return;const code=bcClean(i.value);
+  if(!code)return invScanErr('Enter or scan a barcode first.');
+  if(!bcValid(code))return invScanErr('That doesn\'t look like a valid barcode.');
+  invBarcodeLookup(code);
+  i.value='';i.focus();   // keep the field focused for rapid repeated scanning
+}
+// ---- camera ----
+function invScanStart(){
+  const cam=document.getElementById('scanCam');if(!cam)return;
+  cam.innerHTML=`<div class="scan-wrap"><div class="scan-cam-tools"><button id="scanTorch" title="Flashlight" onclick="invScanTorch()">🔦</button><button title="Switch camera" onclick="invScanSwitch()">🔄</button></div><video id="scanVid" autoplay muted playsinline></video><div class="scan-frame"></div></div>`;
+  invScanOpenCamera(BC.facing||'environment');
+}
+function invScanOpenCamera(facing){BC.facing=facing;
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)return invScanErr('Camera API unavailable. Use manual entry.');
+  invScanStop(true);
+  navigator.mediaDevices.getUserMedia({video:{facingMode:facing},audio:false}).then(stream=>{
+    BC.stream=stream;const v=document.getElementById('scanVid');if(!v){stream.getTracks().forEach(t=>t.stop());return;}
+    v.srcObject=stream;v.onloadedmetadata=()=>{v.play&&v.play();invScanLoop(v);};
+  }).catch(err=>{
+    const n=err&&err.name;
+    invScanErr(n==='NotAllowedError'?'Camera permission was denied. Allow camera access, then tap “Use camera” again — or use manual entry.'
+      :n==='NotFoundError'?'No camera found on this device. Use manual entry or a USB/Bluetooth scanner.'
+      :'Camera error: '+(err&&err.message||'unknown')+'. Use manual entry.');
+    const b=document.getElementById('scanCamBtn');if(b){b.textContent='🔁 Retry camera';}
+  });
+}
+async function invScanLoop(v){
+  try{
+    if('BarcodeDetector' in window){
+      if(!BC.detector){try{BC.detector=new window.BarcodeDetector({formats:BC_FORMATS});}catch(e){BC.detector=new window.BarcodeDetector();}}
+      const codes=await BC.detector.detect(v);
+      if(codes&&codes.length){return invScanHit(codes[0].rawValue);}
+    } else if(window.ZXing||window.ZXingBrowser){
+      const Z=window.ZXingBrowser||window.ZXing;
+      if(!BC.zxing){try{BC.zxing=new (Z.BrowserMultiFormatReader||Z.BrowserBarcodeReader)();}catch(e){}}
+      if(BC.zxing&&BC.zxing.decodeOnceFromVideoElement){
+        try{const res=await BC.zxing.decodeOnceFromVideoElement(v);if(res&&res.text)return invScanHit(res.text);}catch(e){}
+      }
+    }
+  }catch(e){}
+  if(BC.stream)BC.raf=requestAnimationFrame(()=>invScanLoop(v));
+}
+function invScanHit(raw){
+  const code=bcClean(raw);const now=Date.now();
+  if(code===BC.last&&now-BC.lastAt<1500)return;   // ignore repeated reads of the same code
+  BC.last=code;BC.lastAt=now;bcFeedback();
+  if(!BC.cont)invScanStop();                        // stop immediately after a successful single scan
+  invBarcodeLookup(code);
+}
+function invScanSwitch(){invScanOpenCamera(BC.facing==='environment'?'user':'environment');}
+function invScanTorch(){try{const tr=BC.stream&&BC.stream.getVideoTracks()[0];if(!tr)return;const caps=tr.getCapabilities&&tr.getCapabilities();
+  if(caps&&caps.torch){BC.torch=!BC.torch;tr.applyConstraints({advanced:[{torch:BC.torch}]});}else toast('Flashlight not supported on this camera');}catch(e){toast('Flashlight unavailable');}}
+function invScanStop(keepUI){if(BC.raf)cancelAnimationFrame(BC.raf);BC.raf=null;
+  try{if(BC.zxing&&BC.zxing.reset)BC.zxing.reset();}catch(e){}
+  if(BC.stream){BC.stream.getTracks().forEach(t=>t.stop());BC.stream=null;}
+  if(!keepUI){const c=document.getElementById('scanCam');if(c)c.innerHTML='';}}
+
+// ---- the lookup workflow ----
+function invBarcodeLookup(code){
+  code=bcClean(code);
+  const p=INV.products.find(x=>x.status!=='deleted'&&String(x.barcode)===code);
+  if(BC.cont){                     // continuous receiving → add to the list
+    if(p){bcAddLine(p);toast('Added '+p.name);}
+    else invScanErr('Unknown barcode '+code+'. Tap “Create product” to add it without losing your list.'),bcUnknownLine(code);
+    return;
+  }
+  if(p){
+    audit('scan','product',p.sku,'barcode '+code+' matched [source: WEB]');
+    invScanStop();invBarcodeCard(p);
+  }else{
+    if(!can('edit')){invScanErr('No product has barcode '+code+', and your role cannot create products.');return;}
+    invScanStop();
+    dlgAsk('No product found','No product found for barcode '+code+'. Create a new product with this barcode?',{okLabel:'Create New Product'},()=>{
+      invProductForm(null,{barcode:code});const n=document.getElementById('pfName');if(n)n.focus();
+    });
+  }
+}
+// CASE 1 — product exists: show a card + actions
+function invBarcodeCard(p){
+  const branches=allowedBranches();
+  const stock=branches.map(b=>`<div class="k">Stock · ${b}</div><div class="v">${p.stock[b]||0} ${p.uom}</div>`).join('');
+  document.getElementById('drwTitle').innerHTML=`${p.name} <span style="color:var(--muted);font-size:12px">${p.barcode}</span>`;
+  document.getElementById('drwBody').innerHTML=`${p.image?`<div style="text-align:center;margin-bottom:10px"><img src="${p.image}" style="max-height:110px;border-radius:12px"></div>`:''}
+    <div class="drw-kv">${[['Name',p.name],['Brand',p.brand],['Category',p.cat],['Barcode',p.barcode],['SKU',p.sku],['Cost',invMoney(p.cost)],['Price',money(p.price)],['Min level',p.min+' '+p.uom],['Branch',branchLabel()]].map(([k,v])=>`<div class="k">${k}</div><div class="v">${v}</div>`).join('')}${stock}</div>
+    <div class="drw-sec">Total on hand: ${branches.reduce((a,b)=>a+(p.stock[b]||0),0)} ${p.uom}</div>`;
+  const acts=[];
+  if(can('adjust_stock'))acts.push(`<button class="pri" onclick="invAddStockForm('${p.sku}')">＋ Add Stock</button>`);
+  if(can('adjust_stock'))acts.push(`<button onclick="invAdjustForm('${p.sku}')">± Adjust</button>`);
+  if(can('edit'))acts.push(`<button onclick="invProductForm('${p.sku}')">✎ Edit</button>`);
+  acts.push(`<button onclick="invOpenProduct('${p.sku}')">👁 View</button>`);
+  if(can('transfer_stock'))acts.push(`<button onclick="drwClose();invTransferForm()">⇄ Transfer</button>`);
+  acts.push(`<button onclick="invScanForm()">▤ Scan next</button>`);
+  document.getElementById('drwActs').innerHTML=acts.join('');
+}
+
+// ---- continuous receiving ----
+function bcSessionHeadHTML(){const s=BC.session||{};return `<div class="inv-form" style="margin-bottom:10px">
+  <label>Branch *<select id="bcBranch" onchange="BC.session.branch=this.value">${allowedBranches().map(b=>`<option ${b===(s.branch)?'selected':''}>${b}</option>`).join('')}</select></label>
+  <label>Supplier<select id="bcSupplier" onchange="BC.session.supplier=this.value">${VENDORS.map(v=>`<option ${v===s.supplier?'selected':''}>${v}</option>`).join('')}</select></label>
+  <label class="full">Invoice / reference #<input id="bcInvoice" value="${escAttr(s.invoice||'')}" oninput="BC.session.invoice=this.value"></label></div>`;}
+function bcAddLine(p){const s=BC.session;const ex=s.lines.find(l=>l.sku===p.sku);
+  if(ex)ex.qty+=1;else s.lines.push({sku:p.sku,name:p.name,qty:1,cost:p.cost});
+  bcFeedback();bcRenderLines();}
+function bcUnknownLine(code){const s=BC.session;
+  s.lines.push({sku:null,name:'Unknown ('+code+')',barcode:code,qty:1,cost:0,unknown:true});bcRenderLines();}
+function bcRenderLines(){const el=document.getElementById('bcLines');if(!el)return;const s=BC.session;
+  const rows=s.lines.map((l,i)=>`<div class="bc-line"><div>${l.unknown?'⚠️ ':''}<b>${l.name}</b>${l.unknown?` <button class="ptool" style="padding:3px 8px" onclick="bcCreateUnknown(${i})">Create product</button>`:''}</div>
+    <input type="number" min="1" value="${l.qty}" onchange="BC.session.lines[${i}].qty=Math.max(1,+this.value||1);bcRenderLines()">
+    <div style="text-align:end">${invMoney(l.qty*l.cost)}</div>
+    <button class="rowact" title="Remove" onclick="BC.session.lines.splice(${i},1);bcRenderLines()">✕</button></div>`).join('');
+  const totQty=s.lines.reduce((a,l)=>a+l.qty,0), totCost=s.lines.reduce((a,l)=>a+l.qty*l.cost,0);
+  el.innerHTML=(s.lines.length?rows:`<div style="color:var(--muted);padding:12px 0;font-size:13px">Scan items to build the receiving list.</div>`)
+    +`<div class="bc-total"><span>${totQty} item(s)</span><span>${invMoney(totCost)}</span></div>`;
+}
+function bcCreateUnknown(i){const l=BC.session.lines[i];if(!l||!can('edit'))return toast('No permission to create products');
+  // quick create WITHOUT losing the list: remember the line, open the form pre-filled
+  BC.pendingLine=i;
+  invProductForm(null,{barcode:l.barcode});
+  const n=document.getElementById('pfName');if(n)n.focus();
+}
+let _bcReceiveGuard=false;
+function invReceiveSave(){const s=BC.session;const btn=document.getElementById('bcSaveBtn');
+  if(_bcReceiveGuard)return;                 // idempotency: block double-submit
+  const err=m=>{invScanErr(m);};
+  if(!s||!s.lines.length)return err('Nothing to receive — scan some items first.');
+  if(s.lines.some(l=>l.unknown))return err('Resolve the unknown item(s) first — tap “Create product”.');
+  if(!allowedBranches().includes(s.branch))return err('Pick a valid branch.');
+  _bcReceiveGuard=true;if(btn){btn.disabled=true;btn.textContent='Saving…';}
+  const ref='RCV-'+(1000+(++INV.tseq));
+  // one receiving document, one movement per line (all-or-nothing: validated up front)
+  s.lines.forEach(l=>{const p=invProductBySku(l.sku);if(!p)return;
+    if(l.cost&&can('view_cost')&&l.cost!==p.cost){p.cost=l.cost;}
+    invMove(p,s.branch,'receive',l.qty,`Receiving ${ref}${s.invoice?' inv '+s.invoice:''} from ${s.supplier}`,ref);});
+  const doc={ref,date:nowStamp(),branch:s.branch,supplier:s.supplier,invoice:s.invoice,user:ROLE.kind,
+    lines:s.lines.map(l=>({name:l.name,sku:l.sku,qty:l.qty,cost:l.cost}))};
+  INV.receipts=INV.receipts||[];INV.receipts.unshift(doc);
+  audit('receive','receiving',ref,`${s.lines.length} lines, ${s.lines.reduce((a,l)=>a+l.qty,0)} units → ${s.branch} [source: WEB]`);
+  BC.session=null;_bcReceiveGuard=false;refreshAll();drwClose();
+  toast('Received '+doc.lines.length+' product(s) — '+ref);
+  if(can('print'))setTimeout(()=>bcPrintReceiving(doc),300);
+}
+function bcPrintReceiving(doc){
+  const w=window.open('','_blank','width=760,height=900');if(!w)return;
+  const rows=doc.lines.map(l=>`<tr><td>${l.name}</td><td>${l.sku||'—'}</td><td style="text-align:end">${l.qty}</td><td style="text-align:end">${can('view_cost')?money2(l.cost):'••'}</td><td style="text-align:end">${can('view_cost')?money2(l.qty*l.cost):'••'}</td></tr>`).join('');
+  const tot=doc.lines.reduce((a,l)=>a+l.qty*l.cost,0);
+  w.document.write(`<!doctype html><html><head><title>Receiving ${doc.ref}</title><style>@page{size:A4;margin:16mm}body{font-family:system-ui,Arial;color:#111}h1{font-size:19px;margin:0}.s{color:#666;font-size:12px;margin:2px 0 16px}table{width:100%;border-collapse:collapse;font-size:12.5px}th{background:#283042;color:#fff;text-align:left;padding:7px}td{padding:6px 7px;border-bottom:1px solid #ddd}</style></head><body><h1>🔥 SmokeStack — Goods Received</h1><div class="s">${doc.ref} · ${doc.branch} · Supplier: ${doc.supplier} · Invoice: ${doc.invoice||'—'} · ${doc.date} · by ${doc.user}</div><table><thead><tr><th>Product</th><th>SKU</th><th style="text-align:end">Qty</th><th style="text-align:end">Unit</th><th style="text-align:end">Total</th></tr></thead><tbody>${rows}</tbody></table><h3 style="text-align:right">Total: ${can('view_cost')?money(tot):'••••'}</h3><script>window.onload=function(){window.print();}<\/script></body></html>`);
+  w.document.close();audit('print','receiving',doc.ref);
+}
+
+// ---- barcode labels ----
+function invLabelForm(sku){const p=invProductBySku(sku);if(!p)return;
+  if(!can('print_labels'))return toast('Your role cannot print labels');
+  document.getElementById('drwTitle').textContent='Barcode label — '+p.name;
+  document.getElementById('drwBody').innerHTML=`
+    <div class="inv-form">
+    <label>Label size<select id="lblSize"><option value="50x30">50 × 30 mm</option><option value="40x25">40 × 25 mm</option><option value="30x20">30 × 20 mm</option><option value="2x1in">2 × 1 inch</option></select></label>
+    <label>Number of labels<input id="lblCount" type="number" inputmode="numeric" min="1" value="12"></label>
+    <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="lblName" checked> Show name</label>
+    <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="lblPrice" checked> Show price</label>
+    <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="lblSku" checked> Show SKU</label>
+    </div>
+    <div class="lbl-preview" id="lblPrev"></div>
+    <div class="drw-sec">Barcodes are generated from the product's barcode number (real, machine-readable — not a screenshot).</div>`;
+  document.getElementById('drwActs').innerHTML=`<button class="pri" onclick="invPrintLabels('${p.sku}')">🖨️ Print labels</button><button onclick="invLabelPDF('${p.sku}')">⬇ PDF</button><button onclick="invOpenProduct('${p.sku}')">Cancel</button>`;
+  document.getElementById('drw').classList.add('on');scrim(true);
+  bcRenderPreview(p);
+}
+function bcRenderPreview(p){const el=document.getElementById('lblPrev');if(!el)return;
+  el.innerHTML=`<div class="lbl-card" id="lblOne"></div>`;
+  bcDrawLabel(document.getElementById('lblOne'),p,{name:true,price:true,sku:true});
+}
+function bcSymbology(code){return /^\d{13}$/.test(code)?'EAN13':/^\d{12}$/.test(code)?'UPC':/^\d{8}$/.test(code)?'EAN8':'CODE128';}
+function bcDrawLabel(host,p,o){
+  const store='SmokeStack';const svgNS='http://www.w3.org/2000/svg';
+  const svg=document.createElementNS(svgNS,'svg');host.innerHTML='';
+  if(o.name)host.insertAdjacentHTML('beforeend',`<div style="font-size:11px;font-weight:700">${p.name}</div>`);
+  if(o.price)host.insertAdjacentHTML('beforeend',`<div style="font-size:13px;font-weight:800">${money2(p.price)}</div>`);
+  host.appendChild(svg);
+  try{if(window.JsBarcode&&p.barcode){JsBarcode(svg,String(p.barcode),{format:bcSymbology(String(p.barcode)),width:1.6,height:38,fontSize:11,margin:2});}
+    else host.insertAdjacentHTML('beforeend',`<div style="font-size:11px">${p.barcode||'no barcode'}</div>`);}catch(e){host.insertAdjacentHTML('beforeend',`<div style="font-size:11px">${p.barcode}</div>`);}
+  if(o.sku)host.insertAdjacentHTML('beforeend',`<div style="font-size:9px;color:#555">${store} · ${p.sku}</div>`);
+}
+const LBL_MM={'50x30':[50,30],'40x25':[40,25],'30x20':[30,20],'2x1in':[50.8,25.4]};
+function invPrintLabels(sku){const p=invProductBySku(sku);if(!p)return;
+  const n=Math.max(1,+document.getElementById('lblCount').value||1), size=document.getElementById('lblSize').value;
+  const o={name:document.getElementById('lblName').checked,price:document.getElementById('lblPrice').checked,sku:document.getElementById('lblSku').checked};
+  const [w,h]=LBL_MM[size];
+  // build one SVG barcode string then repeat it n times as print-ready vector labels
+  const holder=document.createElement('div');bcDrawLabel(holder,p,o);const inner=holder.innerHTML;
+  const win=window.open('','_blank','width=700,height=800');if(!win)return toast('Allow pop-ups to print labels');
+  const cells=Array.from({length:n}).map(()=>`<div class="lbl">${inner}</div>`).join('');
+  win.document.write(`<!doctype html><html><head><title>Labels — ${p.name}</title><style>@page{margin:6mm}
+    body{font-family:system-ui,Arial;margin:0;display:flex;flex-wrap:wrap;gap:3mm;padding:6mm}
+    .lbl{width:${w}mm;min-height:${h}mm;border:1px dashed #bbb;border-radius:2mm;padding:1.5mm;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;page-break-inside:avoid}
+    .lbl svg{max-width:100%}</style></head><body>${cells}<script>window.onload=function(){window.print();}<\/script></body></html>`);
+  win.document.close();audit('print','label',p.sku,n+' × '+size);toast('Printing '+n+' labels');
+}
+function invLabelPDF(sku){const p=invProductBySku(sku);if(!p)return;
+  const js=window.jspdf&&window.jspdf.jsPDF;if(!js)return invPrintLabels(sku);
+  const n=Math.max(1,+document.getElementById('lblCount').value||1), size=document.getElementById('lblSize').value;
+  const o={name:document.getElementById('lblName').checked,price:document.getElementById('lblPrice').checked,sku:document.getElementById('lblSku').checked};
+  const [w,h]=LBL_MM[size];
+  // render the barcode to a canvas (from the number → machine-readable), then place labels in a grid
+  const canvas=document.createElement('canvas');
+  try{JsBarcode(canvas,String(p.barcode||p.sku),{format:bcSymbology(String(p.barcode||'')),width:2,height:60,fontSize:14,margin:4});}catch(e){}
+  const img=canvas.toDataURL('image/png');
+  const doc=new js({orientation:w>h?'landscape':'portrait',unit:'mm',format:'a4'});
+  const pw=doc.internal.pageSize.getWidth(),ph=doc.internal.pageSize.getHeight();
+  const cols=Math.max(1,Math.floor((pw-10)/(w+3))),gap=3;let x=5,y=8,c=0;
+  for(let i=0;i<n;i++){
+    doc.setDrawColor(210);doc.roundedRect(x,y,w,h,1,1);
+    let ty=y+4;doc.setFontSize(7);
+    if(o.name){doc.text(String(p.name).slice(0,26),x+w/2,ty,{align:'center'});ty+=3;}
+    if(o.price){doc.setFontSize(9);doc.text(money2(p.price),x+w/2,ty,{align:'center'});ty+=1;doc.setFontSize(7);}
+    try{doc.addImage(img,'PNG',x+2,ty,w-4,h-ty+y-4);}catch(e){}
+    if(o.sku){doc.setFontSize(5);doc.text('SmokeStack · '+p.sku,x+w/2,y+h-1.5,{align:'center'});}
+    c++;x+=w+gap;if(c>=cols){c=0;x=5;y+=h+gap;if(y+h>ph-6){doc.addPage();y=8;}}
+  }
+  doc.save(`SmokeStack_Labels_${pdfSafe(p.name)}_${daysAgo(0)}.pdf`);
+  audit('export','label',p.sku,'PDF '+n+' × '+size);toast('Label PDF downloaded');
 }
 
 /* ==========================================================================
