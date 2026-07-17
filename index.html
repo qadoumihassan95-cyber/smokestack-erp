@@ -1094,7 +1094,8 @@ function renderDash(){curStore=BRANCH;const rows=scope(LEDGER);
   document.getElementById('recentTbl').innerHTML=`<thead><tr><th>Date</th><th>Store</th><th>Account</th><th>Type</th><th>Memo</th><th style="text-align:end">Amount</th><th></th></tr></thead><tbody>`+
     rec.map(x=>`<tr data-txid="${x.id}"><td>${x.date.slice(5)}</td><td>${x.store}</td><td>${x.account}</td><td><span class="chip ${TYPECHIP[x.type]}">${x.type}</span></td><td>${x.memo||x.category}${x.voided?'<span class="voided-badge">void</span>':''}</td><td style="text-align:end;color:${x.type==='sale'||x.type==='deposit'?'var(--ok)':'var(--txt)'}"><b>${money(x.amount)}</b></td><td style="text-align:center"><button type="button" class="rowact" data-rowmenu="${x.id}" aria-label="More actions" aria-haspopup="menu" aria-expanded="false">⋯</button></td></tr>`).join('')+`</tbody>`;
   rowify('recentTbl','transaction');
-  document.getElementById('pending').innerHTML=`🔵 <b>${money(cash>4000?cash-1000:0)}</b> cash ready to deposit<br>🟡 Store C hasn't reported today<br>🟢 Payroll due in 3 days<br>🟠 Sales-tax filing in 12 days`;
+  const _pdot=c=>`<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${c};margin-right:10px;vertical-align:middle"></span>`;
+  document.getElementById('pending').innerHTML=`${_pdot('var(--accent)')}<b>${money(cash>4000?cash-1000:0)}</b> cash ready to deposit<br>${_pdot('#E8A33A')}Store C hasn't reported today<br>${_pdot('var(--ok)')}Payroll due in 3 days<br>${_pdot('#EC7A3C')}Sales-tax filing in 12 days`;
   document.getElementById('taxMini').innerHTML=`Taxable sales (MTD): <b>${money(sum(monthRows,'sale'))}</b><br>Tax collected: <b style="color:var(--brand)">${money(taxPayable)}</b><br>Filing status: <b style="color:var(--warn)">Open</b>`;
 }
 
@@ -3831,8 +3832,10 @@ function printView(view,btn){
 // Print + PDF buttons for a page header (permission-gated)
 function pageTools(view){
   const t=[];
-  if(can('print'))t.push(`<button class="ptool" onclick="printView('${view}',this)" aria-label="Print ${view}">🖨️ Print</button>`);
-  if(can('export'))t.push(`<button class="ptool" onclick="downloadPDF('${view}',this)" aria-label="Download PDF ${view}">⬇ PDF</button>`);
+  const _svgPrint='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;vertical-align:-2px;margin-right:6px"><path d="M6 9V3h12v6M6 18H4v-6h16v6h-2M8 14h8v7H8v-7z"/></svg>';
+  const _svgDl='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;vertical-align:-2px;margin-right:6px"><path d="M12 3v12M7 11l5 5 5-5M5 21h14"/></svg>';
+  if(can('print'))t.push(`<button class="ptool" onclick="printView('${view}',this)" aria-label="Print ${view}">${_svgPrint}Print</button>`);
+  if(can('export'))t.push(`<button class="ptool" onclick="downloadPDF('${view}',this)" aria-label="Download PDF ${view}">${_svgDl}PDF</button>`);
   return t.length?`<div class="ptools">${t.join('')}</div>`:'';
 }
 // inject the tools into every page header once (idempotent)
