@@ -25,6 +25,19 @@ class ProductIn(BaseModel):
     uom: str = "unit"
     shelf: Optional[str] = None
 
+class ProductUpdate(BaseModel):
+    """Partial update — every field optional so a PATCH can send just what changed."""
+    name: Optional[str] = None
+    barcode: Optional[str] = None
+    category: Optional[str] = None
+    brand: Optional[str] = None
+    supplier: Optional[str] = None
+    cost: Optional[float] = None
+    price: Optional[float] = None
+    min_level: Optional[int] = None
+    uom: Optional[str] = None
+    shelf: Optional[str] = None
+
 class StockOp(BaseModel):
     sku: str
     branch: str
@@ -65,6 +78,15 @@ class EmployeeIn(BaseModel):
     pay_type: str = "salary"
     salary: float = 0
     hourly_rate: float = 0
+
+class EmployeeUpdate(BaseModel):
+    """Partial update — id comes from the URL path, all body fields optional."""
+    name: Optional[str] = None
+    branch: Optional[str] = None
+    title: Optional[str] = None
+    pay_type: Optional[str] = None
+    salary: Optional[float] = None
+    hourly_rate: Optional[float] = None
 
 class ApprovalDecision(BaseModel):
     comment: Optional[str] = ""
