@@ -740,6 +740,7 @@
       <div class="grp">Operations</div>
       <a data-v="inventory"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4.4v9L12 21l-8-4.6v-9L12 3z"/><path d="M12 12l8-4.6M12 12v9M12 12L4 7.4"/></svg></span>Inventory</a>
       <a data-v="reports"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><rect x="5" y="11" width="3.2" height="7" rx="1"/><rect x="10.4" y="6" width="3.2" height="12" rx="1"/><rect x="15.8" y="9" width="3.2" height="9" rx="1"/></svg></span>Reports</a>
+      <a data-v="attendance"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>Attendance</a>
       <a data-v="telegram"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 3L2.5 10.3l6.2 2.4L11.5 20 15 13.7 21 3z"/><path d="M8.7 12.7L21 3"/></svg></span>Telegram</a>
       <a data-v="settings"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v2.6M12 18.9v2.6M4.6 4.6l1.9 1.9M17.5 17.5l1.9 1.9M2.5 12h2.6M18.9 12h2.6M4.6 19.4l1.9-1.9M17.5 6.5l1.9-1.9"/></svg></span>Settings</a>
     </nav>
@@ -910,6 +911,13 @@
           <div style="font-size:12.5px;color:var(--muted);line-height:1.6">The bot receives a message, asks <b>Which store?</b> then <b>Which account?</b> when needed, parses the amount and intent, writes the accounting entry, and confirms. Clock In/Out records only employee, date, time, and location.</div>
         </div>
       </div>
+    </section>
+
+    <!-- ATTENDANCE -->
+    <section class="view" id="v-attendance">
+      <div class="top"><div><h1>Attendance</h1><div class="sub">Location-verified clock-in / clock-out from Telegram.</div></div>
+        <span class="pill" id="attHeadPill">records</span></div>
+      <div id="attBody"><div class="card"><div class="sub" style="color:var(--muted)">Sign in to view attendance.</div></div></div>
     </section>
 
     <!-- SETTINGS -->
@@ -3894,7 +3902,7 @@ const MTABS=[
   ['sales',_mi('<circle cx="12" cy="12" r="9"/><path d="M12 7v10"/><path d="M14.5 9.3c0-1.1-1.1-1.9-2.6-1.9s-2.5.8-2.5 1.9c0 2.6 5.1 1.4 5.1 4 0 1.1-1.1 1.9-2.6 1.9s-2.6-.8-2.6-1.9"/>'), 'Sales'],
   ['reports',_mi('<path d="M3 21h18"/><rect x="5" y="11" width="3.2" height="7" rx="1"/><rect x="10.4" y="6" width="3.2" height="12" rx="1"/><rect x="15.8" y="9" width="3.2" height="9" rx="1"/>'), 'Reports'],
   ['__more',_mi('<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>'), 'More']];
-const MTITLES={dash:'Dashboard',ai:'Ask Claude',sales:'Daily Sales',expenses:'Expenses',purchases:'Purchases',recon:'Bank Reconciliation',tax:'Sales Tax',payroll:'Payroll',reports:'Report Center',inventory:'Inventory',telegram:'Telegram',settings:'Settings'};
+const MTITLES={dash:'Dashboard',ai:'Ask Claude',sales:'Daily Sales',expenses:'Expenses',purchases:'Purchases',recon:'Bank Reconciliation',tax:'Sales Tax',payroll:'Payroll',reports:'Report Center',inventory:'Inventory',attendance:'Attendance',telegram:'Telegram',settings:'Settings'};
 function mDrawer(open){document.body.classList.toggle('drawer-open',open);}
 function mSync(v){
   const t=document.getElementById('mTitle');if(t)t.textContent=MTITLES[v]||'SmokeStack';
@@ -4730,7 +4738,13 @@ try{ empMigrate(); payRestore(); invDateRestore();
     issueTgCode:function(){return call('/api/telegram/link/issue',{method:'POST'});},
     tgLinkCode:function(){return call('/api/telegram/link-code',{method:'POST'});},
     tgStatus:function(){return call('/api/telegram/status');},
-    tgUnlink:function(){return call('/api/telegram/unlink',{method:'POST'});}
+    tgUnlink:function(){return call('/api/telegram/unlink',{method:'POST'});},
+    attList:function(q){return call('/api/attendance'+(q?('?'+q):''));},
+    attPending:function(){return call('/api/attendance/pending');},
+    attApprove:function(id){return call('/api/attendance/'+id+'/approve',{method:'POST'});},
+    attReject:function(id){return call('/api/attendance/'+id+'/reject',{method:'POST'});},
+    attBranch:function(b){return call('/api/attendance/branch/'+encodeURIComponent(b));},
+    attBranchSave:function(b,body){return call('/api/attendance/branch/'+encodeURIComponent(b),{method:'PUT',body:body});}
   };
   window.SS_API_LIVE=API;
   function apiErr(e){ if(e&&e.status===403)return 'Not permitted (server rejected this action).'; if(e&&e.status===422)return 'Invalid data: '+(e.data&&e.data.detail?JSON.stringify(e.data.detail):e.message); return (e&&e.message)||'Request failed'; }
@@ -5000,6 +5014,178 @@ try{ empMigrate(); payRestore(); invDateRestore();
   /* ---- boot: auto-resume session or show login ---- */
   document.addEventListener('DOMContentLoaded', function(){}); // no-op; app already inited
   if(T.token){ apiBoot(); } else { loginScreen(); }
+})();
+
+/* ==========================================================================
+   ATTENDANCE (web) — records view + branch attendance-location settings.
+   Reads the live /api/attendance endpoints. Managers see approvals; owners/
+   admins edit branch geofence in Settings. Renders on demand when the
+   Attendance or Settings view opens (hooks the wrapped go()).
+   ========================================================================== */
+(function(){
+  if(!window.API_MODE) return;
+  var API=window.SS_API_LIVE; if(!API) return;
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function fmtDT(iso){ if(!iso) return '—'; try{ var d=new Date(iso); return d.toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }catch(e){ return '—'; } }
+  function dur(m){ if(m==null) return '—'; return Math.floor(m/60)+'h '+(m%60)+'m'; }
+  function role(){ return (window.ROLE&&ROLE.kind)||''; }
+  function canApprove(){ return ['owner','admin','branch_manager','manager','accountant'].indexOf(role())>=0; }
+  function canManage(){ return ['owner','admin'].indexOf(role())>=0; }
+  function stores(){ return (window.STORES||[]).slice(); }
+  var ATT={ rows:[], pending:[], fBranch:'all', fStatus:'all' };
+
+  var STCOL={active:'var(--good,#1a7f37)',completed:'var(--muted)',pending:'var(--warn,#b26a00)',rejected:'var(--bad,#c0392b)'};
+  function pill(t,c){ return '<span style="display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:600;background:var(--chip,#eef1f4);color:'+(c||'var(--muted)')+'">'+esc(t)+'</span>'; }
+
+  async function attRender(){
+    var host=document.getElementById('attBody'); if(!host) return;
+    var pillEl=document.getElementById('attHeadPill');
+    host.innerHTML='<div class="card"><div class="sub" style="color:var(--muted)">Loading attendance…</div></div>';
+    try{
+      var q='branch='+encodeURIComponent(ATT.fBranch);
+      ATT.rows = await API.attList(q);
+    }catch(e){
+      host.innerHTML='<div class="card"><div class="sub" style="color:var(--muted)">'
+        +(e&&e.status===403?'You don’t have permission to view attendance records.':'Could not load attendance.')+'</div></div>';
+      return;
+    }
+    if(canApprove()){ try{ ATT.pending = await API.attPending(); }catch(e){ ATT.pending=[]; } }
+    else ATT.pending=[];
+    if(pillEl) pillEl.textContent=ATT.rows.length+' record'+(ATT.rows.length===1?'':'s');
+
+    var html='';
+    // approvals card
+    if(canApprove()){
+      html+='<div class="card" style="margin-bottom:14px"><h3 style="margin:0 0 10px">Pending approvals'
+        +(ATT.pending.length?(' <span style="color:var(--warn,#b26a00)">('+ATT.pending.length+')</span>'):'')+'</h3>';
+      if(!ATT.pending.length){ html+='<div class="sub" style="color:var(--muted)">No out-of-radius clock-ins awaiting review.</div>'; }
+      else{
+        html+='<table style="width:100%"><thead><tr><th style="text-align:left">Employee</th><th style="text-align:left">Branch</th><th style="text-align:right">Distance</th><th style="text-align:left">Reason</th><th></th></tr></thead><tbody>';
+        ATT.pending.forEach(function(a){
+          html+='<tr><td>'+esc(a.employee||'—')+'</td><td>'+esc(a.branch)+'</td><td style="text-align:right">'+(a.ci_dist!=null?a.ci_dist+' m':'—')+'</td><td>'+esc(a.reason||'—')+'</td>'
+            +'<td style="text-align:right;white-space:nowrap"><button class="btn p" data-att-appr="'+a.id+'" style="padding:4px 10px;font-size:12px">Approve</button> '
+            +'<button class="btn g" data-att-rej="'+a.id+'" style="padding:4px 10px;font-size:12px;color:var(--bad,#c0392b)">Reject</button></td></tr>';
+        });
+        html+='</tbody></table>';
+      }
+      html+='</div>';
+    }
+    // filters + records
+    html+='<div class="card"><div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px">'
+      +'<h3 style="margin:0">Attendance records</h3><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">';
+    html+='<select id="attFBranch" style="max-width:160px"><option value="all">All branches</option>'+stores().map(function(b){return '<option value="'+esc(b)+'"'+(ATT.fBranch===b?' selected':'')+'>'+esc(b)+'</option>';}).join('')+'</select>';
+    html+='<select id="attFStatus" style="max-width:150px">'+['all','active','completed','pending','rejected'].map(function(s){return '<option value="'+s+'"'+(ATT.fStatus===s?' selected':'')+'>'+(s==='all'?'All statuses':s.charAt(0).toUpperCase()+s.slice(1))+'</option>';}).join('')+'</select>';
+    html+='<button class="btn g" id="attExport" style="padding:6px 12px;font-size:12px">Export CSV</button></div></div>';
+    var rows=ATT.rows.filter(function(a){ return ATT.fStatus==='all'||a.status===ATT.fStatus; });
+    if(!rows.length){ html+='<div class="sub" style="color:var(--muted)">No records for this filter.</div>'; }
+    else{
+      html+='<div style="overflow-x:auto"><table style="width:100%;min-width:640px"><thead><tr>'
+        +'<th style="text-align:left">Employee</th><th style="text-align:left">Branch</th><th style="text-align:left">Clock-in</th><th style="text-align:left">Clock-out</th>'
+        +'<th style="text-align:right">Worked</th><th style="text-align:right">Dist</th><th style="text-align:left">Status</th></tr></thead><tbody>';
+      rows.forEach(function(a){
+        html+='<tr><td>'+esc(a.employee||'—')+(a.late?' <span style="color:var(--warn,#b26a00);font-size:11px">late</span>':'')+'</td>'
+          +'<td>'+esc(a.branch)+'</td><td>'+fmtDT(a.clock_in)+'</td><td>'+fmtDT(a.clock_out)+'</td>'
+          +'<td style="text-align:right">'+dur(a.worked_minutes)+'</td><td style="text-align:right">'+(a.ci_dist!=null?a.ci_dist+' m':'—')+'</td>'
+          +'<td>'+pill(a.status,STCOL[a.status])+(a.approval==='approved'?' '+pill('approved',STCOL.active):'')+'</td></tr>';
+      });
+      html+='</tbody></table></div>';
+    }
+    html+='</div>';
+    host.innerHTML=html;
+
+    // wire controls
+    var fb=document.getElementById('attFBranch'); if(fb) fb.onchange=function(){ ATT.fBranch=fb.value; attRender(); };
+    var fs=document.getElementById('attFStatus'); if(fs) fs.onchange=function(){ ATT.fStatus=fs.value; attRender(); };
+    var ex=document.getElementById('attExport'); if(ex) ex.onclick=attExport;
+    host.querySelectorAll('[data-att-appr]').forEach(function(b){ b.onclick=function(){ attDecide(b.getAttribute('data-att-appr'),'approve'); }; });
+    host.querySelectorAll('[data-att-rej]').forEach(function(b){ b.onclick=function(){ attDecide(b.getAttribute('data-att-rej'),'reject'); }; });
+  }
+
+  async function attDecide(id,act){
+    try{ if(act==='approve') await API.attApprove(id); else await API.attReject(id);
+      if(window.toast) toast('Attendance #'+id+' '+(act==='approve'?'approved':'rejected'));
+      await attRender();
+    }catch(e){ if(window.toast) toast((e&&e.message)||'Action failed'); }
+  }
+
+  function attExport(){
+    var rows=ATT.rows.filter(function(a){ return ATT.fStatus==='all'||a.status===ATT.fStatus; });
+    var head=['Employee','Branch','Clock-in','Clock-out','Worked (min)','Distance (m)','Status','Approval','Approver','Reason'];
+    var lines=[head.join(',')];
+    rows.forEach(function(a){
+      lines.push([a.employee||'',a.branch||'',a.clock_in||'',a.clock_out||'',a.worked_minutes==null?'':a.worked_minutes,
+        a.ci_dist==null?'':a.ci_dist,a.status||'',a.approval||'',a.approver||'',(a.reason||'').replace(/[",\n]/g,' ')]
+        .map(function(v){ return /[",]/.test(String(v))?'"'+String(v).replace(/"/g,'""')+'"':v; }).join(','));
+    });
+    var blob=new Blob([lines.join('\n')],{type:'text/csv'});
+    var url=URL.createObjectURL(blob), a=document.createElement('a');
+    a.href=url; a.download='attendance_'+new Date().toISOString().slice(0,10)+'.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+    if(window.toast) toast('Exported '+rows.length+' records');
+  }
+
+  /* ---------- Settings → Branch attendance-location panel ---------- */
+  async function attSettingsRender(){
+    var sec=document.getElementById('v-settings'); if(!sec) return;
+    var card=document.getElementById('attBranchCard');
+    if(!card){ card=document.createElement('div'); card.className='card'; card.id='attBranchCard'; card.style.marginTop='13px'; sec.appendChild(card); }
+    if(!canManage()){
+      card.innerHTML='<h3 style="margin:0 0 6px">Attendance location</h3><div class="sub" style="color:var(--muted)">Only owners and admins can edit branch attendance geofences.</div>';
+      return;
+    }
+    card.innerHTML='<h3 style="margin:0 0 6px">Attendance location</h3>'
+      +'<div class="sub" style="color:var(--muted);margin-bottom:12px">Set each branch’s GPS coordinates and allowed radius. Employees clocking in from Telegram must be within the radius (unless an outside-radius override is approved by a manager).</div>'
+      +'<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px"><label style="margin:0">Branch</label>'
+      +'<select id="attBrSel" style="max-width:200px">'+stores().map(function(b){return '<option value="'+esc(b)+'">'+esc(b)+'</option>';}).join('')+'</select></div>'
+      +'<div id="attBrForm"><div class="sub" style="color:var(--muted)">Loading…</div></div>';
+    var sel=document.getElementById('attBrSel');
+    if(sel){ sel.onchange=function(){ attBranchLoad(sel.value); }; if(stores().length) attBranchLoad(stores()[0]); }
+  }
+
+  async function attBranchLoad(name){
+    var f=document.getElementById('attBrForm'); if(!f) return;
+    f.innerHTML='<div class="sub" style="color:var(--muted)">Loading…</div>';
+    var s; try{ s=await API.attBranch(name); }catch(e){ f.innerHTML='<div class="sub" style="color:var(--muted)">Could not load this branch.</div>'; return; }
+    function num(v){ return v==null?'':v; }
+    f.innerHTML=
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;max-width:560px">'
+      +'<div><label>Latitude</label><input id="abLat" placeholder="e.g. 32.221100" value="'+num(s.lat)+'"></div>'
+      +'<div><label>Longitude</label><input id="abLng" placeholder="e.g. 35.254400" value="'+num(s.lng)+'"></div>'
+      +'<div><label>Radius (metres)</label><input id="abRad" type="number" value="'+num(s.radius_m)+'"></div>'
+      +'<div><label>Timezone</label><input id="abTz" value="'+esc(s.timezone||'UTC')+'"></div>'
+      +'<div><label>Grace period (min)</label><input id="abGrace" type="number" value="'+num(s.grace_min)+'"></div>'
+      +'<div></div>'
+      +'</div>'
+      +'<div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:12px;font-size:13px">'
+      +'<label style="display:flex;align-items:center;gap:6px;margin:0"><input type="checkbox" id="abVerify" '+(s.loc_verify?'checked':'')+' style="width:auto"> Verify location</label>'
+      +'<label style="display:flex;align-items:center;gap:6px;margin:0"><input type="checkbox" id="abOverride" '+(s.allow_override?'checked':'')+' style="width:auto"> Allow outside-radius override</label>'
+      +'<label style="display:flex;align-items:center;gap:6px;margin:0"><input type="checkbox" id="abActive" '+(s.attendance_active?'checked':'')+' style="width:auto"> Attendance active</label>'
+      +'</div>'
+      +'<div style="margin-top:14px"><button class="btn p" id="abSave">Save location settings</button> <span id="abMsg" class="sub" style="color:var(--muted);margin-left:8px"></span></div>';
+    var btn=document.getElementById('abSave');
+    if(btn) btn.onclick=async function(){
+      var g=function(x){var el=document.getElementById(x);return el?el.value:'';};
+      var body={ lat:parseFloat(g('abLat')), lng:parseFloat(g('abLng')), radius_m:parseInt(g('abRad'),10)||150,
+        timezone:g('abTz')||'UTC', grace_min:parseInt(g('abGrace'),10)||0,
+        loc_verify:document.getElementById('abVerify').checked, allow_override:document.getElementById('abOverride').checked,
+        attendance_active:document.getElementById('abActive').checked };
+      if(isNaN(body.lat)||isNaN(body.lng)){ var m0=document.getElementById('abMsg'); if(m0){m0.textContent='Enter valid coordinates.';m0.style.color='var(--bad,#c0392b)';} return; }
+      btn.disabled=true; var m=document.getElementById('abMsg'); if(m){m.textContent='Saving…';m.style.color='var(--muted)';}
+      try{ await API.attBranchSave(name,body); if(m){m.textContent='Saved.';m.style.color='var(--good,#1a7f37)';} if(window.toast) toast('Attendance location saved for '+name); }
+      catch(e){ if(m){m.textContent=(e&&e.status===403?'Not permitted.':((e&&e.message)||'Save failed'));m.style.color='var(--bad,#c0392b)';} }
+      finally{ btn.disabled=false; }
+    };
+  }
+
+  /* ---------- hook the wrapped router ---------- */
+  var _go=window.go;
+  window.go=function(v,opts){ var r=_go.apply(this,arguments);
+    try{ if(v==='attendance') attRender(); else if(v==='settings') attSettingsRender(); }catch(e){}
+    return r; };
+  // if already on a view at boot
+  document.addEventListener('DOMContentLoaded',function(){
+    try{ var cur=document.querySelector('.view.on'); if(cur&&cur.id==='v-attendance') attRender(); }catch(e){}
+  });
 })();
 </script>
 </body>
