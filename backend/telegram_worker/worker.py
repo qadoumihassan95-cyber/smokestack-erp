@@ -94,13 +94,25 @@ def kb(rows):
 
 
 def home_kb():
+    # Operations-first main menu (Phase 2). Reporting lives under "Reports & Insights".
+    return kb([
+        [("💸 Add Expense", "op:exp"), ("📦 Inventory", "nav:inv")],
+        [("📥 Receive Stock", "op:recv"), ("🔄 Transfer Stock", "op:xfer")],
+        [("🧮 Adjust Stock", "op:adj"), ("🛒 Purchases", "op:pur")],
+        [("🔍 Search Product", "inv:search"), ("📸 Scan Barcode", "op:scan")],
+        [("📊 Reports & Insights", "reports_home"), ("⚙️ Settings", "nav:set")],
+        [("🔄 Refresh", "home")],
+    ])
+
+
+def reports_home_kb():
     return kb([
         [("📊 Sales", "nav:sales"), ("💰 Profit", "nav:profit")],
         [("💸 Expenses", "nav:exp"), ("📦 Inventory", "nav:inv")],
         [("⚠️ Low Stock", "inv:low:0"), ("🚫 Out of Stock", "inv:out:0")],
         [("🏪 Branches", "nav:branches"), ("📑 Reports", "nav:reports")],
-        [("🔔 Notifications", "nav:ntf"), ("⚙️ Settings", "nav:set")],
-        [("🔄 Refresh", "home")],
+        [("🔔 Notifications", "nav:ntf")],
+        [("⬅️ Back", "home"), ("🏠 Home", "home")],
     ])
 
 
@@ -345,12 +357,13 @@ async def render_exp(tg_id, key):
 
 async def render_inv_menu():
     rows = [
-        [("Summary", "inv:summary"), ("Search Product", "inv:search")],
-        [("Stock by Branch", "inv:branch"), ("Recently Received", "inv:recv")],
-        [("Recent Adjustments", "inv:adj"), ("Recent Transfers", "inv:xfer")],
+        [("🔍 Search Product", "inv:search"), ("📦 Stock by Branch", "inv:branch")],
         [("⚠️ Low Stock", "inv:low:0"), ("🚫 Out of Stock", "inv:out:0")],
+        [("📥 Receive Stock", "op:recv"), ("🧮 Adjust Stock", "op:adj")],
+        [("🔄 Transfer Stock", "op:xfer"), ("🧾 Recent Movements", "inv:recv")],
+        [("Recent Adjustments", "inv:adj"), ("Recent Transfers", "inv:xfer")],
     ]
-    return ("📦 <b>Inventory</b>\nPick a view:", kb(footer(rows)), None)
+    return ("📦 <b>Inventory</b>\nPick a view or action:", kb(footer(rows)), None)
 
 
 async def render_inv_summary(tg_id):
@@ -482,7 +495,27 @@ async def render_product(tg_id, sku):
     for b, q in (p.get("stock") or {}).items():
         lines.append(f"• {html.escape(b)}: <b>{q}</b>")
     lines.append(f"\nLast received: {str(last_recv['date'])[:10] if last_recv else '—'}")
-    return ("\n".join(lines), kb(footer(refresh=f"prod:{sku}")), None)
+    actions = [
+        [("📥 Receive", f"opf:recv:{sku}"), ("🧮 Adjust", f"opf:adj:{sku}")],
+        [("🔄 Transfer", f"opf:xfer:{sku}"), ("🧾 History", f"hist:{sku}")],
+    ]
+    return ("\n".join(lines), kb(footer(actions, refresh=f"prod:{sku}")), None)
+
+
+async def render_history(tg_id, sku):
+    token, user, _ = await get_ctx(tg_id)
+    if not token:
+        return await render_home(tg_id)
+    _, mv = await _req("GET", "/api/inventory/movements?branch=all", token=token)
+    mine = [m for m in (mv or []) if m.get("sku") == sku][:10]
+    lines = [f"🧾 <b>History · {html.escape(sku)}</b>", ""]
+    for m in mine:
+        chg = m.get("change", 0)
+        sign = "+" if chg >= 0 else ""
+        lines.append(f"• {m.get('type')}: {sign}{chg} → {m.get('after')} @ {html.escape(m.get('branch',''))} · {str(m.get('date',''))[:10]}")
+    if len(lines) == 2:
+        lines.append("No movements recorded.")
+    return ("\n".join(lines), kb(footer(refresh=f"hist:{sku}")), None)
 
 
 async def render_branches(tg_id):
@@ -698,12 +731,522 @@ async def render_setting(tg_id, key):
     return await render_settings(tg_id)
 
 
+# =========================================================== PHASE 2 — operations
+# Role → the ops permissions the buttons gate on (mirrors backend PERMS; the backend
+# is the hard enforcement — these just hide/deny buttons early for good UX).
+ROLE_OPS = {
+    "owner": {"create", "continuous_receiving", "adjust_stock", "transfer_stock", "view_cost"},
+    "admin": {"create", "continuous_receiving", "adjust_stock", "transfer_stock", "view_cost"},
+    "branch_manager": {"create", "continuous_receiving", "adjust_stock", "transfer_stock", "view_cost"},
+    "manager": {"create", "continuous_receiving", "adjust_stock", "transfer_stock", "view_cost"},
+    "inventory_manager": {"create", "continuous_receiving", "adjust_stock", "transfer_stock", "view_cost"},
+    "accountant": {"create", "view_cost"},
+    "cashier": {"create"},
+    "employee": set(),
+}
+CATS = ["Rent", "Utilities", "Payroll", "Transport", "Maintenance", "Supplies", "Marketing", "Taxes", "Other"]
+PAYS = ["Cash", "Card", "Bank Transfer", "Check", "Other"]
+ADJ_REASONS = ["Count correction", "Damaged", "Expired", "Lost", "Found", "Returned", "Manual correction", "Other"]
+FLOW_TITLES = {"exp": "💸 <b>Add Expense</b>", "recv": "📥 <b>Receive Stock</b>",
+               "adj": "🧮 <b>Adjust Stock</b>", "xfer": "🔄 <b>Transfer Stock</b>", "pur": "🛒 <b>Add Purchase</b>"}
+FLOW_PERM = {"exp": "create", "recv": "continuous_receiving", "adj": "adjust_stock", "xfer": "transfer_stock", "pur": "create"}
+MAX_AMOUNT = 10_000_000
+MAX_QTY = 1_000_000
+
+
+def has(role, perm):
+    return perm in ROLE_OPS.get(role, set())
+
+
+def op_footer():
+    return [[("❌ Cancel", "f:cancel"), ("⬅️ Step Back", "f:sb")], [("🏠 Home", "home")]]
+
+
+def flow_start(tg_id, name):
+    s = st(tg_id)
+    s["flow"] = {"name": name, "step": 0, "data": {}, "started": time.time(), "submitting": False, "_awaiting": None}
+    return s["flow"]
+
+
+def flow(tg_id):
+    s = st(tg_id)
+    f = s.get("flow")
+    if f and time.time() - f.get("started", 0) > 900:   # 15-min timeout
+        s.pop("flow", None)
+        return None
+    return f
+
+
+def flow_end(tg_id):
+    st(tg_id).pop("flow", None)
+
+
+class ApiErr(Exception):
+    def __init__(self, status, data):
+        self.status = status
+        self.data = data
+
+    def friendly(self):
+        if self.status == 403:
+            return "You don't have permission for this action."
+        if self.status == 404:
+            return "Not found (product or branch)."
+        if self.status == 422:
+            d = self.data.get("detail") if isinstance(self.data, dict) else None
+            return "Invalid data: " + (str(d) if d else "please check your input.")
+        return "The server rejected this request. Please try again."
+
+
+class FlowErr(Exception):
+    pass
+
+
+def steps_for(name):
+    if name == "exp":
+        return [{"k": "branch", "kind": "branch", "prompt": "Select branch:"},
+                {"k": "category", "kind": "choice", "prompt": "Select category:", "choices": [(c, c) for c in CATS]},
+                {"k": "amount", "kind": "amount", "prompt": "Enter the amount (numbers only):"},
+                {"k": "account", "kind": "choice", "prompt": "Payment method:", "choices": [(c, c) for c in PAYS]},
+                {"k": "memo", "kind": "text", "prompt": "Add notes, or Skip:", "optional": True},
+                {"k": "receipt", "kind": "file", "prompt": "Upload a receipt (photo/PDF), or Skip:", "optional": True},
+                {"k": "confirm", "kind": "confirm"}]
+    if name == "recv":
+        return [{"k": "sku", "kind": "product", "prompt": "Find the product to receive:"},
+                {"k": "branch", "kind": "branch", "prompt": "Destination branch:"},
+                {"k": "qty", "kind": "qty", "prompt": "Quantity received:"},
+                {"k": "supplier", "kind": "text", "prompt": "Supplier (or Skip):", "optional": True},
+                {"k": "unit_cost", "kind": "cost", "prompt": "Unit cost (or Skip):", "optional": True},
+                {"k": "invoice", "kind": "text", "prompt": "Invoice # (or Skip):", "optional": True},
+                {"k": "receipt", "kind": "file", "prompt": "Upload invoice (photo/PDF) or Skip:", "optional": True},
+                {"k": "confirm", "kind": "confirm"}]
+    if name == "adj":
+        return [{"k": "sku", "kind": "product", "prompt": "Find the product to adjust:"},
+                {"k": "branch", "kind": "branch", "prompt": "Branch:"},
+                {"k": "adjtype", "kind": "choice", "prompt": "Adjustment type:",
+                 "choices": [("➕ Increase", "inc"), ("➖ Decrease", "dec"), ("🎯 Set exact", "set")]},
+                {"k": "qty", "kind": "qty", "prompt": "Quantity:"},
+                {"k": "reason", "kind": "choice", "prompt": "Reason:", "choices": [(r, r) for r in ADJ_REASONS]},
+                {"k": "memo", "kind": "text", "prompt": "Notes (or Skip):", "optional": True},
+                {"k": "confirm", "kind": "confirm"}]
+    if name == "xfer":
+        return [{"k": "sku", "kind": "product", "prompt": "Find the product to transfer:"},
+                {"k": "from", "kind": "branch", "prompt": "Source branch:"},
+                {"k": "to", "kind": "branch", "prompt": "Destination branch:", "exclude": "from"},
+                {"k": "qty", "kind": "qty", "prompt": "Transfer quantity:"},
+                {"k": "memo", "kind": "text", "prompt": "Notes (or Skip):", "optional": True},
+                {"k": "confirm", "kind": "confirm"}]
+    if name == "pur":
+        return [{"k": "branch", "kind": "branch", "prompt": "Select branch:"},
+                {"k": "vendor", "kind": "text", "prompt": "Supplier / vendor name:"},
+                {"k": "amount", "kind": "amount", "prompt": "Total purchase amount:"},
+                {"k": "invoice", "kind": "text", "prompt": "Invoice # (or Skip):", "optional": True},
+                {"k": "confirm", "kind": "confirm"}]
+    return []
+
+
+def _validate(kind, text):
+    t = (text or "").strip()
+    if kind in ("amount", "cost"):
+        try:
+            v = float(t.replace(",", "").replace("$", ""))
+        except Exception:  # noqa: BLE001
+            return None, "Please enter a number."
+        if v < 0:
+            return None, "Amount cannot be negative."
+        if kind == "amount" and v <= 0:
+            return None, "Amount must be greater than zero."
+        if v > MAX_AMOUNT:
+            return None, "That amount looks too large."
+        return v, None
+    if kind == "qty":
+        try:
+            v = int(float(t))
+        except Exception:  # noqa: BLE001
+            return None, "Please enter a whole number."
+        if v <= 0:
+            return None, "Quantity must be a positive whole number."
+        if v > MAX_QTY:
+            return None, "That quantity looks too large."
+        return v, None
+    if not t:
+        return None, "Please enter a value."
+    return t, None
+
+
+async def bot_audit(tg_id, user, action, entity, ref, detail, result="ok"):
+    try:
+        await _req("POST", "/api/telegram/audit", headers={"X-Bot-Token": TOKEN},
+                   body={"tg_id": str(tg_id), "user_id": (user or {}).get("id"), "action": action,
+                         "entity": entity, "ref": str(ref or ""), "detail": detail, "result": result})
+    except Exception as e:  # noqa: BLE001
+        log.warning("bot_audit failed: %s", e)
+
+
+async def _product_qty(token, sku, branch):
+    _, prods = await _req("GET", f"/api/inventory/products?q={quote(sku)}&branch=all", token=token)
+    p = next((x for x in (prods or []) if x.get("sku") == sku), None)
+    return int((p.get("stock") or {}).get(branch, 0)) if p else 0
+
+
+async def start_flow(tg_id, name, sku=None):
+    token, user, _ = await get_ctx(tg_id)
+    if not token:
+        return await render_home(tg_id)
+    if not has(user["role"], FLOW_PERM[name]):
+        return (f"🔒 You don't have permission for this action ({name}).",
+                kb([[("🏠 Main Menu", "home")]]), None)
+    f = flow_start(tg_id, name)
+    if sku:
+        _, prods = await _req("GET", f"/api/inventory/products?q={quote(sku)}&branch=all", token=token)
+        p = next((x for x in (prods or []) if x.get("sku") == sku), None)
+        f["data"]["sku"] = sku
+        f["data"]["pname"] = p["name"] if p else sku
+        f["step"] = 1  # skip the product-search step
+    return await flow_render(tg_id)
+
+
+async def flow_render(tg_id):
+    f = flow(tg_id)
+    if not f:
+        return await render_home(tg_id)
+    token, user, _ = await get_ctx(tg_id)
+    if not token:
+        flow_end(tg_id)
+        return await render_home(tg_id)
+    steps = steps_for(f["name"])
+    i = f["step"]
+    if i >= len(steps):
+        return await flow_submit(tg_id)
+    stp = steps[i]
+    kind = stp["kind"]
+    head = f"{FLOW_TITLES[f['name']]}\n<i>Step {i + 1}/{len(steps)}</i>\n\n{stp.get('prompt', '')}"
+    if kind == "branch":
+        _, branches = await _req("GET", "/api/branches", token=token)
+        branches = branches or []
+        if "exclude" in stp:
+            branches = [b for b in branches if b != f["data"].get(stp["exclude"])]
+        f["data"]["_branches"] = branches
+        rows = [[(f"🏪 {b}", f"f:pick:{idx}")] for idx, b in enumerate(branches)]
+        f["_awaiting"] = None
+        return (head, kb(rows + op_footer()), None)
+    if kind == "choice":
+        f["data"]["_choices"] = [val for (_lbl, val) in stp["choices"]]
+        rows = [[(lbl, f"f:pick:{idx}")] for idx, (lbl, _val) in enumerate(stp["choices"])]
+        f["_awaiting"] = None
+        return (head, kb(rows + op_footer()), None)
+    if kind == "product":
+        f["_awaiting"] = "search"
+        return (head + "\n\nType a name, SKU, or barcode.", kb(op_footer()), None)
+    if kind in ("amount", "qty", "cost", "text"):
+        f["_awaiting"] = kind
+        extra = [[("⏭️ Skip", "f:skip")]] if stp.get("optional") else []
+        return (head, kb(extra + op_footer()), None)
+    if kind == "file":
+        f["_awaiting"] = "file"
+        return (head, kb([[("⏭️ Skip", "f:skip")]] + op_footer()), None)
+    if kind == "confirm":
+        return await flow_confirm_screen(tg_id)
+    return await render_home(tg_id)
+
+
+async def flow_confirm_screen(tg_id):
+    f = flow(tg_id)
+    d = f["data"]
+    name = f["name"]
+    L = [FLOW_TITLES[name], "<b>Please confirm:</b>", ""]
+
+    def add(k, v):
+        L.append(f"{k}: <b>{html.escape(str(v))}</b>")
+
+    if name == "exp":
+        add("Branch", d["branch"]); add("Category", d["category"]); add("Amount", money(d["amount"]))
+        add("Payment", d.get("account") or "—"); add("Notes", d.get("memo") or "—")
+        add("Receipt", "attached" if d.get("receipt") else "none")
+    elif name == "recv":
+        add("Product", d["pname"]); add("Branch", d["branch"]); add("Quantity", d["qty"])
+        add("Unit cost", money(d["unit_cost"]) if d.get("unit_cost") is not None else "—")
+        add("Supplier", d.get("supplier") or "—"); add("Invoice", d.get("invoice") or "—")
+        add("File", "attached" if d.get("receipt") else "none")
+    elif name == "adj":
+        tt = {"inc": "Increase", "dec": "Decrease", "set": "Set exact"}[d["adjtype"]]
+        add("Product", d["pname"]); add("Branch", d["branch"]); add("Type", tt)
+        add("Quantity", d["qty"]); add("Reason", d["reason"]); add("Notes", d.get("memo") or "—")
+    elif name == "xfer":
+        add("Product", d["pname"]); add("From", d["from"]); add("To", d["to"])
+        add("Quantity", d["qty"]); add("Notes", d.get("memo") or "—")
+    elif name == "pur":
+        add("Branch", d["branch"]); add("Vendor", d["vendor"]); add("Amount", money(d["amount"]))
+        add("Invoice", d.get("invoice") or "—")
+    kbb = kb([[("✅ Confirm", "f:go"), ("✏️ Edit", "f:edit")], [("❌ Cancel", "f:cancel")]])
+    return ("\n".join(L), kbb, None)
+
+
+async def flow_submit(tg_id):
+    f = flow(tg_id)
+    if not f:
+        return await render_home(tg_id)
+    if f.get("submitting"):
+        return ("⏳ Processing… please wait.", kb([[("🏠 Main Menu", "home")]]), None)
+    f["submitting"] = True
+    token, user, _ = await get_ctx(tg_id)
+    name, d = f["name"], f["data"]
+    try:
+        if name == "exp":
+            memo = d.get("memo") or ""
+            if d.get("receipt"):
+                memo = (memo + f" [receipt {d['receipt']['kind']} {d['receipt']['id'][:16]} {d['receipt']['size']}b]").strip()
+            stx, res = await _req("POST", "/api/expenses", token=token,
+                                  body={"branch": d["branch"], "category": d["category"],
+                                        "amount": d["amount"], "account": d.get("account"), "memo": memo})
+            if stx >= 400:
+                raise ApiErr(stx, res)
+            rid = res.get("id")
+            await bot_audit(tg_id, user, "create", "expense", rid,
+                            f"{d['category']} {money(d['amount'])} @ {d['branch']} pay:{d.get('account')}")
+            txt = (f"✅ <b>Expense saved</b>\nID: <code>{rid}</code>\nBranch: {d['branch']}\n"
+                   f"Category: {d['category']}\nAmount: {money(d['amount'])}\n"
+                   f"By: {user['name']}\n{datetime.utcnow().strftime('%b %d, %Y %H:%M UTC')}")
+        elif name == "recv":
+            reason = " · ".join([x for x in [
+                (f"Supplier {d['supplier']}" if d.get("supplier") else None),
+                (f"Inv {d['invoice']}" if d.get("invoice") else None),
+                (f"receipt {d['receipt']['id'][:16]}" if d.get("receipt") else None)] if x])
+            body = {"sku": d["sku"], "branch": d["branch"], "qty": int(d["qty"]), "reason": reason or None}
+            if d.get("unit_cost") is not None:
+                body["unit_cost"] = d["unit_cost"]
+            stx, res = await _req("POST", "/api/inventory/receive", token=token, body=body)
+            if stx >= 400:
+                raise ApiErr(stx, res)
+            await bot_audit(tg_id, user, "receive", "product", d["sku"],
+                            f"+{d['qty']} @ {d['branch']} new={res.get('new_stock')}")
+            txt = (f"✅ <b>Stock received</b>\nProduct: {d['pname']}\nBranch: {d['branch']}\n"
+                   f"Received: +{d['qty']} → new stock <b>{res.get('new_stock')}</b>")
+        elif name == "adj":
+            cur = await _product_qty(token, d["sku"], d["branch"])
+            if d["adjtype"] == "inc":
+                delta = int(d["qty"])
+            elif d["adjtype"] == "dec":
+                delta = -int(d["qty"])
+            else:
+                delta = int(d["qty"]) - cur
+            reason = d["reason"] + ((" · " + d["memo"]) if d.get("memo") else "")
+            stx, res = await _req("POST", "/api/inventory/adjust", token=token,
+                                  body={"sku": d["sku"], "branch": d["branch"], "qty": delta, "reason": reason})
+            if stx >= 400:
+                raise ApiErr(stx, res)
+            await bot_audit(tg_id, user, "adjust", "product", d["sku"],
+                            f"{cur}->{res.get('new_stock')} @ {d['branch']} ({d['reason']})")
+            txt = (f"✅ <b>Stock adjusted</b>\nProduct: {d['pname']}\nBranch: {d['branch']}\n"
+                   f"Old: {cur} → New: <b>{res.get('new_stock')}</b>\nReason: {d['reason']}")
+        elif name == "xfer":
+            avail = await _product_qty(token, d["sku"], d["from"])
+            if int(d["qty"]) > avail:
+                raise FlowErr(f"Only {avail} available at {d['from']} — reduce the quantity.")
+            stx, res = await _req("POST", "/api/transfers", token=token,
+                                  body={"sku": d["sku"], "from_branch": d["from"], "to_branch": d["to"], "qty": int(d["qty"])})
+            if stx >= 400:
+                raise ApiErr(stx, res)
+            await bot_audit(tg_id, user, "create", "transfer", res.get("id"),
+                            f"{d['qty']}x {d['sku']} {d['from']}->{d['to']}")
+            txt = (f"✅ <b>Transfer submitted</b> · status <b>{res.get('status')}</b>\n"
+                   f"Product: {d['pname']}\n{d['from']} → {d['to']}\nQty: {d['qty']}\n"
+                   f"Awaiting manager approval.")
+        elif name == "pur":
+            stx, res = await _req("POST", "/api/purchases", token=token,
+                                  body={"vendor": d["vendor"], "branch": d["branch"], "amount": d["amount"]})
+            if stx >= 400:
+                raise ApiErr(stx, res)
+            await bot_audit(tg_id, user, "create", "purchase", res.get("id"),
+                            f"{d['vendor']} {money(d['amount'])} @ {d['branch']}")
+            txt = (f"✅ <b>Purchase submitted</b> · status <b>{res.get('status')}</b>\n"
+                   f"ID: <code>{res.get('id')}</code>\nVendor: {d['vendor']}\nBranch: {d['branch']}\n"
+                   f"Amount: {money(d['amount'])}\nAwaiting approval.")
+        else:
+            txt = "Done."
+        flow_end(tg_id)
+        return (txt, kb([[("🏠 Main Menu", "home")]]), None)
+    except (ApiErr, FlowErr) as e:
+        f["submitting"] = False
+        msg = e.friendly() if isinstance(e, ApiErr) else str(e)
+        try:
+            await bot_audit(tg_id, user, "denied" if isinstance(e, ApiErr) and e.status == 403 else "error",
+                            name, "", msg, result="fail")
+        except Exception:  # noqa: BLE001
+            pass
+        return (f"⚠️ {msg}", kb([[("🔁 Try Again", "f:go")], [("🏠 Main Menu", "home")]]), None)
+    except Exception as e:  # noqa: BLE001
+        f["submitting"] = False
+        log.exception("submit error: %s", e)
+        return ("⚠️ Something went wrong. Please try again.",
+                kb([[("🔁 Try Again", "f:go")], [("🏠 Main Menu", "home")]]), None)
+
+
+async def flow_cb(tg_id, action):
+    f = flow(tg_id)
+    if not f:
+        return ("⏳ That action expired. Back to the menu.", home_kb(), None)
+    steps = steps_for(f["name"])
+    stp = steps[f["step"]] if f["step"] < len(steps) else None
+    if action == "cancel":
+        _, user, _ = await get_ctx(tg_id)
+        await bot_audit(tg_id, user, "cancel", f["name"], "", "user cancelled", result="cancelled")
+        flow_end(tg_id)
+        return ("❌ Cancelled.", kb([[("🏠 Main Menu", "home")]]), None)
+    if action == "sb":
+        f["step"] = max(0, f["step"] - 1)
+        f["submitting"] = False
+        return await flow_render(tg_id)
+    if action == "edit":
+        f["step"] = 0
+        f["submitting"] = False
+        return await flow_render(tg_id)
+    if action == "go":
+        return await flow_submit(tg_id)
+    if action == "skip":
+        if stp and stp.get("optional"):
+            f["data"][stp["k"]] = None
+            f["step"] += 1
+            f["_awaiting"] = None
+        return await flow_render(tg_id)
+    if action.startswith("pick:") and stp:
+        idx = int(action.split(":")[1])
+        if stp["kind"] == "branch":
+            f["data"][stp["k"]] = f["data"]["_branches"][idx]
+        elif stp["kind"] == "choice":
+            f["data"][stp["k"]] = f["data"]["_choices"][idx]
+        f["step"] += 1
+        f["_awaiting"] = None
+        return await flow_render(tg_id)
+    return await flow_render(tg_id)
+
+
+async def flow_pick_product(tg_id, sku):
+    f = flow(tg_id)
+    if not f:
+        return await render_home(tg_id)
+    token, _, _ = await get_ctx(tg_id)
+    _, prods = await _req("GET", f"/api/inventory/products?q={quote(sku)}&branch=all", token=token)
+    p = next((x for x in (prods or []) if x.get("sku") == sku), None)
+    f["data"]["sku"] = sku
+    f["data"]["pname"] = p["name"] if p else sku
+    f["step"] += 1
+    f["_awaiting"] = None
+    return await flow_render(tg_id)
+
+
+async def flow_text(tg_id, text):
+    f = flow(tg_id)
+    if not f or not f.get("_awaiting"):
+        return None
+    aw = f["_awaiting"]
+    steps = steps_for(f["name"])
+    stp = steps[f["step"]]
+    if aw == "search":
+        token, _, _ = await get_ctx(tg_id)
+        _, prods = await _req("GET", f"/api/inventory/products?q={quote(text.strip())}&branch=all", token=token)
+        prods = prods or []
+        if not prods:
+            return (f"No products match “{html.escape(text)}”. Type another name/SKU/barcode:",
+                    kb(op_footer()), None)
+        rows = [[(f"{p['name'][:26]} ({p['sku']})", f"fp:{p['sku']}")] for p in prods[:8]]
+        return ("Tap the product:", kb(rows + op_footer()), None)
+    val, err = _validate(aw, text)
+    if err:
+        extra = [[("⏭️ Skip", "f:skip")]] if stp.get("optional") else []
+        return (f"⚠️ {err}\n\n{stp.get('prompt', '')}", kb(extra + op_footer()), None)
+    f["data"][stp["k"]] = val
+    f["step"] += 1
+    f["_awaiting"] = None
+    return await flow_render(tg_id)
+
+
+async def flow_file(tg_id, meta):
+    f = flow(tg_id)
+    if not f or f.get("_awaiting") != "file":
+        return None
+    steps = steps_for(f["name"])
+    stp = steps[f["step"]]
+    f["data"][stp["k"]] = meta          # {kind, id, size} — metadata only, binary stays in Telegram
+    f["step"] += 1
+    f["_awaiting"] = None
+    _, user, _ = await get_ctx(tg_id)
+    await bot_audit(tg_id, user, "attach", f["name"], meta["id"][:20], f"{meta['kind']} {meta['size']}b")
+    return await flow_render(tg_id)
+
+
+async def render_purchases(tg_id):
+    token, user, _ = await get_ctx(tg_id)
+    if not token:
+        return await render_home(tg_id)
+    rows = [[("➕ Add Purchase", "op:puradd"), ("📋 Recent Purchases", "op:purlist")]]
+    return ("🛒 <b>Purchases</b>", kb(footer(rows)), None)
+
+
+async def render_purchase_list(tg_id):
+    token, user, _ = await get_ctx(tg_id)
+    _, ps = await _req("GET", "/api/purchases?branch=all", token=token)
+    lines = ["🛒 <b>Recent purchases</b>", ""]
+    for p in (ps or [])[:8]:
+        lines.append(f"• <code>{p.get('id')}</code> — {html.escape(p.get('vendor') or '')} · "
+                     f"{money(p.get('amount'))} · {p.get('status')}")
+    if len(lines) == 2:
+        lines.append("No purchases yet.")
+    return ("\n".join(lines), kb(footer(refresh="op:purlist")), None)
+
+
+async def render_scan(tg_id):
+    s = st(tg_id)
+    s.pop("flow", None)
+    s["await_barcode"] = True
+    return ("📸 <b>Scan / enter barcode</b>\n\nSend the barcode <b>number</b> as text.\n"
+            "<i>Photo barcode reading isn't reliable yet — if you send a photo I'll ask you to type the number.</i>",
+            kb(op_footer()), None)
+
+
+async def barcode_lookup(tg_id, code):
+    token, _, _ = await get_ctx(tg_id)
+    st(tg_id)["await_barcode"] = False
+    status, p = await _req("GET", f"/api/inventory/barcode/{quote(code.strip())}", token=token)
+    if status == 200 and p and p.get("sku"):
+        return await render_product(tg_id, p["sku"])
+    # fall back to a normal search
+    _, prods = await _req("GET", f"/api/inventory/products?q={quote(code.strip())}&branch=all", token=token)
+    prods = prods or []
+    if not prods:
+        return (f"No product with barcode/keyword “{html.escape(code)}”.", home_kb(), None)
+    rows = [[(f"{p['name'][:26]} ({p['sku']})", f"prod:{p['sku']}")] for p in prods[:8]]
+    return ("🔎 Matches:", kb(footer(rows)), None)
+
+
 # -------------------------------------------------------------------- callback router
 async def dispatch(tg_id, data):
     """Return (text, keyboard, document-tuple|None). document-tuple = (bytes, filename, caption)."""
     if data == "home":
+        st(tg_id).pop("flow", None)
         st(tg_id)["stack"] = []
         return await render_home(tg_id)
+    # ---- Phase 2: operational flows ----
+    if data == "reports_home":
+        return ("📊 <b>Reports & Insights</b>\nChoose a view:", reports_home_kb(), None)
+    if data in ("op:exp", "op:recv", "op:adj", "op:xfer"):
+        return await start_flow(tg_id, data.split(":", 1)[1])
+    if data.startswith("opf:"):
+        _, name, sku = data.split(":", 2)
+        return await start_flow(tg_id, name, sku=sku)
+    if data == "op:pur":
+        return await render_purchases(tg_id)
+    if data == "op:puradd":
+        return await start_flow(tg_id, "pur")
+    if data == "op:purlist":
+        return await render_purchase_list(tg_id)
+    if data == "op:scan":
+        return await render_scan(tg_id)
+    if data.startswith("hist:"):
+        return await render_history(tg_id, data.split(":", 1)[1])
+    if data.startswith("f:"):
+        return await flow_cb(tg_id, data.split(":", 1)[1])
+    if data.startswith("fp:"):
+        return await flow_pick_product(tg_id, data.split(":", 1)[1])
     if data == "link":
         return ("🔗 <b>Link your account</b>\n\n1. Open the web app → Settings → Telegram\n"
                 "2. Tap <b>Generate Link Code</b>\n3. Send me:  <code>/link CODE</code>", unlinked_kb(), None)
@@ -814,12 +1357,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     s["last_cb"] = q.id
     data = q.data or "home"
-    # Back navigation via server-side stack
+    # Back navigation via server-side stack (intra-flow callbacks manage their own steps)
+    _intra = data.startswith(("f:", "fp:"))
     if data == "back":
         if s.get("stack"):
             s["stack"].pop()
         data = s["stack"][-1] if s.get("stack") else "home"
-    elif data not in ("home", "refresh"):
+    elif data not in ("home", "refresh") and not _intra:
         if not s.get("stack") or s["stack"][-1] != data:
             s.setdefault("stack", []).append(data)
     try:
@@ -830,14 +1374,63 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await show(update, ctx, text, markup, document)
 
 
+async def _send(update, ctx, res):
+    if not res:
+        return
+    text, markup, document = res if len(res) == 3 else (res[0], res[1], None)
+    await show(update, ctx, text, markup, document, force_new=True)
+
+
 async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     tg_id = str(update.effective_user.id)
     s = st(tg_id)
+    txt = (update.message.text or "").strip()
+    # barcode entry mode
+    if s.get("await_barcode"):
+        await _send(update, ctx, await barcode_lookup(tg_id, txt))
+        return
+    # active operational flow expecting typed input
+    if flow(tg_id) and flow(tg_id).get("_awaiting"):
+        res = await flow_text(tg_id, txt)
+        if res:
+            await _send(update, ctx, res)
+        return
+    # legacy product search prompt
     if s.get("await_search"):
         s["await_search"] = False
-        text, markup, _ = await render_search_results(tg_id, (update.message.text or "").strip())
-        await ctx.bot.send_message(chat_id=update.effective_chat.id, text=text[:4000],
-                                   reply_markup=markup, parse_mode=ParseMode.HTML)
+        await _send(update, ctx, await render_search_results(tg_id, txt))
+
+
+async def on_media(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    tg_id = str(update.effective_user.id)
+    s = st(tg_id)
+    f = flow(tg_id)
+    msg = update.message
+    # barcode photo: be honest — we don't decode images
+    if s.get("await_barcode") and msg.photo:
+        await msg.reply_text("I can't reliably read barcodes from photos yet — please type the barcode number.")
+        return
+    if not (f and f.get("_awaiting") == "file"):
+        return
+    meta = None
+    if msg.photo:
+        p = msg.photo[-1]
+        meta = {"kind": "photo", "id": p.file_id, "size": p.file_size or 0}
+    elif msg.document:
+        doc = msg.document
+        # validate type + size (<= 10 MB)
+        ok_type = (doc.mime_type or "").lower() in ("application/pdf", "image/jpeg", "image/png")
+        if not ok_type:
+            await msg.reply_text("Only PDF or image receipts are supported. Try again or tap Skip.")
+            return
+        if (doc.file_size or 0) > 10 * 1024 * 1024:
+            await msg.reply_text("That file is too large (max 10 MB). Try again or tap Skip.")
+            return
+        meta = {"kind": doc.mime_type or "document", "id": doc.file_id, "size": doc.file_size or 0}
+    if not meta:
+        await msg.reply_text("Please send a photo or PDF, or tap Skip.")
+        return
+    await _send(update, ctx, await flow_file(tg_id, meta))
 
 
 # --------------------------------------------------------------------- commands
@@ -906,6 +1499,7 @@ def main():
     app.add_handler(CommandHandler("link", cmd_link))
     app.add_handler(CommandHandler("me", cmd_me))
     app.add_handler(CallbackQueryHandler(on_callback))
+    app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, on_media))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
     log.info("SmokeStack Telegram dashboard starting (long polling); API_BASE=%s", API_BASE)
     app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)

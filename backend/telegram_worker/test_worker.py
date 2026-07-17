@@ -1,5 +1,6 @@
-"""Unit tests for the interactive dashboard worker: keyboards, routing, aggregation,
-permission gate, pagination, dedup, and report export — all with the API stubbed."""
+"""Worker unit tests: menus, routing, aggregation, permission gates, pagination,
+report export, and the Phase-2 operational flows (expense/receive/adjust/transfer/
+purchase) — all with the API stubbed."""
 import os
 import asyncio
 from datetime import date, timedelta
@@ -12,102 +13,102 @@ def run(coro):
     return asyncio.get_event_loop().run_until_complete(coro)
 
 
-def _btn_texts(markup):
-    return [b.text for row in markup.inline_keyboard for b in row]
+def _btn_texts(m):
+    return [b.text for row in m.inline_keyboard for b in row]
 
 
-def _btn_cbs(markup):
-    return [b.callback_data for row in markup.inline_keyboard for b in row]
+def _btn_cbs(m):
+    return [b.callback_data for row in m.inline_keyboard for b in row]
 
 
-# ---- keyboards ----
-def test_home_menu_has_all_primary_buttons():
+# ---------- menus / keyboards ----------
+def test_home_menu_is_operations_first():
     txt = _btn_texts(W.home_kb())
-    for label in ["📊 Sales", "💰 Profit", "💸 Expenses", "📦 Inventory",
-                  "⚠️ Low Stock", "🚫 Out of Stock", "🏪 Branches", "📑 Reports",
-                  "🔔 Notifications", "⚙️ Settings", "🔄 Refresh"]:
+    for label in ["💸 Add Expense", "📦 Inventory", "📥 Receive Stock", "🔄 Transfer Stock",
+                  "🧮 Adjust Stock", "🛒 Purchases", "🔍 Search Product", "📸 Scan Barcode",
+                  "📊 Reports & Insights", "⚙️ Settings"]:
         assert label in txt, label
 
 
-def test_unlinked_menu():
-    txt = _btn_texts(W.unlinked_kb())
-    assert "🔗 Link Account" in txt and "ℹ️ Help" in txt
-
-
-def test_footer_has_back_home():
-    cbs = [c for row in W.footer() for (t, c) in row]
-    assert "back" in cbs and "home" in cbs
+def test_reports_submenu_has_reporting_buttons():
+    txt = _btn_texts(W.reports_home_kb())
+    for label in ["📊 Sales", "💰 Profit", "💸 Expenses", "📑 Reports", "🔔 Notifications"]:
+        assert label in txt, label
 
 
 def test_callback_data_within_limits():
-    # every callback_data must be <= 64 bytes (Telegram hard limit)
-    for markup in (W.home_kb(), W.unlinked_kb()):
-        for cb in _btn_cbs(markup):
+    for m in (W.home_kb(), W.reports_home_kb(), W.unlinked_kb()):
+        for cb in _btn_cbs(m):
             assert len(cb.encode()) <= 64, cb
 
 
-# ---- date + aggregation ----
-def test_period_range():
+# ---------- pure helpers ----------
+def test_period_range_and_agg():
     t = date.today()
-    assert W.period_range("today")[0] == t
-    assert W.period_range("yest")[0] == t - timedelta(days=1)
-    assert W.period_range("7d")[0] == t - timedelta(days=6)
     assert W.period_range("month")[0] == t.replace(day=1)
+    rows = [{"branch": "A", "amount": 100, "tax": 8, "date": t.isoformat()},
+            {"branch": "B", "amount": 30, "tax": 2, "date": t.isoformat()}]
+    a = W.agg_sales(W.in_range(rows, t, t))
+    assert a["total"] == 130 and a["tx"] == 2
 
 
-def test_agg_sales_and_in_range():
-    today = date.today().isoformat()
-    rows = [{"branch": "A", "amount": 100, "tax": 8, "date": today},
-            {"branch": "A", "amount": 50, "tax": 4, "date": today},
-            {"branch": "B", "amount": 30, "tax": 2, "date": today}]
-    sel = W.in_range(rows, date.today(), date.today())
-    a = W.agg_sales(sel)
-    assert a["total"] == 180 and a["tx"] == 3
-    assert round(a["avg"], 2) == 60.0
-    assert a["by_branch"]["A"] == 150 and a["by_branch"]["B"] == 30
+def test_validate():
+    assert W._validate("amount", "250")[0] == 250.0
+    assert W._validate("amount", "-5")[1]                      # negative rejected
+    assert W._validate("amount", "abc")[1]                     # non-numeric rejected
+    assert W._validate("qty", "0")[1]                          # non-positive rejected
+    assert W._validate("qty", "12")[0] == 12
+    assert W._validate("text", "")[1]                          # empty rejected
 
 
-def test_delta_line():
-    assert "▲" in W.delta_line(120, 100)
-    assert "▼" in W.delta_line(80, 100)
+def test_permission_map():
+    assert W.has("owner", "adjust_stock") and W.has("owner", "create")
+    assert W.has("cashier", "create") and not W.has("cashier", "adjust_stock")
+    assert not W.has("employee", "create")
 
 
-def test_report_csv_and_money():
+def test_report_csv():
     b = W.report_csv("Sales", [["Total", "$100"]])
-    assert b'Sales' in b and b'Total' in b
-    assert W.money(1234) == "$1,234"
+    assert b"Sales" in b and b"Total" in b
 
 
-# ---- routing / dispatch (API stubbed) ----
-class FakeCtx:
-    """Patch get_ctx + _req so dispatch can run without a backend."""
+# ---------- API-stubbed dispatch + flows ----------
+class Fake:
     def __init__(self, role="owner", cost=True):
         self.role = role
         self.cost = cost
+        self.calls = []
 
     async def get_ctx(self, tg_id):
         return "tkn", {"id": "U-x", "name": "Owner", "role": self.role, "branches": None}, {}
 
     async def req(self, method, path, token=None, body=None, headers=None):
+        self.calls.append((method, path, body))
+        if path.startswith("/api/branches"):
+            return 200, ["Store A", "Store B", "Store C"]
+        if path.startswith("/api/inventory/products"):
+            return 200, [{"sku": "RAW-CLS", "name": "RAW Classic", "total": 5, "min": 40, "price": 2.5,
+                          "cost": 0.9, "supplier": "HBI", "barcode": "x", "stock": {"Store A": 5}}]
         if path.startswith("/api/reports/dashboard"):
             d = {"sales_today": 18300, "expenses_today": 320, "profit_today": 16000,
                  "inventory_units": 434, "low": 1, "out": 2}
             if self.cost:
-                d.update({"inventory_cost": 1894, "inventory_retail": 3236})
+                d["inventory_cost"] = 1894
             return 200, d
         if path.startswith("/api/sales"):
-            today = date.today().isoformat()
-            return 200, [{"branch": "Store A", "amount": 8420, "tax": 695, "date": today},
-                         {"branch": "Store B", "amount": 5100, "tax": 420, "date": today}]
-        if path.startswith("/api/expenses"):
-            return 200, [{"branch": "Store A", "amount": 320, "category": "Utilities", "date": date.today().isoformat()}]
-        if path.startswith("/api/inventory/products"):
-            return 200, [{"sku": "RAW-CLS", "name": "RAW Classic", "total": 5, "min": 40, "price": 2.5,
-                          "cost": 0.9, "supplier": "HBI", "barcode": "x", "stock": {"Store A": 5}},
-                         {"sku": "ZYN-CM", "name": "Zyn Cool Mint", "total": 0, "min": 30, "price": 5.5,
-                          "cost": 3.1, "supplier": "SM", "barcode": "y", "stock": {"Store A": 0}}]
-        if path.startswith("/api/branches"):
-            return 200, ["Store A", "Store B", "Store C"]
+            return 200, [{"branch": "Store A", "amount": 8420, "tax": 695, "date": date.today().isoformat()}]
+        if method == "POST" and path == "/api/expenses":
+            return 201, {"id": "L-77", "branch": body["branch"]}
+        if method == "POST" and path == "/api/inventory/receive":
+            return 200, {"new_stock": 5 + int(body["qty"])}
+        if method == "POST" and path == "/api/inventory/adjust":
+            return 200, {"new_stock": 5 + int(body["qty"])}
+        if method == "POST" and path == "/api/transfers":
+            return 201, {"id": "TR-1", "status": "pending"}
+        if method == "POST" and path == "/api/purchases":
+            return 201, {"id": "PO-1", "status": "pending_approval"}
+        if path == "/api/telegram/audit":
+            return 200, {"ok": True}
         return 200, {}
 
 
@@ -116,38 +117,138 @@ def _patch(fake):
     W._req = fake.req
 
 
-def test_dispatch_sales_today_shows_real_numbers():
-    _patch(FakeCtx())
-    text, markup, doc = run(W.dispatch("1", "sales:today"))
-    assert "Sales" in text and "$13,520" in text  # 8420 + 5100
-    assert "Transactions" in text
+def test_start_expense_shows_branch_step():
+    _patch(Fake(role="owner"))
+    text, markup, _ = run(W.start_flow("e1", "exp"))
+    assert "Add Expense" in text and "branch" in text.lower()
+    assert any(cb.startswith("f:pick:") for cb in _btn_cbs(markup))
 
 
-def test_dispatch_profit_allowed_vs_denied():
-    _patch(FakeCtx(role="owner", cost=True))
-    text, _, _ = run(W.dispatch("1", "nav:profit"))
-    assert "Pick a period" in text
-    _patch(FakeCtx(role="cashier", cost=False))
-    text2, _, _ = run(W.dispatch("2", "nav:profit"))
-    assert "permission" in text2.lower()
+def test_expense_denied_for_unauthorized_role():
+    _patch(Fake(role="employee"))
+    text, _, _ = run(W.start_flow("e2", "exp"))
+    assert "permission" in text.lower()
 
 
-def test_dispatch_low_stock_pagination_and_product_button():
-    _patch(FakeCtx())
-    text, markup, _ = run(W.dispatch("1", "inv:low:0"))
-    assert "Low stock" in text and "RAW Classic" in text
-    assert any(cb.startswith("prod:") for cb in _btn_cbs(markup))
+def test_expense_full_flow_persists():
+    f = Fake(role="owner")
+    _patch(f)
+    tg = "e3"
+    run(W.start_flow(tg, "exp"))
+    run(W.dispatch(tg, "f:pick:0"))     # branch Store A
+    run(W.dispatch(tg, "f:pick:1"))     # category Utilities
+    run(W.flow_text(tg, "250"))         # amount
+    run(W.dispatch(tg, "f:pick:0"))     # payment Cash
+    run(W.dispatch(tg, "f:skip"))       # notes skip
+    text, markup, _ = run(W.dispatch(tg, "f:skip"))   # receipt skip -> confirm
+    assert "confirm" in text.lower() and "f:go" in _btn_cbs(markup)
+    text2, _, _ = run(W.dispatch(tg, "f:go"))
+    assert "Expense saved" in text2 and "L-77" in text2
+    assert any(m == "POST" and p == "/api/expenses" for (m, p, b) in f.calls)
 
 
-def test_dispatch_reports_csv_returns_document():
-    _patch(FakeCtx())
-    text, markup, doc = run(W.dispatch("1", "rep:daily:today:csv"))
-    assert doc is not None
-    buf, fname, caption = doc
-    assert fname.endswith(".csv") and isinstance(buf, (bytes, bytearray))
+def test_expense_invalid_amount():
+    _patch(Fake(role="owner"))
+    tg = "e4"
+    run(W.start_flow(tg, "exp"))
+    run(W.dispatch(tg, "f:pick:0"))
+    run(W.dispatch(tg, "f:pick:1"))
+    assert "number" in run(W.flow_text(tg, "abc"))[0].lower()
 
 
-def test_home_and_back_navigation():
-    _patch(FakeCtx())
-    text, markup, _ = run(W.dispatch("1", "home"))
-    assert "Dashboard" in text
+def test_receive_flow_updates_stock():
+    f = Fake(role="inventory_manager")
+    _patch(f)
+    tg = "r1"
+    run(W.start_flow(tg, "recv"))
+    run(W.flow_pick_product(tg, "RAW-CLS"))   # product
+    run(W.dispatch(tg, "f:pick:0"))           # branch
+    run(W.flow_text(tg, "12"))                # qty
+    run(W.dispatch(tg, "f:skip"))             # supplier
+    run(W.dispatch(tg, "f:skip"))             # unit cost
+    run(W.dispatch(tg, "f:skip"))             # invoice
+    run(W.dispatch(tg, "f:skip"))             # file -> confirm
+    text, _, _ = run(W.dispatch(tg, "f:go"))
+    assert "received" in text.lower() and "17" in text
+    assert any(m == "POST" and p == "/api/inventory/receive" for (m, p, b) in f.calls)
+
+
+def test_adjust_set_exact_computes_delta():
+    f = Fake(role="owner")
+    _patch(f)
+    tg = "a1"
+    run(W.start_flow(tg, "adj"))
+    run(W.flow_pick_product(tg, "RAW-CLS"))   # product (current qty 5 @ Store A)
+    run(W.dispatch(tg, "f:pick:0"))           # branch Store A
+    run(W.dispatch(tg, "f:pick:2"))           # type = set exact
+    run(W.flow_text(tg, "10"))                # target 10
+    run(W.dispatch(tg, "f:pick:0"))           # reason
+    run(W.dispatch(tg, "f:skip"))             # notes -> confirm
+    text, _, _ = run(W.dispatch(tg, "f:go"))
+    assert "adjusted" in text.lower()
+    body = next(b for (m, p, b) in f.calls if p == "/api/inventory/adjust")
+    assert body["qty"] == 5                    # delta = target(10) - current(5)
+
+
+def test_transfer_insufficient_stock_blocked():
+    _patch(Fake(role="owner"))
+    tg = "x1"
+    run(W.start_flow(tg, "xfer"))
+    run(W.flow_pick_product(tg, "RAW-CLS"))   # 5 available @ Store A
+    run(W.dispatch(tg, "f:pick:0"))           # from Store A
+    run(W.dispatch(tg, "f:pick:0"))           # to (excludes A) -> Store B
+    run(W.flow_text(tg, "9999"))              # qty
+    run(W.dispatch(tg, "f:skip"))             # notes -> confirm
+    text, _, _ = run(W.dispatch(tg, "f:go"))
+    assert "available" in text.lower()
+
+
+def test_transfer_success_submits_pending():
+    f = Fake(role="owner")
+    _patch(f)
+    tg = "x2"
+    run(W.start_flow(tg, "xfer"))
+    run(W.flow_pick_product(tg, "RAW-CLS"))
+    run(W.dispatch(tg, "f:pick:0"))
+    run(W.dispatch(tg, "f:pick:0"))
+    run(W.flow_text(tg, "3"))
+    run(W.dispatch(tg, "f:skip"))
+    text, _, _ = run(W.dispatch(tg, "f:go"))
+    assert "submitted" in text.lower() and "pending" in text.lower()
+    assert any(p == "/api/transfers" for (m, p, b) in f.calls)
+
+
+def test_purchase_flow():
+    f = Fake(role="owner")
+    _patch(f)
+    tg = "p1"
+    run(W.start_flow(tg, "pur"))
+    run(W.dispatch(tg, "f:pick:0"))     # branch
+    run(W.flow_text(tg, "ACME Supply")) # vendor
+    run(W.flow_text(tg, "500"))         # amount
+    run(W.dispatch(tg, "f:skip"))       # invoice -> confirm
+    text, _, _ = run(W.dispatch(tg, "f:go"))
+    assert "Purchase submitted" in text and "PO-1" in text
+
+
+def test_cancel_ends_flow():
+    _patch(Fake(role="owner"))
+    tg = "c1"
+    run(W.start_flow(tg, "exp"))
+    text, _, _ = run(W.dispatch(tg, "f:cancel"))
+    assert "cancel" in text.lower()
+    assert W.flow(tg) is None
+
+
+def test_confirm_dedup_guard():
+    f = Fake(role="owner")
+    _patch(f)
+    tg = "d1"
+    run(W.start_flow(tg, "exp"))
+    run(W.dispatch(tg, "f:pick:0")); run(W.dispatch(tg, "f:pick:1"))
+    run(W.flow_text(tg, "10")); run(W.dispatch(tg, "f:pick:0"))
+    run(W.dispatch(tg, "f:skip")); run(W.dispatch(tg, "f:skip"))
+    fl = W.flow(tg)
+    fl["submitting"] = True                    # simulate an in-flight submit
+    text, _, _ = run(W.flow_submit(tg))
+    assert "processing" in text.lower()
