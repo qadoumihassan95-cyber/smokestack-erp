@@ -382,3 +382,63 @@ def test_att_pending_blocked_for_employee():
     _att_patch(AttFake(role="employee"))
     text, _, _ = run(W.render_att_pending("m10"))
     assert "permitted" in text.lower()
+
+
+# ---------- v3: expense Other + licenses ----------
+def test_expense_other_requires_description():
+    f = Fake(role="owner")
+    _patch(f)
+    tg = "o1"
+    run(W.start_flow(tg, "exp"))
+    run(W.dispatch(tg, "f:pick:0"))     # branch
+    # pick the "Other" category (last in CATS)
+    other_idx = W.CATS.index("Other")
+    run(W.dispatch(tg, f"f:pick:{other_idx}"))
+    run(W.flow_text(tg, "250"))         # amount
+    run(W.dispatch(tg, "f:pick:0"))     # payment
+    run(W.dispatch(tg, "f:skip"))       # notes skipped (no description!)
+    run(W.dispatch(tg, "f:skip"))       # receipt -> confirm
+    text, markup, _ = run(W.dispatch(tg, "f:go"))
+    # submit should bounce back asking for the description, not post
+    assert "other" in text.lower() and "expense" in text.lower()
+    assert not any(p == "/api/expenses" for (m, p, b) in f.calls)
+
+
+def test_expense_other_posts_custom_description():
+    f = Fake(role="owner")
+    _patch(f)
+    tg = "o2"
+    run(W.start_flow(tg, "exp"))
+    run(W.dispatch(tg, "f:pick:0"))
+    other_idx = W.CATS.index("Other")
+    run(W.dispatch(tg, f"f:pick:{other_idx}"))
+    run(W.flow_text(tg, "250"))
+    run(W.dispatch(tg, "f:pick:0"))
+    run(W.flow_text(tg, "Cleaning materials"))   # notes = description
+    run(W.dispatch(tg, "f:skip"))                # receipt -> confirm
+    text, _, _ = run(W.dispatch(tg, "f:go"))
+    body = next(b for (m, p, b) in f.calls if p == "/api/expenses")
+    assert body["custom_description"] == "Cleaning materials"
+    assert body["category"] == "Other"
+    assert "Cleaning materials" in text
+
+
+class LicFake:
+    async def get_ctx(self, tg_id):
+        return "tkn", {"id": "U-x", "name": "Owner", "role": "owner", "branches": None}, {}
+
+    async def req(self, method, path, token=None, body=None, headers=None):
+        if path.startswith("/api/licenses/alerts"):
+            return 200, {"count": 2, "expired": 1, "items": [
+                {"name": "Fire Inspection", "branch": "Store B", "days_to_expiry": 6, "bucket": "d7"},
+                {"name": "Insurance", "branch": None, "days_to_expiry": -8, "bucket": "expired"}]}
+        return 200, {}
+
+
+def test_license_alerts_view():
+    lf = LicFake()
+    W.get_ctx = lf.get_ctx
+    W._req = lf.req
+    text, _, _ = run(W.render_licenses("L1"))
+    assert "Fire Inspection" in text and "expired" in text.lower()
+    assert "2" in text

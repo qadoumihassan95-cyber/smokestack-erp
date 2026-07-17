@@ -111,9 +111,30 @@ def reports_home_kb():
         [("💸 Expenses", "nav:exp"), ("📦 Inventory", "nav:inv")],
         [("⚠️ Low Stock", "inv:low:0"), ("🚫 Out of Stock", "inv:out:0")],
         [("🏪 Branches", "nav:branches"), ("📑 Reports", "nav:reports")],
-        [("🔔 Notifications", "nav:ntf")],
+        [("📄 Documents", "nav:lic"), ("🔔 Notifications", "nav:ntf")],
         [("⬅️ Back", "home"), ("🏠 Home", "home")],
     ])
+
+
+async def render_licenses(tg_id):
+    token, user, _ = await get_ctx(tg_id)
+    if not token:
+        return await render_home(tg_id)
+    try:
+        _, al = await _req("GET", "/api/licenses/alerts", token=token)
+    except Exception:  # noqa: BLE001
+        al = None
+    al = al or {"count": 0, "items": []}
+    lines = ["📄 <b>Licenses &amp; Documents</b>", ""]
+    if not al.get("count"):
+        lines.append("✅ All documents are valid — nothing expiring soon.")
+    else:
+        lines.append(f"⚠️ <b>{al['count']}</b> document(s) need attention:")
+        for i in al.get("items", [])[:12]:
+            d = i.get("days_to_expiry")
+            when = "expired" if (d is not None and d < 0) else (f"{d} days left" if d is not None else "no date")
+            lines.append(f"• <b>{html.escape(i.get('name') or '')}</b> ({html.escape(i.get('branch') or 'All')}) — {when}")
+    return ("\n".join(lines), kb(footer(refresh="nav:lic")), None)
 
 
 def unlinked_kb():
@@ -807,7 +828,7 @@ def steps_for(name):
                 {"k": "category", "kind": "choice", "prompt": "Select category:", "choices": [(c, c) for c in CATS]},
                 {"k": "amount", "kind": "amount", "prompt": "Enter the amount (numbers only):"},
                 {"k": "account", "kind": "choice", "prompt": "Payment method:", "choices": [(c, c) for c in PAYS]},
-                {"k": "memo", "kind": "text", "prompt": "Add notes, or Skip:", "optional": True},
+                {"k": "memo", "kind": "text", "prompt": "Add notes / description (required if category is Other):", "optional": True},
                 {"k": "receipt", "kind": "file", "prompt": "Upload a receipt (photo/PDF), or Skip:", "optional": True},
                 {"k": "confirm", "kind": "confirm"}]
     if name == "recv":
@@ -960,6 +981,8 @@ async def flow_confirm_screen(tg_id):
 
     if name == "exp":
         add("Branch", d["branch"]); add("Category", d["category"]); add("Amount", money(d["amount"]))
+        if d["category"] == "Other":
+            add("Description", d.get("memo") or "—")
         add("Payment", d.get("account") or "—"); add("Notes", d.get("memo") or "—")
         add("Receipt", "attached" if d.get("receipt") else "none")
     elif name == "recv":
@@ -992,19 +1015,30 @@ async def flow_submit(tg_id):
     name, d = f["name"], f["data"]
     try:
         if name == "exp":
+            # "Other" requires a specific description — use the notes as the description.
+            custom = (d.get("memo") or "").strip() if d["category"] == "Other" else None
+            if d["category"] == "Other" and not custom:
+                f["submitting"] = False
+                f["step"] = 4   # jump back to the notes/description step
+                return ("✏️ Since the category is <b>Other</b>, please type the exact expense "
+                        "(e.g. Cleaning materials, Employee meal, Delivery fee):",
+                        kb([[("❌ Cancel", "f:cancel")]]), None)
             memo = d.get("memo") or ""
             if d.get("receipt"):
                 memo = (memo + f" [receipt {d['receipt']['kind']} {d['receipt']['id'][:16]} {d['receipt']['size']}b]").strip()
             stx, res = await _req("POST", "/api/expenses", token=token,
                                   body={"branch": d["branch"], "category": d["category"],
-                                        "amount": d["amount"], "account": d.get("account"), "memo": memo})
+                                        "amount": d["amount"], "account": d.get("account"), "memo": memo,
+                                        "custom_description": custom})
             if stx >= 400:
                 raise ApiErr(stx, res)
             rid = res.get("id")
+            label = custom or d["category"]
             await bot_audit(tg_id, user, "create", "expense", rid,
-                            f"{d['category']} {money(d['amount'])} @ {d['branch']} pay:{d.get('account')}")
+                            f"{label} {money(d['amount'])} @ {d['branch']} pay:{d.get('account')}")
             txt = (f"✅ <b>Expense saved</b>\nID: <code>{rid}</code>\nBranch: {d['branch']}\n"
-                   f"Category: {d['category']}\nAmount: {money(d['amount'])}\n"
+                   f"Category: {d['category']}" + (f"\nDescription: {html.escape(custom)}" if custom else "") + "\n"
+                   f"Amount: {money(d['amount'])}\n"
                    f"By: {user['name']}\n{datetime.utcnow().strftime('%b %d, %Y %H:%M UTC')}")
         elif name == "recv":
             reason = " · ".join([x for x in [
@@ -1559,6 +1593,8 @@ async def dispatch(tg_id, data):
         return await render_low_out(tg_id, which, int(page))
     if data.startswith("prod:"):
         return await render_product(tg_id, data.split(":", 1)[1])
+    if data == "nav:lic":
+        return await render_licenses(tg_id)
     if data == "nav:branches":
         return await render_branches(tg_id)
     if data.startswith("br:"):
