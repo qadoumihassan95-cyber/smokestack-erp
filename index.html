@@ -2729,7 +2729,7 @@ function renderRolePanel(){const el=document.getElementById('rolePanel');if(!el)
     (assignable?`<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Assigned branches (tap to toggle):</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">`+
       STORES.map(s=>{const on=allowedBranches().includes(s);return `<button class="btn ${on?'p':'g'}" style="padding:6px 12px" onclick="toggleAssign('${s}')">${on?'<span class=ico-check></span> ':''}${s}</button>`;}).join('')+`</div>`:'')
     +`<div style="font-size:11px;color:var(--muted);margin-bottom:5px">Granted permissions (${perms.length}/${ALL_PERMS.length}):</div>`
-    +`<div style="display:flex;gap:5px;flex-wrap:wrap">`+ALL_PERMS.map(p=>`<span style="font-size:10.5px;padding:3px 7px;border-radius:6px;border:1px solid var(--line);${perms.includes(p)?'color:var(--ok);border-color:var(--ok)':'color:var(--muted);opacity:.5'}">${perms.includes(p)?'\u2713':'○'} ${p}</span>`).join('')+`</div>`;}
+    +`<div style="display:flex;gap:5px;flex-wrap:wrap">`+ALL_PERMS.map(p=>`<span style="font-size:10.5px;padding:3px 7px;border-radius:6px;border:1px solid var(--line);${perms.includes(p)?'color:var(--ok);border-color:var(--ok)':'color:var(--muted);opacity:.5'}">${perms.includes(p)?'<span class=ico-check></span>':'○'} ${p}</span>`).join('')+`</div>`;}
 function toggleAssign(s){let list=ROLE.branches==='all'?STORES.slice():(Array.isArray(ROLE.branches)?ROLE.branches.slice():[ROLE.branches]);
   if(list.includes(s))list=list.filter(x=>x!==s);else list.push(s);
   if(SINGLE_BRANCH_ROLES.includes(ROLE.kind))list=list.slice(-1);   // cashier/employee = one branch
@@ -3274,7 +3274,7 @@ function invTransferActions(t){
   const next={pending:'approved',approved:'shipped',shipped:'received'}[t.status];
   const lbl={approved:'Approve',shipped:'Ship',received:'Receive'}[next];
   let h='';
-  if(next)h+=`<button class="rowact" title="${lbl}" onclick="invAdvanceTransfer(${t.id})">${next==='received'?'\u2713':'→'}</button>`;
+  if(next)h+=`<button class="rowact" title="${lbl}" onclick="invAdvanceTransfer(${t.id})">${next==='received'?'<span class=ico-check></span>':'→'}</button>`;
   if(t.status!=='received'&&t.status!=='cancelled')h+=` <button class="rowact" title="Cancel" onclick="invCancelTransfer(${t.id})"><span class=ico-x></span></button>`;
   return h||'—';
 }
