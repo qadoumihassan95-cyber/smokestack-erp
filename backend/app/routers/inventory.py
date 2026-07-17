@@ -4,7 +4,7 @@ from sqlalchemy import func
 from datetime import datetime, timedelta
 from ..database import get_db
 from .. import models, security as S, permissions as P
-from ..schemas import ProductIn, StockOp
+from ..schemas import ProductIn, ProductUpdate, StockOp
 
 router = APIRouter(prefix="/api/inventory", tags=["inventory"])
 
@@ -56,7 +56,7 @@ def create_product(body: ProductIn, db: Session = Depends(get_db), user: models.
     return _prod_out(db, p, S.scope_branches(user, db))
 
 @router.patch("/products/{sku}")
-def update_product(sku: str, body: ProductIn, db: Session = Depends(get_db), user: models.User = Depends(S.require("edit"))):
+def update_product(sku: str, body: ProductUpdate, db: Session = Depends(get_db), user: models.User = Depends(S.require("edit"))):
     p = db.get(models.Product, sku)
     if not p:
         raise HTTPException(404, "Not found")

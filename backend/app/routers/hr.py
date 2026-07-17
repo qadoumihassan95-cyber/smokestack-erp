@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from datetime import date, datetime
 from ..database import get_db
 from .. import models, security as S, permissions as P
-from ..schemas import EmployeeIn
+from ..schemas import EmployeeIn, EmployeeUpdate
 
 router = APIRouter(prefix="/api", tags=["hr"])
 
@@ -29,13 +29,16 @@ def add_employee(body: EmployeeIn, db: Session = Depends(get_db), user: models.U
     return _emp(e)
 
 @router.put("/employees/{eid}")
-def update_employee(eid: str, body: EmployeeIn, db: Session = Depends(get_db), user: models.User = Depends(S.require("edit_employee"))):
+def update_employee(eid: str, body: EmployeeUpdate, db: Session = Depends(get_db), user: models.User = Depends(S.require("edit_employee"))):
     e = db.get(models.Employee, eid)
     if not e:
         raise HTTPException(404, "Not found")
-    S.assert_branch(user, db, body.branch)
-    e.name, e.branch, e.title = body.name, body.branch, body.title
-    e.pay_type, e.salary, e.hourly_rate = body.pay_type, body.salary, body.hourly_rate
+    # Branch permission checked against the target branch (new if changing, else current).
+    S.assert_branch(user, db, body.branch or e.branch)
+    for f in ("name", "branch", "title", "pay_type", "salary", "hourly_rate"):
+        v = getattr(body, f, None)
+        if v is not None:
+            setattr(e, f, v)
     db.commit()
     S.audit(db, user, "edit", "employee", eid)
     return _emp(e)
