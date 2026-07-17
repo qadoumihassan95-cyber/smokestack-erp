@@ -87,3 +87,30 @@ def test_prefs_roundtrip():
         client.put("/api/telegram/prefs", headers=h, json={"low_stock": False, "language": "es"})
         after = client.get("/api/telegram/prefs", headers=h).json()["prefs"]
         assert after["low_stock"] is False and after["language"] == "es"
+
+
+def test_receive_stores_notes_and_unit_cost():
+    with TestClient(app):
+        h = _tok()
+        r = client.post("/api/inventory/receive", headers=h,
+                        json={"sku": "MRB-GLD", "branch": "Store A", "qty": 5,
+                              "reason": "Supplier X · Inv 9", "unit_cost": 7.5})
+        assert r.status_code == 200, r.text
+        mv = client.get("/api/inventory/movements?branch=Store A", headers=h).json()
+        m = next(x for x in mv if x["sku"] == "MRB-GLD" and x["type"] == "receive")
+        assert abs(m["value"] - 7.5 * 5) < 0.01          # unit_cost override applied to the movement
+
+
+def test_bot_audit_endpoint():
+    from app.config import settings
+    settings.bot_token = "TESTBOT"
+    with TestClient(app):
+        # bot-token gated
+        assert client.post("/api/telegram/audit",
+                           json={"tg_id": "1", "action": "create", "entity": "expense"}).status_code == 403
+        r = client.post("/api/telegram/audit", headers={"X-Bot-Token": "TESTBOT"},
+                        json={"tg_id": "55", "user_id": "U-owner", "action": "create",
+                              "entity": "expense", "ref": "L-1", "detail": "telegram op"})
+        assert r.status_code == 200
+        logs = client.get("/api/audit?limit=20", headers=_tok()).json()
+        assert any(a["source"] == "TELEGRAM" and a["entity"] == "expense" for a in logs)
