@@ -69,10 +69,13 @@ async def link(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
         return
     code = ctx.args[0].strip()
-    tg_id = str(update.effective_user.id)
+    u = update.effective_user
+    tg_id = str(u.id)
+    username = u.username or u.full_name or None
     try:
         status, data = await _api_post(
-            "/api/telegram/link/verify", {"tg_id": tg_id, "code": code, "device": "Telegram"}
+            "/api/telegram/link/verify",
+            {"tg_id": tg_id, "code": code, "device": "Telegram", "username": username},
         )
     except Exception as e:  # noqa: BLE001
         log.warning("link verify failed to reach API: %s", e)
