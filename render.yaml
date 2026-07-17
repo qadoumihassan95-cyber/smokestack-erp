@@ -52,6 +52,8 @@ services:
         value: https://smokestack-erp.onrender.com
       - key: SEED_ON_START
         value: "true"           # set to "false" after the first successful boot
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false             # SAME BotFather token as the worker — lets the bot exchange a tg_id for the user's JWT
 
   # ---- Telegram bot (dedicated Background Worker; long-polling, NOT in FastAPI) ----
   - type: worker
