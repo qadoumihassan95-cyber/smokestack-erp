@@ -11,16 +11,32 @@ Telegram bot (unauthenticated, uses a one-time code):
     GET  /api/telegram/session/{tg_id} -> resolve a Telegram id to an ERP user (touches activity)
 """
 import secrets
+import json
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
 from ..database import get_db
+from ..config import settings
 from .. import models, security as S
 from ..schemas import LinkVerifyIn
 
 router = APIRouter(prefix="/api/telegram", tags=["telegram"])
 
 CODE_TTL_SECONDS = 300  # 5 minutes
+
+DEFAULT_PREFS = {
+    "daily_summary": True, "weekly_summary": True, "low_stock": True, "out_of_stock": True,
+    "large_sales": False, "large_expenses": False, "quiet_hours": None,
+    "language": "en", "default_branch": None, "timezone": "UTC",
+}
+
+
+def _load_prefs(link):
+    try:
+        p = json.loads(link.prefs) if (link and link.prefs) else {}
+    except Exception:  # noqa: BLE001
+        p = {}
+    return {**DEFAULT_PREFS, **(p or {})}
 
 
 def _aware(dt):
@@ -137,3 +153,45 @@ def session(tg_id: str, db: Session = Depends(get_db)):
             "tg_id": link.tg_id, "username": link.username,
             "linked_at": _iso(link.linked_at), "last_activity": _iso(link.last_activity),
             "status": "connected"}
+
+
+@router.post("/auth-token")
+def auth_token(body: dict, x_bot_token: str = Header(None), db: Session = Depends(get_db)):
+    """Exchange a linked Telegram id for that user's JWT. Only the bot (which knows
+    the BotFather token, shared via the API's TELEGRAM_BOT_TOKEN env) may call this.
+    The bot then reuses every existing RBAC-protected endpoint as the real user."""
+    if not settings.bot_token or x_bot_token != settings.bot_token:
+        raise HTTPException(403, "Forbidden")
+    tg_id = (body.get("tg_id") or "").strip()
+    link = db.get(models.TelegramLink, tg_id)
+    if not link:
+        raise HTTPException(404, "Not linked")
+    u = db.get(models.User, link.user_id)
+    if not u or u.status != "active":
+        raise HTTPException(403, "User is not active")
+    link.last_activity = datetime.now(timezone.utc)
+    db.commit()
+    return {"access_token": S.make_token(u), "token_type": "bearer",
+            "user": {"id": u.id, "name": u.name, "role": u.role, "branches": u.branch_names or None},
+            "prefs": _load_prefs(link)}
+
+
+@router.get("/prefs")
+def get_prefs(db: Session = Depends(get_db), user: models.User = Depends(S.get_current_user)):
+    link = db.query(models.TelegramLink).filter(models.TelegramLink.user_id == user.id).first()
+    return {"connected": bool(link), "prefs": _load_prefs(link)}
+
+
+@router.put("/prefs")
+def put_prefs(body: dict, db: Session = Depends(get_db), user: models.User = Depends(S.get_current_user)):
+    link = db.query(models.TelegramLink).filter(models.TelegramLink.user_id == user.id).first()
+    if not link:
+        raise HTTPException(404, "No Telegram link for this account")
+    cur = _load_prefs(link)
+    for k, v in (body or {}).items():
+        if k in DEFAULT_PREFS:
+            cur[k] = v
+    link.prefs = json.dumps(cur)
+    db.commit()
+    S.audit(db, user, "update_prefs", "telegram", link.tg_id)
+    return {"prefs": cur}
