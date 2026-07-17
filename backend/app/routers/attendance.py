@@ -255,6 +255,76 @@ def attendance_list(branch: str = "all", db: Session = Depends(get_db),
     return [_serialize(a) for a in rows]
 
 
+def _hm_to_min(hm):
+    try:
+        h, m = str(hm or "").split(":")
+        return int(h) * 60 + int(m)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+@router.get("/worksheet")
+def worksheet(period: str = "month", start: str = None, end: str = None, branch: str = "all",
+              employee: str = "all", status: str = "all",
+              db: Session = Depends(get_db), user: models.User = Depends(S.require("view"))):
+    """Employee work schedule + Telegram attendance: joins each attendance punch with the
+    employee's scheduled shift to compute late minutes, worked hours and overtime."""
+    brs = S.scope_branches(user, db) if branch == "all" else [branch]
+    today = datetime.now(timezone.utc).date()
+    # date window
+    if start and end:
+        try:
+            d0, d1 = datetime.fromisoformat(start).date(), datetime.fromisoformat(end).date()
+        except Exception:  # noqa: BLE001
+            d0 = d1 = today
+    elif period == "today":
+        d0 = d1 = today
+    elif period == "week":
+        from datetime import timedelta
+        d0, d1 = today - timedelta(days=today.weekday()), today
+    elif period == "month":
+        d0, d1 = today.replace(day=1), today
+    else:
+        d0, d1 = today.replace(month=1, day=1), today
+
+    # schedules by employee name (best-effort join; attendance stores employee_name)
+    emps = {e.name: e for e in db.query(models.Employee).filter(models.Employee.branch.in_(brs)).all()}
+    q = (db.query(models.Attendance).filter(models.Attendance.branch.in_(brs))
+         .order_by(models.Attendance.id.desc()).limit(500).all())
+    out = []
+    for a in q:
+        d = _aware(a.clock_in_at)
+        if d and not (d0 <= d.date() <= d1):
+            continue
+        if status != "all" and a.status != status:
+            continue
+        if employee != "all" and (a.employee_name or "") != employee:
+            continue
+        e = emps.get(a.employee_name)
+        ss = (e.sched_start if e else None) or "09:00"
+        se = (e.sched_end if e else None) or "17:00"
+        sched_min = (_hm_to_min(se) or 0) - (_hm_to_min(ss) or 0)
+        late_min = 0
+        if d is not None:
+            ci_min = d.hour * 60 + d.minute
+            b = db.get(models.Branch, a.branch)
+            grace = int((b.grace_min if b else 10) or 10)
+            late_min = max(0, ci_min - (_hm_to_min(ss) or 0) - grace)
+        worked = a.worked_minutes or 0
+        overtime = max(0, worked - sched_min) if (worked and sched_min > 0) else 0
+        out.append({
+            "id": a.id, "employee": a.employee_name, "employee_id": (e.id if e else None),
+            "branch": a.branch, "sched_start": ss, "sched_end": se,
+            "clock_in": _iso(a.clock_in_at), "clock_out": _iso(a.clock_out_at),
+            "worked_minutes": worked, "late_minutes": late_min, "overtime_minutes": overtime,
+            "status": a.status, "approval": a.approval,
+            "lat": float(a.ci_lat) if a.ci_lat is not None else None,
+            "lng": float(a.ci_lng) if a.ci_lng is not None else None,
+            "distance": a.ci_dist, "source": a.source, "notes": a.reason,
+        })
+    return out
+
+
 def _branch_att(b):
     return {"name": b.name, "lat": float(b.lat) if b.lat is not None else None,
             "lng": float(b.lng) if b.lng is not None else None,

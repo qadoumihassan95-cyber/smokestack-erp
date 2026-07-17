@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from ..database import get_db
 from .. import models, security as S
@@ -11,7 +11,10 @@ def _row(x):
     return {"id": x.id, "branch": x.branch, "type": x.type, "amount": float(x.amount or 0),
             "tax": float(x.tax or 0), "category": x.category, "vendor": x.vendor,
             "account": x.account, "product": x.product, "employee": x.employee,
-            "memo": x.memo, "date": str(x.entry_date)}
+            "memo": x.memo, "custom_description": x.custom_description,
+            # what to show as the human label: the free-text detail for "Other", else the category
+            "label": (x.custom_description or x.category) if x.type == "expense" else x.category,
+            "date": str(x.entry_date)}
 
 @router.get("/sales")
 def sales(branch: str = "all", db: Session = Depends(get_db), user: models.User = Depends(S.require("view"))):
@@ -37,10 +40,16 @@ def expenses(branch: str = "all", db: Session = Depends(get_db), user: models.Us
 @router.post("/expenses", status_code=201)
 def add_expense(body: ExpenseIn, db: Session = Depends(get_db), user: models.User = Depends(S.require("create"))):
     S.assert_branch(user, db, body.branch)
+    # "Other" requires a specific free-text description — never store only "Other".
+    desc = (body.custom_description or "").strip()
+    if (body.category or "").strip().lower() == "other" and not desc:
+        raise HTTPException(422, "A description is required when the category is 'Other'.")
+    custom = desc if (body.category or "").strip().lower() == "other" else None
     r = models.Ledger(branch=body.branch, type="expense", amount=body.amount, category=body.category,
-                      account=body.account, memo=body.memo, created_by=user.id)
+                      account=body.account, memo=body.memo, custom_description=custom, created_by=user.id)
     db.add(r); db.commit()
-    S.audit(db, user, "create", "expense", r.id, f"{body.category} {body.amount} @ {body.branch}")
+    label = custom or body.category
+    S.audit(db, user, "create", "expense", r.id, f"{label} {body.amount} @ {body.branch}")
     return _row(r)
 
 @router.get("/purchases")
