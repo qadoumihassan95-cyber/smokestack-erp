@@ -28,6 +28,7 @@ DEFAULT_PREFS = {
     "daily_summary": True, "weekly_summary": True, "low_stock": True, "out_of_stock": True,
     "large_sales": False, "large_expenses": False, "quiet_hours": None,
     "language": "en", "default_branch": None, "timezone": "UTC",
+    "att_consent": False,   # location-privacy consent for attendance
 }
 
 
