@@ -4676,6 +4676,215 @@ function invAsOfHTML(){
 try{ empMigrate(); payRestore(); invDateRestore();
   if(document.getElementById('v-payroll'))renderPay();
 }catch(e){ console.error('payroll/inv module init',e); }
+
+/* ============================================================================
+   BACKEND INTEGRATION — connects this UI to the FastAPI + PostgreSQL backend.
+   Activated when an API base is provided (?api=<url>  OR  window.SS_API_BASE).
+   When active: real login, all data hydrated from the API into the SAME globals
+   the existing renderers use (UI unchanged), and every create/mutate goes to the
+   API and re-hydrates from the database. No business data is kept in localStorage
+   (only branch + date-filter UI prefs). When NO api base is set, the app runs in
+   its previous local/demo mode so the currently-deployed site is never broken.
+   ========================================================================== */
+(function(){
+  var _qp = new URLSearchParams(location.search);
+  // Dev / legacy escape hatches: run the in-browser demo only on localhost or with ?legacy=1.
+  var _DEV = _qp.get('legacy')==='1' || /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+  // PRODUCTION DEFAULT: talk to the live FastAPI + PostgreSQL backend. Override
+  // with ?api=<url> or window.SS_API_BASE. Business data is never read from or
+  // written to localStorage in API mode — it lives only in the database.
+  var API_BASE = _qp.get('api') || window.SS_API_BASE || (_DEV ? '' : 'https://smokestack-api.onrender.com');
+  if(!API_BASE){ window.API_MODE=false; return; }             // dev/legacy demo mode
+  window.API_MODE=true;
+
+  /* ---- compact API client (JWT bearer) ---- */
+  var T = { token: sessionStorage.getItem('ss_token')||null, user:null, base: API_BASE.replace(/\/$/,'') };
+  async function call(path, opts){ opts=opts||{}; var h={}; if(T.token)h['Authorization']='Bearer '+T.token;
+    var body; if(opts.form){h['Content-Type']='application/x-www-form-urlencoded';body=new URLSearchParams(opts.form).toString();}
+    else if(opts.body!==undefined){h['Content-Type']='application/json';body=JSON.stringify(opts.body);}
+    var res=await fetch(T.base+path,{method:opts.method||'GET',headers:h,body:body});
+    if(res.status===401){ apiLogout(true); throw Object.assign(new Error('Session expired — please sign in again'),{status:401}); }
+    var txt=await res.text(); var data=txt?JSON.parse(txt):null;
+    if(!res.ok) throw Object.assign(new Error((data&&data.detail)||res.statusText),{status:res.status,data});
+    return data; }
+  var API={
+    login:function(u,p){return call('/api/auth/login',{method:'POST',form:{username:u,password:p}});},
+    me:function(){return call('/api/auth/me');},
+    branches:function(){return call('/api/branches');},
+    dashboard:function(b){return call('/api/reports/dashboard?branch='+encodeURIComponent(b||'all'));},
+    products:function(){return call('/api/inventory/products?branch=all');},
+    createProduct:function(p){return call('/api/inventory/products',{method:'POST',body:p});},
+    updateProduct:function(s,p){return call('/api/inventory/products/'+encodeURIComponent(s),{method:'PATCH',body:p});},
+    receive:function(b){return call('/api/inventory/receive',{method:'POST',body:b});},
+    adjust:function(b){return call('/api/inventory/adjust',{method:'POST',body:b});},
+    movements:function(){return call('/api/inventory/movements?branch=all');},
+    asof:function(d,b){return call('/api/inventory/asof?date='+d+'&branch='+encodeURIComponent(b||'all'));},
+    sales:function(){return call('/api/sales?branch=all');}, addSale:function(b){return call('/api/sales',{method:'POST',body:b});},
+    expenses:function(){return call('/api/expenses?branch=all');}, addExpense:function(b){return call('/api/expenses',{method:'POST',body:b});},
+    purchases:function(){return call('/api/purchases?branch=all');}, addPurchase:function(b){return call('/api/purchases',{method:'POST',body:b});},
+    employees:function(){return call('/api/employees?branch=all');}, addEmployee:function(b){return call('/api/employees',{method:'POST',body:b});},
+    updateEmployee:function(id,b){return call('/api/employees/'+encodeURIComponent(id),{method:'PUT',body:b});},
+    deactivateEmployee:function(id){return call('/api/employees/'+encodeURIComponent(id)+'/deactivate',{method:'POST'});},
+    finalizePayroll:function(s,e,b){return call('/api/payroll/finalize?start='+s+'&end='+e+'&branch='+encodeURIComponent(b||'all'),{method:'POST'});},
+    transfers:function(){return call('/api/transfers');}, createTransfer:function(b){return call('/api/transfers',{method:'POST',body:b});},
+    issueTgCode:function(){return call('/api/telegram/link/issue',{method:'POST'});}
+  };
+  window.SS_API_LIVE=API;
+  function apiErr(e){ if(e&&e.status===403)return 'Not permitted (server rejected this action).'; if(e&&e.status===422)return 'Invalid data: '+(e.data&&e.data.detail?JSON.stringify(e.data.detail):e.message); return (e&&e.message)||'Request failed'; }
+
+  /* ---- login gate ---- */
+  function overlay(html){ var d=document.getElementById('ssAuth'); if(!d){d=document.createElement('div');d.id='ssAuth';
+      d.style.cssText='position:fixed;inset:0;z-index:9999;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px';document.body.appendChild(d);} d.innerHTML=html; d.style.display='flex'; return d; }
+  function hideOverlay(){ var d=document.getElementById('ssAuth'); if(d)d.style.display='none'; }
+  function loginScreen(msg){
+    overlay('<div class="card" style="max-width:380px;width:100%;box-shadow:var(--shadow-lg)">'
+      +'<div class="logo" style="margin-bottom:6px"><span class="b"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7l8-4 8 4-8 4-8-4z"/><path d="M4 12l8 4 8-4"/><path d="M4 17l8 4 8-4"/></svg></span> SmokeStack</div>'
+      +'<div class="sub" style="margin:0 0 16px;color:var(--muted)">Sign in to your ERP account</div>'
+      +(msg?'<div style="background:var(--bad-bg);color:var(--bad);border-radius:10px;padding:9px 12px;font-size:12.5px;font-weight:600;margin-bottom:12px">'+msg+'</div>':'')
+      +'<label>Username</label><input id="ssU" autocomplete="username" placeholder="e.g. U-owner">'
+      +'<label style="margin-top:10px">Password</label><input id="ssP" type="password" autocomplete="current-password" placeholder="Password">'
+      +'<button class="btn p" id="ssLoginBtn" style="width:100%;margin-top:16px">Sign in</button>'
+      +'<div style="font-size:11px;color:var(--muted2);margin-top:10px;text-align:center">Connected to PostgreSQL · '+T.base.replace(/^https?:\/\//,'')+'</div></div>');
+    var btn=document.getElementById('ssLoginBtn');
+    var go=async function(){ btn.disabled=true; btn.textContent='Signing in…';
+      try{ var r=await API.login(document.getElementById('ssU').value.trim(), document.getElementById('ssP').value);
+        T.token=r.access_token; sessionStorage.setItem('ss_token',T.token); await apiBoot(); }
+      catch(e){ btn.disabled=false; btn.textContent='Sign in'; loginScreen(e.status===401?'Incorrect username or password':apiErr(e)); } };
+    btn.onclick=go;
+    document.getElementById('ssP').onkeydown=function(e){ if(e.key==='Enter')go(); };
+    setTimeout(function(){document.getElementById('ssU').focus();},50);
+  }
+  function loadingScreen(){ overlay('<div style="text-align:center;color:var(--muted)"><div class="skel" style="width:220px;height:14px;margin:6px auto"></div><div class="skel" style="width:160px;height:14px;margin:6px auto"></div><div style="margin-top:14px;font-weight:600">Loading your data from the database…</div></div>'); }
+  function apiLogout(silent){ T.token=null; T.user=null; sessionStorage.removeItem('ss_token'); if(!silent)loginScreen(); else loginScreen('Your session expired. Please sign in again.'); }
+  window.apiLogout=apiLogout;
+
+  /* ---- role/branch from token; never persist business/role data to localStorage ---- */
+  var _lsSet=window.lsSet;
+  window.lsSet=function(k,v){ if(window.API_MODE && k===LS.role) return; return _lsSet(k,v); };
+
+  /* ---- hydration: fill the SAME globals the renderers already use ---- */
+  var _skuName={};
+  async function hydrate(){
+    STORES = await API.branches();
+    var u=T.user;
+    ROLE = { kind:u.role, branches:(u.branches&&u.branches.length)?u.branches.slice():'all' };
+    try{ localStorage.removeItem(LS.role); }catch(e){}
+    // products
+    var prods = await API.products();
+    INV.products = prods.map(function(p,i){ var stock={}; STORES.forEach(function(b){ stock[b]=(p.stock&&p.stock[b])||0; });
+      return {id:i+1, sku:p.sku, barcode:p.barcode||'', name:p.name, cat:p.category||'General', brand:p.brand||'', supplier:p.supplier||'',
+        cost:(p.cost==null?0:p.cost), price:p.price||0, stock:stock, min:p.min||0, reorder:(p.min||0)*2, uom:p.uom||'unit',
+        shelf:p.shelf||'', status:p.status||'active', taxCat:'Standard (8.25%)', created:daysAgo(30), updated:daysAgo(0), sold:0, rev:0}; });
+    INV.seq = INV.products.length; INV.inited = true;
+    _skuName = {}; INV.products.forEach(function(p){ _skuName[p.sku]=p.name; });
+    // movements
+    var mv = await API.movements();
+    INV.moves = mv.map(function(m){ return {id:m.id, ref:m.ref, date:m.date, product:_skuName[m.sku]||m.sku, sku:m.sku, branch:m.branch,
+      type:m.type, before:m.before, change:m.change, after:m.after, cost:(m.change?Math.abs((m.value||0)/m.change):0), value:m.value, user:m.user, notes:''}; });
+    // ledger (sales + expenses + purchases) → LEDGER + REP.tx
+    var sx = await Promise.all([API.sales(), API.expenses(), API.purchases()]);
+    var L=[];
+    sx[0].forEach(function(x){ L.push({id:'S'+x.id, date:x.date, store:x.branch, account:x.account||'Cash', type:'sale', amount:x.amount, tax:x.tax||0, category:'Sales', product:x.product, employee:x.employee, memo:x.product||'Daily sales'}); });
+    sx[1].forEach(function(x){ L.push({id:'E'+x.id, date:x.date, store:x.branch, account:x.account||'Cash', type:'expense', category:x.category, amount:x.amount, memo:x.memo||x.category}); });
+    sx[2].forEach(function(x){ L.push({id:x.id, date:x.date, store:x.branch, account:'Business Bank', type:'purchase', vendor:x.vendor, amount:x.amount, memo:x.vendor}); });
+    LEDGER = L; if(typeof REP!=='undefined'&&REP) REP.tx = L; window.uid = 900000;
+    // employees
+    var emps = await API.employees();
+    EMPLOYEES = emps.map(function(e){ return {id:e.id, name:e.name, store:e.branch, title:e.title||'Staff', jobRole:'employee', payType:e.pay_type||'salary',
+      salary:e.salary||0, gross:e.salary||0, hourlyRate:e.hourly_rate||0, stdHours:160, otMult:1.5, transportAllow:0, otherAllow:0, deductions:0,
+      fica:7.65, unemp:2, wh:0, status:e.active?'active':'inactive', active:e.active, hireDate:daysAgo(120), termDate:'', phone:'', email:'',
+      payMethod:'Bank transfer', bankRef:'', notes:'', runs:[], createdBy:'system', createdAt:''}; });
+    if(typeof empMigrate==='function') empMigrate();
+    // transfers
+    try{ var tr=await API.transfers(); INV.transfers = tr.map(function(t){ return {id:t.id, sku:t.sku, product:_skuName[t.sku]||t.sku, from:t['from'], to:t.to, qty:t.qty, status:t.status, history:[]}; }); }catch(e){ INV.transfers=INV.transfers||[]; }
+  }
+  window.apiRehydrate = hydrate;
+
+  async function apiBoot(){
+    loadingScreen();
+    try{
+      T.user = await API.me();
+      await hydrate();
+      if(typeof fillStores==='function') fillStores();
+      var canAll = (ROLE.branches==='all');
+      if(typeof setBranch==='function') setBranch(canAll?'all':(STORES[0]));
+      if(typeof refreshAll==='function') refreshAll();
+      if(typeof renderSettings==='function') try{renderSettings();}catch(e){}
+      hideOverlay();
+      _addLogout();
+      toast('Signed in as '+T.user.name+' · data from PostgreSQL');
+    }catch(e){ if(e.status===401){ apiLogout(true);} else { loginScreen(apiErr(e)); } }
+  }
+  function _addLogout(){ if(document.getElementById('ssLogout'))return;
+    var host=document.querySelector('.side .foot'); if(host){ var b=document.createElement('button'); b.id='ssLogout'; b.className='btn g'; b.style.cssText='width:100%;margin-top:8px;font-size:12px';
+      b.textContent='Sign out ('+T.user.name+')'; b.onclick=function(){ apiLogout(); }; host.parentNode.insertBefore(b, host); } }
+
+  /* ---- write-through overrides (call API → re-hydrate from DB → re-render) ---- */
+  function wrap(name, fn){ var orig=window[name]; window[name]=function(){ if(!window.API_MODE) return orig&&orig.apply(this,arguments);
+    return fn.apply(this, [orig].concat([].slice.call(arguments))); }; }
+  var busy=false;
+  async function afterWrite(msg){ await hydrate(); if(typeof refreshAll==='function')refreshAll(); if(msg)toast(msg); }
+
+  wrap('submitExpense', async function(orig){ var amt=+((document.getElementById('eAmt')||{}).value)||0; if(!amt)return toast('Enter an amount');
+    var branch=(document.getElementById('eStore')||{}).value, cat=(document.getElementById('eCat')||{}).value, acct=(document.getElementById('eAcct')||{}).value, vendor=(document.getElementById('eVendor')||{}).value;
+    if(busy)return; busy=true; try{ await API.addExpense({branch:branch,category:cat,amount:amt,account:acct,memo:vendor}); document.getElementById('eAmt').value=''; if(document.getElementById('eVendor'))document.getElementById('eVendor').value=''; await afterWrite('Expense saved to database: '+money(amt)); }catch(e){ toast(apiErr(e)); } finally{ busy=false; } });
+
+  wrap('submitPurchase', async function(orig){ var amt=+((document.getElementById('pAmt')||{}).value)||0; if(!amt)return toast('Enter an amount');
+    var branch=(document.getElementById('pStore')||{}).value, vendor=(document.getElementById('pVendor')||{}).value;
+    if(busy)return; busy=true; try{ await API.addPurchase({vendor:vendor,branch:branch,amount:amt}); document.getElementById('pAmt').value=''; await afterWrite('Purchase saved (pending approval): '+money(amt)); }catch(e){ toast(apiErr(e)); } finally{ busy=false; } });
+
+  wrap('submitDailySales', async function(orig){ var store=(document.getElementById('sStore')||{}).value, cash=+((document.getElementById('sCash')||{}).value)||0, card=+((document.getElementById('sCard')||{}).value)||0; var total=cash+card; if(!total)return toast('Enter cash or card total');
+    var taxable=(document.getElementById('sTaxable')||{}).value==='1'; var tax=taxable?+(total*0.0825).toFixed(2):0;
+    if(busy)return; busy=true; try{ if(cash)await API.addSale({branch:store,amount:cash,tax:+(tax*cash/total).toFixed(2),account:'Cash'}); if(card)await API.addSale({branch:store,amount:card,tax:+(tax*card/total).toFixed(2),account:'Checking'}); document.getElementById('sCash').value='';document.getElementById('sCard').value=''; await afterWrite('Daily sales saved: '+money(total)); }catch(e){ toast(apiErr(e)); } finally{ busy=false; } });
+
+  wrap('invSaveProduct', async function(orig, id){ var g=function(x){var el=document.getElementById(x);return el?el.value:'';};
+    var name=g('pfName').trim(), sku=g('pfSku').trim(); if(!name||!sku)return toast('Name and SKU are required');
+    var body={sku:sku,name:name,barcode:g('pfBarcode'),category:g('pfCat')||'General',supplier:g('pfSupplier')||'',cost:+g('pfCost')||0,price:+g('pfPrice')||0,min_level:+g('pfMin')||0,uom:g('pfUom')||'unit',shelf:g('pfShelf')||''};
+    if(busy)return; busy=true; try{
+      var editing = id!=null && id!=='null' && INV.products.some(function(p){return p.id===id||p.sku===sku;});
+      var existing = INV.products.find(function(p){return p.id===id;});
+      if(existing){ await API.updateProduct(existing.sku, body); }
+      else { await API.createProduct(body); var qty=+g('pfQty')||0; var br=g('pfBranch')||STORES[0]; if(qty>0){ try{ await API.receive({sku:sku,branch:br,qty:qty}); }catch(_){} } }
+      if(typeof drwClose==='function')drwClose(); await afterWrite(existing?'Product updated in database':'Product created in database'); }
+    catch(e){ var el=document.getElementById('invFormErr'); if(el){el.style.display='block';el.textContent=apiErr(e);} else toast(apiErr(e)); } finally{ busy=false; } });
+
+  wrap('invDoAddStock', async function(orig, id){ var p=INV.products.find(function(x){return x.id===id;}); if(!p)return; var g=function(x){var el=document.getElementById(x);return el?el.value:'';};
+    var branch=g('asBranch'), qty=+g('asQty')||0; if(!qty)return toast('Enter a quantity');
+    if(busy)return; busy=true; try{ await API.receive({sku:p.sku,branch:branch,qty:qty}); if(typeof drwClose==='function')drwClose(); await afterWrite('Received '+qty+' × '+p.name+' → saved to database'); }catch(e){ toast(apiErr(e)); } finally{ busy=false; } });
+
+  wrap('invDoAdjust', async function(orig, id){ var p=INV.products.find(function(x){return x.id===id;}); if(!p)return; var g=function(x){var el=document.getElementById(x);return el?el.value:'';};
+    var branch=g('adjBranch'), type=g('adjType'), qty=+g('adjQty')||0, note=g('adjNote'); if(!note)return toast('A reason is required');
+    var change = type==='set' ? (qty-(p.stock[branch]||0)) : type==='reduce' ? -qty : qty;
+    if(busy)return; busy=true; try{ await API.adjust({sku:p.sku,branch:branch,qty:change,reason:note}); if(typeof drwClose==='function')drwClose(); await afterWrite('Stock adjusted → saved to database'); }catch(e){ toast(apiErr(e)); } finally{ busy=false; } });
+
+  wrap('invCreateTransfer', async function(orig){ var g=function(x){var el=document.getElementById(x);return el?el.value:'';};
+    var sku=g('trProd'), from=g('trFrom'), to=g('trTo'), qty=+g('trQty')||0; if(!qty)return toast('Enter a quantity');
+    if(busy)return; busy=true; try{ await API.createTransfer({sku:sku,from_branch:from,to_branch:to,qty:qty}); if(typeof drwClose==='function')drwClose(); await afterWrite('Transfer created (pending approval)'); }catch(e){ var el=document.getElementById('trErr'); if(el){el.style.display='block';el.textContent=apiErr(e);} else toast(apiErr(e)); } finally{ busy=false; } });
+
+  wrap('empSave', async function(orig, id){ var g=function(x){var el=document.getElementById(x);return el?el.value:'';};
+    var body={id:g('efId').trim(),name:g('efName').trim(),branch:g('efStore'),title:g('efTitle')||'Staff',pay_type:g('efPayType')||'salary',salary:+g('efSalary')||0,hourly_rate:+g('efRate')||0};
+    if(!body.name||!body.id)return toast('Name and ID are required');
+    if(busy)return; busy=true; try{ var editing=id!=null&&id!=='null'&&EMPLOYEES.some(function(e){return e.id===id;});
+      if(editing) await API.updateEmployee(id, body); else await API.addEmployee(body);
+      if(typeof drwClose==='function')drwClose(); await afterWrite(editing?'Employee updated in database':'Employee added to database'); }
+    catch(e){ var el=document.getElementById('empErr'); if(el){el.style.display='block';el.textContent=apiErr(e);} else toast(apiErr(e)); } finally{ busy=false; } });
+
+  wrap('payFinalize', async function(orig){ if(busy)return; busy=true; try{ var r=await API.finalizePayroll(PAY.start,PAY.end,(BRANCH!=='all'?BRANCH:'all')); if(typeof drwClose==='function')drwClose(); await afterWrite('Payroll finalized in database: '+money(r.gross||0)); }catch(e){ toast(apiErr(e)); } finally{ busy=false; } });
+
+  wrap('invDeactivate', async function(orig, sku){ if(busy)return; busy=true;
+    try{ await call('/api/inventory/products/'+encodeURIComponent(sku)+'/deactivate',{method:'POST'}); await afterWrite('Product deactivated in database'); }
+    catch(e){ toast(apiErr(e)); } finally{ busy=false; } });
+  wrap('invReactivate', async function(orig, sku){ if(busy)return; busy=true;
+    try{ await call('/api/inventory/products/'+encodeURIComponent(sku)+'/reactivate',{method:'POST'}); await afterWrite('Product reactivated in database'); }
+    catch(e){ toast(apiErr(e)); } finally{ busy=false; } });
+
+  /* ---- Telegram linking (Settings) ---- */
+  window.apiIssueTelegramCode = async function(){ try{ var r=await SS_API_LIVE.issueTgCode(); toast('Telegram code: '+r.code+' (valid '+r.ttl_minutes+' min) — send /link '+r.code+' to the bot'); return r; }catch(e){ toast(apiErr(e)); } };
+
+  /* ---- boot: auto-resume session or show login ---- */
+  document.addEventListener('DOMContentLoaded', function(){}); // no-op; app already inited
+  if(T.token){ apiBoot(); } else { loginScreen(); }
+})();
 </script>
 </body>
 </html>
