@@ -8,6 +8,34 @@ from .database import Base
 class Branch(Base):
     __tablename__ = "branches"
     name = Column(String, primary_key=True)
+    # attendance geofence settings
+    lat = Column(Numeric(10, 6)); lng = Column(Numeric(10, 6))
+    radius_m = Column(Integer, default=150)
+    timezone = Column(String, default="UTC")
+    loc_verify = Column(Boolean, default=True)
+    grace_min = Column(Integer, default=10)
+    allow_override = Column(Boolean, default=True)
+    attendance_active = Column(Boolean, default=True)
+
+
+class Attendance(Base):
+    __tablename__ = "attendance"
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    user_id = Column(String, index=True)
+    employee_id = Column(String)
+    employee_name = Column(String)
+    tg_id = Column(String)
+    branch = Column(String, index=True)
+    clock_in_at = Column(DateTime(timezone=True))
+    ci_lat = Column(Numeric(10, 6)); ci_lng = Column(Numeric(10, 6)); ci_dist = Column(Integer)
+    clock_out_at = Column(DateTime(timezone=True))
+    co_lat = Column(Numeric(10, 6)); co_lng = Column(Numeric(10, 6)); co_dist = Column(Integer)
+    status = Column(String, default="active")        # active | completed | pending | rejected
+    approval = Column(String, default="none")        # none | pending | approved | rejected
+    approver = Column(String); approved_at = Column(DateTime(timezone=True)); reason = Column(String)
+    late = Column(Boolean, default=False); worked_minutes = Column(Integer)
+    source = Column(String, default="TELEGRAM")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class User(Base):
     __tablename__ = "users"

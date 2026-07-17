@@ -30,8 +30,14 @@ def seed(db: Session):
     # Short demo password from env (defaults to 'demo1234'). hash_pw validates
     # the 72-byte bcrypt limit and will raise a clear error on an over-long value.
     seed_pw_hash = hash_pw(settings.seed_password)
+    # Seed branch coordinates so attendance geofencing works out of the box (admins
+    # can change these in the web app → Settings → Branches → Attendance Location).
+    GEO = {"Store A": (32.221100, 35.254400), "Store B": (31.905000, 35.208000),
+           "Store C": (31.501700, 34.466800)}
     for b in BRANCHES:
-        db.add(models.Branch(name=b))
+        lat, lng = GEO.get(b, (None, None))
+        db.add(models.Branch(name=b, lat=lat, lng=lng, radius_m=150, timezone="UTC",
+                             loc_verify=True, grace_min=10, allow_override=True, attendance_active=True))
     for uid, role, name, branches in USERS:
         db.add(models.User(id=uid, name=name, role=role, email=f"{role}@smokestack.local",
                            password_hash=seed_pw_hash))
