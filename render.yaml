@@ -1,4 +1,15 @@
+# SmokeStack — ROOT render.yaml (replace the repo-root render.yaml with this).
+# Keeps the existing frontend service EXACTLY as-is, and adds the backend API
+# web service + a managed PostgreSQL database. Requires the backend/ folder to be
+# committed to the repo first, or the API build will fail.
+
+databases:
+  - name: smokestack-db
+    plan: basic-256mb            # Render's smallest paid Postgres; scale up later.
+    postgresMajorVersion: "16"
+
 services:
+  # ---- existing frontend (unchanged) ----
   - type: web
     name: smokestack
     runtime: node
@@ -13,3 +24,29 @@ services:
         value: production
       - key: NODE_VERSION
         value: "20"
+
+  # ---- new backend API ----
+  - type: web
+    name: smokestack-api
+    runtime: python
+    plan: starter
+    region: oregon
+    branch: main
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    preDeployCommand: alembic upgrade head
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: smokestack-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRE_MINUTES
+        value: "720"
+      - key: CORS_ORIGINS
+        value: https://smokestack-erp.onrender.com
+      - key: SEED_ON_START
+        value: "true"           # set to "false" after the first successful boot
