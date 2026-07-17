@@ -25,5 +25,8 @@ class Settings:
     # env so production can supply a real one without committing it to git.
     seed_password: str = os.getenv("SEED_PASSWORD", "demo1234")
     link_code_ttl_min: int = int(os.getenv("LINK_CODE_TTL_MIN", "10"))
+    # Shared secret between the API and the Telegram worker. When set (== the
+    # BotFather token), the worker can exchange a linked tg_id for that user's JWT.
+    bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
 
 settings = Settings()

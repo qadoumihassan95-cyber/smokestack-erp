@@ -128,6 +128,7 @@ class TelegramLink(Base):
     linked_at = Column(DateTime(timezone=True), server_default=func.now())
     last_activity = Column(DateTime(timezone=True), server_default=func.now())
     expires_at = Column(DateTime(timezone=True))
+    prefs = Column(Text)   # JSON string: notification toggles, quiet hours, language, default branch, timezone
 
 class LinkCode(Base):
     __tablename__ = "link_codes"
