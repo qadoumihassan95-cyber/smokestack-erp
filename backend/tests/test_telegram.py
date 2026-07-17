@@ -53,3 +53,37 @@ def test_session_invalid_tg_id():
         r = client.get("/api/telegram/session/not-a-real-id")
         assert r.status_code == 200
         assert r.json() == {"linked": False}
+
+
+def test_auth_token_exchange_and_reuse():
+    from app.config import settings
+    settings.bot_token = "TESTBOT"  # simulate the shared bot secret
+    with TestClient(app):
+        _link("777001", username="hassan")
+        # wrong / missing bot token -> forbidden
+        assert client.post("/api/telegram/auth-token", json={"tg_id": "777001"}).status_code == 403
+        assert client.post("/api/telegram/auth-token", json={"tg_id": "777001"},
+                           headers={"X-Bot-Token": "nope"}).status_code == 403
+        # unlinked tg_id -> 404
+        assert client.post("/api/telegram/auth-token", json={"tg_id": "000999"},
+                           headers={"X-Bot-Token": "TESTBOT"}).status_code == 404
+        # valid -> a JWT that works on an existing RBAC endpoint as the real user
+        r = client.post("/api/telegram/auth-token", json={"tg_id": "777001"},
+                        headers={"X-Bot-Token": "TESTBOT"})
+        assert r.status_code == 200, r.text
+        tok = r.json()["access_token"]
+        me = client.get("/api/auth/me", headers={"Authorization": "Bearer " + tok})
+        assert me.status_code == 200 and me.json()["role"] == "owner"
+
+
+def test_prefs_roundtrip():
+    from app.config import settings
+    settings.bot_token = "TESTBOT"
+    with TestClient(app):
+        _link("777002", username="p")
+        h = _tok()
+        base = client.get("/api/telegram/prefs", headers=h).json()
+        assert base["connected"] is True and base["prefs"]["low_stock"] is True
+        client.put("/api/telegram/prefs", headers=h, json={"low_stock": False, "language": "es"})
+        after = client.get("/api/telegram/prefs", headers=h).json()["prefs"]
+        assert after["low_stock"] is False and after["language"] == "es"
