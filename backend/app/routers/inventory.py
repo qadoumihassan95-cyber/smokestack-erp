@@ -88,15 +88,16 @@ def reactivate_product(sku: str, db: Session = Depends(get_db), user: models.Use
     S.audit(db, user, "reactivate", "product", sku)
     return {"ok": True, "status": "active"}
 
-def _write_movement(db, user, sku, branch, mtype, change, notes=""):
+def _write_movement(db, user, sku, branch, mtype, change, notes="", unit_cost=None):
     st = db.query(models.Stock).filter_by(sku=sku, branch=branch).first()
     if not st:
         st = models.Stock(sku=sku, branch=branch, qty=0); db.add(st); db.flush()
     before = int(st.qty or 0); after = max(0, before + int(change)); st.qty = after
     p = db.get(models.Product, sku)
+    uc = unit_cost if unit_cost is not None else (p.cost if p else 0)
     db.add(models.Movement(ref=f"MV-{int(datetime.utcnow().timestamp())}", sku=sku, branch=branch,
                            type=mtype, qty_before=before, qty_change=int(change), qty_after=after,
-                           unit_cost=(p.cost if p else 0), user_id=user.id, notes=notes))
+                           unit_cost=uc, user_id=user.id, notes=notes))
     db.commit()
     return after
 
@@ -105,8 +106,10 @@ def receive(body: StockOp, db: Session = Depends(get_db), user: models.User = De
     S.assert_branch(user, db, body.branch)
     if not db.get(models.Product, body.sku):
         raise HTTPException(404, "Product not found")
-    after = _write_movement(db, user, body.sku, body.branch, "receive", abs(body.qty))
-    S.audit(db, user, "receive", "product", body.sku, f"+{abs(body.qty)} @ {body.branch}")
+    after = _write_movement(db, user, body.sku, body.branch, "receive", abs(body.qty),
+                            notes=(body.reason or ""), unit_cost=body.unit_cost)
+    S.audit(db, user, "receive", "product", body.sku,
+            f"+{abs(body.qty)} @ {body.branch}" + (f" · {body.reason}" if body.reason else ""))
     return {"ok": True, "sku": body.sku, "branch": body.branch, "new_stock": after}
 
 @router.post("/adjust")

@@ -176,6 +176,20 @@ def auth_token(body: dict, x_bot_token: str = Header(None), db: Session = Depend
             "prefs": _load_prefs(link)}
 
 
+@router.post("/audit")
+def bot_audit(body: dict, x_bot_token: str = Header(None), db: Session = Depends(get_db)):
+    """Telegram-attributed audit entry (captures tg_id + old/new values, source=TELEGRAM).
+    Complements the per-endpoint ERP-user audit written by the reused write endpoints."""
+    if not settings.bot_token or x_bot_token != settings.bot_token:
+        raise HTTPException(403, "Forbidden")
+    db.add(models.AuditLog(source="TELEGRAM", tg_id=str(body.get("tg_id") or ""),
+                           user_id=body.get("user_id"), action=body.get("action"),
+                           entity=body.get("entity"), ref=str(body.get("ref") or ""),
+                           detail=str(body.get("detail") or ""), result=body.get("result") or "ok"))
+    db.commit()
+    return {"ok": True}
+
+
 @router.get("/prefs")
 def get_prefs(db: Session = Depends(get_db), user: models.User = Depends(S.get_current_user)):
     link = db.query(models.TelegramLink).filter(models.TelegramLink.user_id == user.id).first()
