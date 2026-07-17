@@ -672,6 +672,29 @@
     .nav a{ padding:11px 12px;font-size:15px }
     .nav a .ni,.nav a .ni svg{ width:22px;height:22px }
   }
+
+  /* ---- Period / date-range segmented controls (payroll + inventory history) ---- */
+  .seg{ display:inline-flex;background:var(--panel2);border:1px solid var(--line);border-radius:11px;padding:3px;gap:2px;flex-wrap:wrap }
+  .segb{ border:none;background:transparent;color:var(--muted);font-size:12.5px;font-weight:650;padding:7px 12px;border-radius:8px;cursor:pointer }
+  .segb:hover{ color:var(--txt) }
+  .segb.on{ background:#fff;color:var(--accent);box-shadow:var(--shadow) }
+  .daterow{ display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end }
+  .daterow > div{ display:flex;flex-direction:column }
+  .daterow input[type=date]{ min-width:150px }
+  .rangechip{ display:inline-flex;align-items:center;gap:7px;font-weight:700;font-size:13px }
+  .rangechip .dot{ width:7px;height:7px;border-radius:50%;background:var(--accent) }
+  /* employee form grid */
+  .efgrid{ display:grid;grid-template-columns:1fr 1fr;gap:10px 12px }
+  .ef{ display:flex;flex-direction:column }
+  .ef label{ margin-bottom:4px }
+  @media(max-width:860px){ .efgrid{ grid-template-columns:1fr } }
+  @media(max-width:860px){
+    .daterow{ gap:8px }
+    .daterow input[type=date]{ min-width:0;width:100%;min-height:44px }
+    .daterow > div{ flex:1 1 45% }
+    .seg{ width:100% }
+    .segb{ flex:1;text-align:center;min-height:40px }
+  }
 </style>
 <!-- Real (selectable-text) PDF generation — structured data, not screenshots -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -848,10 +871,13 @@
 
     <!-- PAYROLL -->
     <section class="view" id="v-payroll">
-      <div class="top"><div><h1>Payroll & Payroll Tax</h1><div class="sub">Minimal by design — expandable for full payroll in V2.</div></div>
-        <button class="btn p" onclick="runPayroll()">Run payroll (period)</button></div>
+      <div class="top"><div><h1>Payroll</h1><div class="sub" id="paySub">Employees, pay periods &amp; payroll tax</div></div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button class="btn g" id="payAddEmpBtn" onclick="empForm()">+ Add Employee</button>
+          <button class="btn p" onclick="payPreview()">Run payroll (period)</button></div></div>
+      <div id="payPeriodBar"></div>
       <div class="grid g4" id="payKpis"></div>
-      <div class="card" style="margin-top:13px"><h3>Employees</h3><table id="payTbl"></table></div>
+      <div class="card" style="margin-top:13px"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><h3 style="margin:0">Employees</h3><span class="pill" id="payPeriodChip"></span></div><table id="payTbl" style="margin-top:10px"></table></div>
       <div class="card" style="margin-top:12px;font-size:12px;color:var(--muted)">Employer taxes estimated at 7.65% FICA + ~2% unemployment. Withholding is illustrative — connect a payroll provider for filing in V2.</div>
     </section>
 
@@ -2595,15 +2621,17 @@ function addAcct(){const v=document.getElementById('newAcct').value.trim();if(!v
    app with no server — real enforcement needs the backend (see deploy notes). */
 
 // ---- PermissionGate: 7 roles × 20 granular permissions (spec §3) ----
-const ALL_PERMS=['view','create','edit','delete','approve','void','refund','print','export','view_cost','edit_cost','view_profit','view_payroll','manage_users','manage_permissions','manage_branches','transfer_stock','adjust_stock','close_shift','view_all_branches','scan_barcode','print_labels','continuous_receiving'];
+const ALL_PERMS=['view','create','edit','delete','approve','void','refund','print','export','view_cost','edit_cost','view_profit','view_payroll','manage_users','manage_permissions','manage_branches','transfer_stock','adjust_stock','close_shift','view_all_branches','scan_barcode','print_labels','continuous_receiving',
+  /* payroll employee mgmt + periods */ 'add_employee','edit_employee','deactivate_employee','run_payroll','finalize_payroll',
+  /* inventory historical / as-of */ 'view_inventory_history','view_asof','export_history'];
 const PERMS={
   owner: ALL_PERMS.slice(),                                    // everything
-  admin: ['view','create','edit','delete','approve','void','refund','print','export','view_cost','view_profit','view_payroll','manage_branches','transfer_stock','adjust_stock','close_shift','view_all_branches','scan_barcode','print_labels','continuous_receiving'],
-  branch_manager: ['view','create','edit','approve','void','print','export','view_cost','transfer_stock','adjust_stock','close_shift','scan_barcode','print_labels','continuous_receiving'],
-  manager: ['view','create','edit','approve','void','print','export','view_cost','transfer_stock','adjust_stock','close_shift','scan_barcode','print_labels','continuous_receiving'], // legacy alias of branch_manager
+  admin: ['view','create','edit','delete','approve','void','refund','print','export','view_cost','view_profit','view_payroll','manage_branches','transfer_stock','adjust_stock','close_shift','view_all_branches','scan_barcode','print_labels','continuous_receiving','add_employee','edit_employee','deactivate_employee','run_payroll','finalize_payroll','view_inventory_history','view_asof','export_history'],
+  branch_manager: ['view','create','edit','approve','void','print','export','view_cost','transfer_stock','adjust_stock','close_shift','scan_barcode','print_labels','continuous_receiving','add_employee','edit_employee','run_payroll','view_inventory_history','view_asof','export_history'],
+  manager: ['view','create','edit','approve','void','print','export','view_cost','transfer_stock','adjust_stock','close_shift','scan_barcode','print_labels','continuous_receiving','add_employee','edit_employee','run_payroll','view_inventory_history','view_asof','export_history'], // legacy alias of branch_manager
   cashier: ['view','create','refund','print','close_shift','scan_barcode'],
-  inventory_manager: ['view','create','edit','print','export','transfer_stock','adjust_stock','view_cost','scan_barcode','print_labels','continuous_receiving'],
-  accountant: ['view','create','edit','void','refund','print','export','view_cost','view_profit','view_payroll','view_all_branches'],
+  inventory_manager: ['view','create','edit','print','export','transfer_stock','adjust_stock','view_cost','scan_barcode','print_labels','continuous_receiving','view_inventory_history','view_asof','export_history'],
+  accountant: ['view','create','edit','void','refund','print','export','view_cost','view_profit','view_payroll','view_all_branches','add_employee','edit_employee','deactivate_employee','run_payroll','finalize_payroll','view_inventory_history','view_asof','export_history'],
   employee: ['view','print']
 };
 function can(p){return (PERMS[ROLE.kind]||[]).includes(p);}
@@ -2992,18 +3020,20 @@ function invKpis(){
   return {count:ps.length,units,costVal,retail,profit:retail-costVal,low,out};
 }
 // ---- render ----
-const INV_TABS=[['dash','Dashboard'],['products','Products'],['movements','Movements'],['transfers','Transfers'],['reports','Reports']];
+const INV_TABS=[['dash','Dashboard'],['products','Products'],['movements','Movements'],['transfers','Transfers'],['reports','Reports'],['asof','As-of date']];
 function renderInventory(){
   invSeed();
   const tabsEl=document.getElementById('invTabs');if(!tabsEl)return;
   document.getElementById('invSub').textContent=branchLabel()+' · '+invActive().length+' products';
-  tabsEl.innerHTML=INV_TABS.map(t=>`<button class="inv-tab ${INV.tab===t[0]?'on':''}" onclick="invGo('${t[0]}')">${t[1]}</button>`).join('');
+  tabsEl.innerHTML=INV_TABS.filter(t=>t[0]!=='asof'||can('view_asof')).map(t=>`<button class="inv-tab ${INV.tab===t[0]?'on':''}" onclick="invGo('${t[0]}')">${t[1]}</button>`).join('');
+  if(INV.tab==='asof'&&!can('view_asof'))INV.tab='dash';
   const body=document.getElementById('invBody');
   if(INV.tab==='dash')body.innerHTML=invDashHTML();
   else if(INV.tab==='products')body.innerHTML=invProductsHTML();
   else if(INV.tab==='movements')body.innerHTML=invMovesHTML();
   else if(INV.tab==='transfers')body.innerHTML=invTransfersHTML();
   else if(INV.tab==='reports')body.innerHTML=invReportsHTML();
+  else if(INV.tab==='asof'&&typeof invAsOfHTML==='function')body.innerHTML=invAsOfHTML();
   if(INV.tab==='products'){const t=document.getElementById('invProdTbl');if(t)rowifyInv(t);}
   invMountHeaderBtn();
 }
@@ -4261,6 +4291,391 @@ copRespond=function(text){
   try{ if(!COP.pending && aiRoute(text)) return; }catch(e){ /* fall through on any parse error */ }
   return _rawRespond(text);
 };
+
+/* ============================================================================
+   PAYROLL (employees + pay periods)  &  INVENTORY (custom ranges + as-of date)
+   Additive module. Single-file app: permission checks (can()) + branch guards
+   here ARE the enforcement layer; the in-memory model is the store; validation
+   runs the same as it would server-side. No existing calc/print/perm removed.
+   ========================================================================== */
+function _esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function _nn(v){var n=parseFloat(v);return isNaN(n)?0:n;}
+function _today(){return daysAgo(0);}
+function _eod(ds){return ds+' 23:59';}                       // end-of-day vs nowStamp 'YYYY-MM-DD HH:MM'
+function _rangeTxt(a,b){return a===b?a:a+' → '+b;}
+
+/* ---------- Employee data model (backward-compatible migration) ---------- */
+function empMigrate(){
+  EMPLOYEES.forEach(function(e,i){
+    if(!e.id)e.id='EMP-'+String(1001+i);
+    if(e.payType===undefined)e.payType='salary';
+    if(e.salary===undefined)e.salary=(e.payType==='hourly'?0:(e.gross||0));
+    if(e.hourlyRate===undefined)e.hourlyRate=0;
+    if(e.stdHours===undefined)e.stdHours=160;
+    if(e.otMult===undefined)e.otMult=1.5;
+    ['transportAllow','otherAllow','deductions'].forEach(function(k){if(e[k]===undefined)e[k]=0;});
+    if(e.fica===undefined)e.fica=7.65; if(e.unemp===undefined)e.unemp=2; if(e.wh===undefined)e.wh=0;
+    e.title=e.title||'Staff'; e.jobRole=e.jobRole||'employee'; e.status=e.status||'active';
+    if(e.active===undefined)e.active=(e.status!=='inactive');
+    e.hireDate=e.hireDate||daysAgo(120); e.termDate=e.termDate||''; e.phone=e.phone||''; e.email=e.email||'';
+    e.payMethod=e.payMethod||'Bank transfer'; e.bankRef=e.bankRef||''; e.notes=e.notes||'';
+    if(!e.createdBy){e.createdBy='system';e.createdAt=nowStamp();}
+    e.runs=e.runs||[];
+    if(e.gross===undefined)e.gross=empMonthlyGross(e);
+  });
+}
+function empById(id){return EMPLOYEES.find(function(e){return e.id===id;});}
+function empMonthlyGross(e){return e.payType==='hourly'?_nn(e.hourlyRate)*_nn(e.stdHours):_nn(e.salary!=null?e.salary:e.gross);}
+function _periodDays(a,b){return Math.max(1,Math.round((new Date(b)-new Date(a))/86400000)+1);}
+function empPeriodCalc(e,a,b){
+  var g=Math.round(empMonthlyGross(e)*_periodDays(a,b)/30);
+  var allow=_nn(e.transportAllow)+_nn(e.otherAllow);
+  var empTax=Math.round(g*(_nn(e.fica)/100)), wh=Math.round(g*(_nn(e.wh)/100)), ded=_nn(e.deductions);
+  var employerTax=Math.round(g*(_nn(e.fica)/100))+Math.round(g*(_nn(e.unemp)/100));
+  return {gross:g,allow:allow,empTax:empTax,wh:wh,ded:ded,deductions:empTax+wh+ded,net:g+allow-empTax-wh-ded,employerTax:employerTax};
+}
+function empEligible(e){return e.active!==false && e.status!=='inactive' && (!e.termDate || e.termDate>=PAY.start);}
+
+/* ---------- Pay-period state ---------- */
+var PAY=(typeof PAY!=='undefined'&&PAY)?PAY:{start:null,end:null,preset:'month',finalized:[],busy:false};
+function _monthBounds(off){var d=new Date(today);d.setDate(1);d.setMonth(d.getMonth()+off);var s=dstr(d);d.setMonth(d.getMonth()+1);d.setDate(0);return [s,dstr(d)];}
+function payRestore(){try{var o=JSON.parse(lsGet('ss_pay')||'null');if(o){PAY.start=o.start;PAY.end=o.end;PAY.preset=o.preset||'month';PAY.finalized=o.finalized||[];}}catch(e){}
+  if(!PAY.start){var b=_monthBounds(0);PAY.start=b[0];PAY.end=b[1];}}
+function payPersist(){try{lsSet('ss_pay',JSON.stringify({start:PAY.start,end:PAY.end,preset:PAY.preset,finalized:PAY.finalized}));}catch(e){}}
+function paySetPreset(p){var b;
+  if(p==='current'||p==='month')b=_monthBounds(0);
+  else if(p==='prev')b=_monthBounds(-1);
+  else if(p==='week')b=[daysAgo(6),daysAgo(0)];
+  else if(p==='biweek')b=[daysAgo(13),daysAgo(0)];
+  else b=[PAY.start,PAY.end];
+  PAY.preset=p;PAY.start=b[0];PAY.end=b[1];payPersist();renderPay();}
+function payCustom(which,val){var s=which==='start'?val:PAY.start, e=which==='end'?val:PAY.end;
+  if(e<s){toast('End date cannot be before the start date');renderPay();return;}
+  PAY.start=s;PAY.end=e;PAY.preset='custom';payPersist();renderPay();}
+function payPeriodBarHTML(){
+  var pr=[['current','Current'],['prev','Previous'],['month','Monthly'],['week','Weekly'],['biweek','Biweekly'],['custom','Custom']];
+  return '<div class="card" style="margin:0 0 13px"><div class="daterow">'
+    +'<div style="flex:1 1 100%"><label>Pay period</label><div class="seg">'+pr.map(function(x){return '<button class="segb '+(PAY.preset===x[0]?'on':'')+'" onclick="paySetPreset(\''+x[0]+'\')">'+x[1]+'</button>';}).join('')+'</div></div>'
+    +'<div><label>Start date</label><input type="date" value="'+PAY.start+'" max="'+_today()+'" onchange="payCustom(\'start\',this.value)"></div>'
+    +'<div><label>End date</label><input type="date" value="'+PAY.end+'" max="'+_today()+'" onchange="payCustom(\'end\',this.value)"></div>'
+    +'<div style="margin-left:auto;text-align:right"><label>Selected period</label><div class="rangechip"><span class="dot"></span>'+_rangeTxt(PAY.start,PAY.end)+'</div></div>'
+    +'</div></div>';
+}
+
+/* ---------- Payroll page (override renderPay; richer, period-aware) ---------- */
+function renderPay(){
+  if(typeof PAY==='undefined'||!PAY)PAY={start:null,end:null,preset:'month',finalized:[],busy:false};
+  if(!PAY.start)payRestore(); empMigrate();
+  var bar=document.getElementById('payPeriodBar'); if(bar)bar.innerHTML=payPeriodBarHTML();
+  var addBtn=document.getElementById('payAddEmpBtn'); if(addBtn)addBtn.style.display=can('add_employee')?'':'none';
+  var chip=document.getElementById('payPeriodChip'); if(chip)chip.textContent='Period · '+_rangeTxt(PAY.start,PAY.end);
+  var sub=document.getElementById('paySub'); if(sub)sub.textContent=branchLabel()+' · '+_rangeTxt(PAY.start,PAY.end);
+  var emps=scopeEmp();
+  var totG=0,totDed=0,totEmployer=0,totNet=0;
+  emps.forEach(function(e){if(!empEligible(e))return;var c=empPeriodCalc(e,PAY.start,PAY.end);totG+=c.gross;totDed+=c.deductions;totEmployer+=c.employerTax;totNet+=c.net;});
+  var K=[["Gross Payroll",money(totG),"var(--txt)"],["Employee Deductions",money(totDed),"var(--brand)"],["Employer Taxes",money(totEmployer),"var(--brand2)"],["Total Cost",money(totG+totEmployer),"var(--bad)"]];
+  var pk=document.getElementById('payKpis'); if(pk)pk.innerHTML=K.map(function(k){return '<div class="card kpi"><div class="l">'+k[0]+'</div><div class="v" style="color:'+k[2]+'">'+k[1]+'</div><div class="s">'+_esc(branchLabel())+'</div></div>';}).join('');
+  var canSal=can('view_payroll')||can('view_cost');
+  var body=emps.length?emps.map(function(e){
+    var c=empPeriodCalc(e,PAY.start,PAY.end);var inactive=(e.active===false||e.status==='inactive');
+    return '<tr data-empid="'+_esc(e.id)+'" style="cursor:pointer'+(inactive?';opacity:.55':'')+'">'
+      +'<td><b>'+_esc(e.name)+'</b>'+(inactive?' <span class="voided-badge">inactive</span>':'')+'</td>'
+      +'<td>'+_esc(e.id)+'</td><td>'+_esc(e.store)+'</td><td>'+_esc(e.title)+'</td>'
+      +'<td>'+(e.payType==='hourly'?'Hourly':'Salary')+'</td>'
+      +'<td style="text-align:end">'+(canSal?money(c.gross):'••••')+'</td>'
+      +'<td style="text-align:end;color:var(--brand)">'+(canSal?money(c.empTax+c.wh):'••••')+'</td>'
+      +'<td style="text-align:end"><b>'+(canSal?money(c.net):'••••')+'</b></td>'
+      +'<td style="text-align:center"><button type="button" class="rowact" data-empmenu="'+_esc(e.id)+'" aria-label="More actions" aria-haspopup="menu" aria-expanded="false" onclick="event.stopPropagation();empRowMenu(event,\''+_esc(e.id)+'\')">⋯</button></td></tr>';
+  }).join(''):'<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:18px">No employees at '+_esc(branchLabel())+'. '+(can('add_employee')?'Use <b>+ Add Employee</b> to create one.':'')+'</td></tr>';
+  var pt=document.getElementById('payTbl');
+  if(pt)pt.innerHTML='<thead><tr><th>Employee</th><th>ID</th><th>Branch</th><th>Title</th><th>Pay</th><th style="text-align:end">Gross</th><th style="text-align:end">Empl. tax</th><th style="text-align:end">Net</th><th></th></tr></thead><tbody>'+body+'</tbody>';
+}
+/* delegated: row click opens employee; ⋯ opens the shared action menu */
+document.addEventListener('click',function(e){
+  if(e.target.closest('[data-empmenu]'))return;                 // handled inline
+  var tr=e.target.closest('tr[data-empid]');
+  if(tr&&!e.target.closest('button,a,input,select,.rowact'))empOpen(tr.dataset.empid);
+});
+function empRowMenu(ev,id){var e=empById(id);if(!e)return;
+  aMenuOpen(ev,[
+    {k:'view',ic:'👁',label:'View employee',run:function(){empOpen(id);}},
+    {k:'edit',ic:'✎',label:'Edit employee',disabled:!can('edit_employee'),run:function(){empForm(id);}},
+    {k:'run',ic:'▶',label:'Run payroll',disabled:!can('run_payroll'),run:function(){payPreview();}},
+    {k:'hist',ic:'🕘',label:'Payroll history',run:function(){empOpen(id,'history');}},
+    'sep',
+    {k:'print',ic:'🖨',label:'Print employee payroll',disabled:!can('print'),run:function(){empPrintDoc(e,'print');}},
+    {k:'pdf',ic:'⬇',label:'Download payroll PDF',disabled:!can('print'),run:function(){empPrintDoc(e,'pdf');}},
+    'sep',
+    (e.active===false)
+      ?{k:'react',ic:'✓',label:'Reactivate employee',disabled:!can('edit_employee'),run:function(){empReactivate(id);}}
+      :{k:'deact',ic:'⛔',label:'Deactivate employee',danger:true,disabled:!can('deactivate_employee'),run:function(){empDeactivate(id);}}
+  ]);
+}
+
+/* ---------- Employee form ---------- */
+function empForm(id){
+  var editing=!!id, e=editing?empById(id):null;
+  if(editing&&!can('edit_employee'))return toast('Your role cannot edit employees');
+  if(!editing&&!can('add_employee'))return toast('Your role cannot add employees');
+  var allow=allowedBranches();
+  var v=function(k,d){return e&&e[k]!=null?e[k]:(d==null?'':d);};
+  var num=function(k){return e&&e[k]!=null?e[k]:0;};
+  var opt=function(list,sel){return list.map(function(o){var val=Array.isArray(o)?o[0]:o,lab=Array.isArray(o)?o[1]:o;return '<option value="'+_esc(val)+'"'+(String(sel)===String(val)?' selected':'')+'>'+_esc(lab)+'</option>';}).join('');};
+  var F=function(lab,id2,type,val,req,extra){return '<div class="ef"><label>'+lab+(req?' <span style="color:var(--bad)">*</span>':'')+'</label><input id="'+id2+'" type="'+(type||'text')+'" value="'+_esc(val)+'" '+(extra||'')+'></div>';};
+  document.getElementById('drwTitle').textContent=editing?('Edit employee · '+e.name):'Add employee';
+  document.getElementById('drwBody').innerHTML=
+    '<div id="empErr" style="display:none;background:var(--bad-bg);color:var(--bad);border-radius:10px;padding:9px 12px;font-size:12.5px;font-weight:600;margin-bottom:12px"></div>'
+    +'<div class="drw-sec" style="margin-top:0">Identity</div><div class="efgrid">'
+      +F('Full name','efName','text',v('name'),true)
+      +F('Employee ID','efId','text',v('id')||('EMP-'+(1001+EMPLOYEES.length)),true)
+      +F('Phone','efPhone','tel',v('phone'))
+      +F('Email','efEmail','email',v('email'))
+    +'</div>'
+    +'<div class="drw-sec">Assignment</div><div class="efgrid">'
+      +'<div class="ef"><label>Branch / store <span style="color:var(--bad)">*</span></label><select id="efStore">'+opt(allow,v('store',allow[0]))+'</select></div>'
+      +F('Job title','efTitle','text',v('title','Staff'))
+      +'<div class="ef"><label>Role</label><select id="efRole">'+opt(['employee','cashier','inventory','manager','accountant'],v('jobRole','employee'))+'</select></div>'
+      +'<div class="ef"><label>Employment status</label><select id="efStatus">'+opt([['active','Active'],['inactive','Inactive'],['on_leave','On leave']],v('status','active'))+'</select></div>'
+      +F('Hire date','efHire','date',v('hireDate',daysAgo(0)))
+      +F('Termination date','efTerm','date',v('termDate'))
+    +'</div>'
+    +'<div class="drw-sec">Compensation</div><div class="efgrid">'
+      +'<div class="ef"><label>Pay type</label><select id="efPayType" onchange="empToggledPay()">'+opt([['salary','Salary'],['hourly','Hourly']],v('payType','salary'))+'</select></div>'
+      +F('Basic salary (monthly)','efSalary','number',num('salary'),false,'min="0" step="0.01"')
+      +F('Hourly rate','efRate','number',num('hourlyRate'),false,'min="0" step="0.01"')
+      +F('Standard hours (period)','efHours','number',e?num('stdHours'):160,false,'min="0" step="1"')
+      +F('Overtime multiplier','efOt','number',e?num('otMult'):1.5,false,'min="0" step="0.1"')
+      +F('Transportation allowance','efTrans','number',num('transportAllow'),false,'min="0" step="0.01"')
+      +F('Other recurring allowances','efOther','number',num('otherAllow'),false,'min="0" step="0.01"')
+      +F('Recurring deductions','efDed','number',num('deductions'),false,'min="0" step="0.01"')
+    +'</div>'
+    +'<div class="drw-sec">Tax &amp; payment</div><div class="efgrid">'
+      +F('Payroll tax / withholding %','efWh','number',e?num('wh'):0,false,'min="0" step="0.1"')
+      +F('FICA %','efFica','number',e?num('fica'):7.65,false,'min="0" step="0.01"')
+      +F('Unemployment %','efUnemp','number',e?num('unemp'):2,false,'min="0" step="0.01"')
+      +'<div class="ef"><label>Payment method</label><select id="efMethod">'+opt(['Bank transfer','Cash','Check'],v('payMethod','Bank transfer'))+'</select></div>'
+      +F('Bank account / reference','efBank','text',v('bankRef'))
+    +'</div>'
+    +'<div class="ef" style="margin-top:12px"><label>Notes</label><textarea id="efNotes" rows="2">'+_esc(v('notes'))+'</textarea></div>'
+    +'<label style="display:flex;gap:8px;align-items:center;margin-top:12px;font-weight:600"><input type="checkbox" id="efActive" style="width:auto" '+((!e||e.active!==false)?'checked':'')+'> Active</label>';
+  document.getElementById('drwActs').innerHTML='<button class="pri" onclick="empSave('+(editing?('\''+_esc(id)+'\''):'null')+')">Save employee</button><button onclick="drwClose()">Cancel</button>';
+  document.getElementById('drw').classList.add('on');scrim(true);
+  setTimeout(function(){empToggledPay();var n=document.getElementById('efName');if(n)n.focus();},30);
+}
+function empToggledPay(){var t=(document.getElementById('efPayType')||{}).value;var sal=document.getElementById('efSalary'),rate=document.getElementById('efRate');
+  if(sal&&sal.parentElement)sal.parentElement.style.opacity=(t==='hourly'?'.45':'1');
+  if(rate&&rate.parentElement)rate.parentElement.style.opacity=(t==='hourly'?'1':'.45');}
+function _empFail(msg){var el=document.getElementById('empErr');if(el){el.style.display='block';el.textContent=msg;}return false;}
+function empSave(id){
+  if(PAY.busy)return; // dup-submit guard
+  var editing=!!id;
+  if(editing&&!can('edit_employee'))return toast('Not permitted');
+  if(!editing&&!can('add_employee'))return toast('Not permitted');
+  var g=function(x){return (document.getElementById(x)||{}).value;};
+  var name=(g('efName')||'').trim(), eid=(g('efId')||'').trim(), store=g('efStore'), payType=g('efPayType')||'salary';
+  if(!name)return _empFail('Employee full name is required.');
+  if(!eid)return _empFail('Employee ID is required.');
+  if(EMPLOYEES.some(function(x){return x.id===eid && x.id!==id;}))return _empFail('Employee ID "'+eid+'" already exists — it must be unique.');
+  if(!store)return _empFail('Branch is required.');
+  if(!allowedBranches().includes(store))return _empFail('You are not permitted to assign to that branch.');
+  var nums={salary:g('efSalary'),hourlyRate:g('efRate'),stdHours:g('efHours'),otMult:g('efOt'),transportAllow:g('efTrans'),otherAllow:g('efOther'),deductions:g('efDed'),wh:g('efWh'),fica:g('efFica'),unemp:g('efUnemp')};
+  for(var k in nums){if(nums[k]!==''&&nums[k]!=null&&_nn(nums[k])<0)return _empFail('Values cannot be negative ('+k+').');}
+  var term=g('efTerm')||'';
+  if(term&&term<(g('efHire')||''))return _empFail('Termination date cannot be before the hire date.');
+  PAY.busy=true;
+  try{
+    var e=editing?empById(id):{};
+    var before=editing?JSON.stringify({salary:e.salary,store:e.store,title:e.title}):null;
+    e.name=name; e.id=eid; e.phone=g('efPhone')||''; e.email=g('efEmail')||''; e.store=store;
+    e.title=g('efTitle')||'Staff'; e.jobRole=g('efRole')||'employee'; e.status=g('efStatus')||'active';
+    e.hireDate=g('efHire')||daysAgo(0); e.termDate=term; e.payType=payType;
+    e.salary=_nn(nums.salary); e.hourlyRate=_nn(nums.hourlyRate); e.stdHours=_nn(nums.stdHours)||160; e.otMult=_nn(nums.otMult)||1.5;
+    e.transportAllow=_nn(nums.transportAllow); e.otherAllow=_nn(nums.otherAllow); e.deductions=_nn(nums.deductions);
+    e.wh=_nn(nums.wh); e.fica=nums.fica===''?7.65:_nn(nums.fica); e.unemp=nums.unemp===''?2:_nn(nums.unemp);
+    e.payMethod=g('efMethod')||'Bank transfer'; e.bankRef=g('efBank')||''; e.notes=g('efNotes')||'';
+    e.active=!!(document.getElementById('efActive')||{}).checked; if(!e.active)e.status='inactive';
+    e.gross=empMonthlyGross(e); e.runs=e.runs||[];
+    if(!editing){e.createdBy=ROLE.kind;e.createdAt=nowStamp();EMPLOYEES.push(e);}
+    audit(editing?'edit':'create','employee',e.id,editing?('updated '+before):('added '+e.name+' @ '+e.store),'WEB');
+    drwClose(); toast(editing?('Employee updated: '+e.name):('Employee added: '+e.name));
+    renderPay(); if(typeof fillStores==='function')fillStores();
+  } finally { PAY.busy=false; }   // empSave is synchronous — safe to release immediately
+}
+function empDeactivate(id){var e=empById(id);if(!e)return;if(!can('deactivate_employee'))return toast('Not permitted');
+  dlgAsk('Deactivate '+e.name+'?','Employees with payroll history are never deleted — they are deactivated and hidden from active runs.',{danger:true,okLabel:'Deactivate',reason:true},function(reason){
+    e.active=false;e.status='inactive';audit('deactivate','employee',e.id,reason||'','WEB');renderPay();toast(e.name+' deactivated');});}
+function empReactivate(id){var e=empById(id);if(!e)return;if(!can('edit_employee'))return toast('Not permitted');
+  e.active=true;e.status='active';audit('reactivate','employee',e.id,'','WEB');renderPay();toast(e.name+' reactivated');}
+
+/* ---------- Employee details ---------- */
+function empOpen(id,focus){var e=empById(id);if(!e)return;empMigrate();
+  var c=empPeriodCalc(e,PAY.start,PAY.end);var canSal=can('view_payroll')||can('view_cost');
+  var m=function(n){return canSal?money(n):'••••';};
+  var kv=[['Employee ID',e.id],['Phone',e.phone||'—'],['Email',e.email||'—'],['Branch',e.store],['Job title',e.title],['Role',e.jobRole],
+    ['Employment status',e.status],['Hire date',e.hireDate],['Termination',e.termDate||'—'],
+    ['Pay type',e.payType==='hourly'?'Hourly':'Salary'],
+    e.payType==='hourly'?['Hourly rate',m(e.hourlyRate)+' × '+e.stdHours+'h']:['Basic salary (monthly)',m(e.salary)],
+    ['Transportation allow.',m(e.transportAllow)],['Other allowances',m(e.otherAllow)],['Recurring deductions',m(e.deductions)],
+    ['Payment method',e.payMethod],['Bank / reference',can('view_cost')?(e.bankRef||'—'):'••••'],
+    ['Created by',(e.createdBy||'—')+' · '+(e.createdAt||'')]].concat(e.notes?[['Notes',e.notes]]:[]);
+  var attend=(typeof CLOCK!=='undefined'?CLOCK.filter(function(x){return x.emp===e.name;}):[]);
+  var runsHtml=(e.runs&&e.runs.length)?e.runs.slice().reverse().map(function(r){return '<div class="audit-row"><b>'+r.start+' → '+r.end+'</b> · gross '+m(r.gross)+' · net '+m(r.net)+' · '+(r.status||'finalized')+' · by '+r.by+'</div>';}).join(''):'<div class="audit-row">No finalized payroll periods yet.</div>';
+  var aud=(typeof auditFor==='function'?auditFor('employee',e.id):[]);
+  document.getElementById('drwTitle').innerHTML=_esc(e.name)+' <span style="color:var(--muted);font-size:12px">'+_esc(e.id)+'</span>'+(e.active===false?'<span class="voided-badge">inactive</span>':'');
+  document.getElementById('drwBody').innerHTML='<div class="drw-kv">'+kv.map(function(r){return '<div class="k">'+r[0]+'</div><div class="v">'+_esc(r[1])+'</div>';}).join('')+'</div>'
+    +'<div class="drw-sec">Current period · '+_rangeTxt(PAY.start,PAY.end)+'</div>'
+    +'<div class="drw-kv"><div class="k">Gross pay</div><div class="v"><b>'+m(c.gross)+'</b></div>'
+      +'<div class="k">Allowances</div><div class="v">'+m(c.allow)+'</div>'
+      +'<div class="k">Employee taxes (FICA+WH)</div><div class="v">'+m(c.empTax+c.wh)+'</div>'
+      +'<div class="k">Other deductions</div><div class="v">'+m(c.ded)+'</div>'
+      +'<div class="k">Employer taxes</div><div class="v">'+m(c.employerTax)+'</div>'
+      +'<div class="k">Net pay</div><div class="v"><b style="color:var(--accent)">'+m(c.net)+'</b></div>'
+      +'<div class="k">Payment status</div><div class="v">'+(e.runs&&e.runs.some(function(r){return r.end===PAY.end;})?'Paid':'Pending')+'</div></div>'
+    +'<div class="drw-sec">Previous payroll periods</div>'+runsHtml
+    +'<div class="drw-sec">Attendance</div>'+(attend.length?attend.slice(0,8).map(function(x){return '<div class="audit-row">'+x.date+' '+x.time+' · '+x.dir+' @ '+x.loc+'</div>';}).join(''):'<div class="audit-row">No clock records.</div>')
+    +'<div class="drw-sec">Audit history</div>'+(aud.length?aud.slice(0,8).map(function(a){return '<div class="audit-row"><b>'+a.action+'</b> — '+a.ts+' · '+a.user+(a.detail?' · '+a.detail:'')+'</div>';}).join(''):'<div class="audit-row">No changes recorded.</div>');
+  var acts=[];
+  if(can('edit_employee'))acts.push('<button class="pri" onclick="empForm(\''+_esc(e.id)+'\')">✎ Edit</button>');
+  if(can('run_payroll'))acts.push('<button onclick="payPreview()">▶ Run payroll</button>');
+  if(can('print'))acts.push('<button onclick="empPrintDoc(empById(\''+_esc(e.id)+'\'),\'print\')">🖨 Print</button>');
+  if(can('print'))acts.push('<button onclick="empPrintDoc(empById(\''+_esc(e.id)+'\'),\'pdf\')">⬇ PDF</button>');
+  document.getElementById('drwActs').innerHTML=acts.join('')||'<button disabled>View only</button>';
+  document.getElementById('drw').classList.add('on');scrim(true);
+  audit('view','employee',e.id,'','WEB');
+}
+
+/* ---------- Payroll preview + finalize (period-aware, overlap-guarded) ---------- */
+function payPreview(){
+  if(!can('run_payroll'))return toast('Your role cannot run payroll');
+  empMigrate(); var emps=scopeEmp().filter(empEligible);
+  if(!emps.length)return toast('No eligible active employees at '+branchLabel()+' for this period');
+  var tot={gross:0,ded:0,employer:0,net:0};
+  var rows=emps.map(function(e){var c=empPeriodCalc(e,PAY.start,PAY.end);tot.gross+=c.gross;tot.ded+=c.deductions;tot.employer+=c.employerTax;tot.net+=c.net;
+    return '<tr><td><b>'+_esc(e.name)+'</b></td><td>'+_esc(e.store)+'</td><td style="text-align:end">'+money(c.gross)+'</td><td style="text-align:end">'+money(c.deductions)+'</td><td style="text-align:end">'+money(c.net)+'</td></tr>';}).join('');
+  var overlap=PAY.finalized.some(function(f){return f.branch===(BRANCH!=='all'?BRANCH:'all')&&!(f.end<PAY.start||f.start>PAY.end);});
+  document.getElementById('drwTitle').textContent='Payroll preview · '+_rangeTxt(PAY.start,PAY.end);
+  document.getElementById('drwBody').innerHTML=
+    (overlap?'<div style="background:var(--warn-bg);color:var(--warn);border-radius:10px;padding:9px 12px;font-size:12.5px;font-weight:600;margin-bottom:12px">A finalized payroll already overlaps this period for '+_esc(branchLabel())+'. Finalizing again will create a duplicate — allowed only if you confirm.</div>':'')
+    +'<div class="drw-kv"><div class="k">Branch</div><div class="v">'+_esc(branchLabel())+'</div><div class="k">Period</div><div class="v">'+_rangeTxt(PAY.start,PAY.end)+'</div><div class="k">Eligible employees</div><div class="v">'+emps.length+'</div></div>'
+    +'<table style="margin-top:10px"><thead><tr><th>Employee</th><th>Branch</th><th style="text-align:end">Gross</th><th style="text-align:end">Deductions</th><th style="text-align:end">Net</th></tr></thead><tbody>'+rows
+    +'<tr style="border-top:2px solid var(--line)"><td colspan="2"><b>Totals</b></td><td style="text-align:end"><b>'+money(tot.gross)+'</b></td><td style="text-align:end"><b>'+money(tot.ded)+'</b></td><td style="text-align:end"><b>'+money(tot.net)+'</b></td></tr></tbody></table>'
+    +'<div class="drw-sec">Employer cost</div><div class="drw-kv"><div class="k">Gross payroll</div><div class="v">'+money(tot.gross)+'</div><div class="k">Employer taxes</div><div class="v">'+money(tot.employer)+'</div><div class="k">Total cost</div><div class="v"><b>'+money(tot.gross+tot.employer)+'</b></div></div>';
+  var canFin=can('finalize_payroll')||can('run_payroll');
+  document.getElementById('drwActs').innerHTML=(canFin?'<button class="pri" onclick="payFinalize('+(overlap?'true':'false')+')">✓ Finalize payroll</button>':'')+'<button onclick="drwClose()">Cancel</button>';
+  document.getElementById('drw').classList.add('on');scrim(true);
+}
+function payFinalize(allowOverlap){
+  if(PAY.busy)return; if(!(can('finalize_payroll')||can('run_payroll')))return toast('Not permitted');
+  var emps=scopeEmp().filter(empEligible);if(!emps.length)return;
+  var branchKey=(BRANCH!=='all'?BRANCH:'all');
+  var overlap=PAY.finalized.some(function(f){return f.branch===branchKey&&!(f.end<PAY.start||f.start>PAY.end);});
+  if(overlap&&!allowOverlap)return toast('A finalized payroll already overlaps this period');
+  PAY.busy=true;
+  try{
+    var totG=0,totEmployer=0;
+    emps.forEach(function(e){var c=empPeriodCalc(e,PAY.start,PAY.end);totG+=c.gross;totEmployer+=c.employerTax;
+      e.runs=e.runs||[];e.runs.push({start:PAY.start,end:PAY.end,gross:c.gross,net:c.net,status:'finalized',by:ROLE.kind,ts:nowStamp()});});
+    LEDGER.push({id:++uid,date:PAY.end,store:BRANCH!=='all'?BRANCH:STORES[0],account:'Checking',type:'payroll',category:'Payroll',amount:totG,memo:'Payroll '+PAY.start+'→'+PAY.end});
+    PAY.finalized.push({branch:branchKey,start:PAY.start,end:PAY.end,gross:totG,ts:nowStamp(),by:ROLE.kind});payPersist();
+    audit('finalize','payroll',PAY.start+'_'+PAY.end,branchKey+' gross '+money(totG),'WEB');
+    drwClose();refreshAll();toast('Payroll finalized: '+money(totG)+' + '+money(totEmployer)+' employer taxes');
+  } finally { PAY.busy=false; }
+}
+/* keep the old AI/quick runPayroll working, now period-aware */
+function runPayroll(){ if(_view&&_view()==='payroll'){payPreview();return;} payFinalize(true); }
+
+function empPrintDoc(e,mode){
+  if(!e)return; if(!can('print'))return toast('Not permitted');
+  var c=empPeriodCalc(e,PAY.start,PAY.end);
+  var rows=[['Gross pay',money(c.gross)],['Allowances',money(c.allow)],['Employee taxes (FICA+WH)',money(c.empTax+c.wh)],['Other deductions',money(c.ded)],['Net pay',money(c.net)],['Employer taxes',money(c.employerTax)]];
+  var w=window.open('','_blank');if(!w)return toast('Allow pop-ups to print');
+  w.document.write('<!doctype html><html><head><title>Payroll '+_esc(e.name)+'</title><style>@page{size:A4;margin:16mm}body{font-family:Inter,system-ui,Arial;color:#111}h1{font-size:19px;margin:0}.s{color:#666;font-size:12px;margin:2px 0 14px}table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}td{padding:7px 6px;border-bottom:1px solid #eee}td:last-child{text-align:right;font-variant-numeric:tabular-nums}.tot{font-weight:800;border-top:2px solid #333}.ft{margin-top:18px;color:#888;font-size:11px}</style></head><body>'
+    +'<h1>Employee Payroll — '+_esc(e.name)+'</h1><div class="s">'+_esc(e.id)+' · '+_esc(e.store)+' · '+_esc(e.title)+' · Pay period: '+_rangeTxt(PAY.start,PAY.end)+'</div>'
+    +'<table>'+rows.map(function(r,i){return '<tr'+(i===4?' class="tot"':'')+'><td>'+r[0]+'</td><td>'+r[1]+'</td></tr>';}).join('')+'</table>'
+    +'<div class="ft">Branch: '+_esc(e.store)+' · Period: '+_rangeTxt(PAY.start,PAY.end)+' · Generated by '+_esc(ROLE.kind)+' · '+nowStamp()+' · Page 1</div>'
+    +'<scr'+'ipt>window.onload=function(){window.print();}<\/scr'+'ipt></body></html>');
+  w.document.close();audit(mode==='pdf'?'export':'print','employee',e.id,'payroll '+PAY.start+'→'+PAY.end,'WEB');
+}
+
+/* ============================================================================
+   INVENTORY — custom date ranges + historical "as-of date" (ledger-based)
+   ========================================================================== */
+var INVDATE=(typeof INVDATE!=='undefined'&&INVDATE)?INVDATE:{from:daysAgo(29),to:daysAgo(0),preset:'30d'};
+var INVAS=(typeof INVAS!=='undefined'&&INVAS)?INVAS:{date:daysAgo(0)};
+function invDateRestore(){try{var o=JSON.parse(lsGet('ss_invdate')||'null');if(o){INVDATE.from=o.from;INVDATE.to=o.to;INVDATE.preset=o.preset;}var a=JSON.parse(lsGet('ss_invas')||'null');if(a&&a.date)INVAS.date=a.date;}catch(e){}}
+function invDatePersist(){try{lsSet('ss_invdate',JSON.stringify(INVDATE));lsSet('ss_invas',JSON.stringify(INVAS));}catch(e){}}
+function invSetDatePreset(p){var t=daysAgo(0),b;
+  if(p==='today')b=[t,t]; else if(p==='yesterday')b=[daysAgo(1),daysAgo(1)];
+  else if(p==='7d')b=[daysAgo(6),t]; else if(p==='30d')b=[daysAgo(29),t];
+  else if(p==='month')b=_monthBounds(0); else if(p==='pmonth')b=_monthBounds(-1);
+  else if(p==='year'){var y=new Date(today).getFullYear();b=[y+'-01-01',t];}
+  else if(p==='clear'){b=[daysAgo(29),t];p='30d';}
+  else b=[INVDATE.from,INVDATE.to];
+  INVDATE.preset=p;INVDATE.from=b[0];INVDATE.to=b[1];invDatePersist();renderInventory();}
+function invDateCustom(which,val){var f=which==='from'?val:INVDATE.from,tt=which==='to'?val:INVDATE.to;
+  if(tt<f){toast('End date cannot be before start date');renderInventory();return;}
+  INVDATE.from=f;INVDATE.to=tt;INVDATE.preset='custom';invDatePersist();renderInventory();}
+function invDateBarHTML(){
+  var pr=[['today','Today'],['yesterday','Yesterday'],['7d','Last 7 days'],['30d','Last 30 days'],['month','This month'],['pmonth','Previous month'],['year','This year'],['custom','Custom'],['clear','Clear']];
+  return '<div class="card" style="margin-bottom:13px"><div class="daterow">'
+    +'<div style="flex:1 1 100%"><label>Date range</label><div class="seg">'+pr.map(function(x){return '<button class="segb '+(INVDATE.preset===x[0]?'on':'')+'" onclick="invSetDatePreset(\''+x[0]+'\')">'+x[1]+'</button>';}).join('')+'</div></div>'
+    +'<div><label>From</label><input type="date" value="'+INVDATE.from+'" max="'+_today()+'" onchange="invDateCustom(\'from\',this.value)"></div>'
+    +'<div><label>To</label><input type="date" value="'+INVDATE.to+'" max="'+_today()+'" onchange="invDateCustom(\'to\',this.value)"></div>'
+    +'<div style="margin-left:auto;text-align:right"><label>Active range</label><div class="rangechip"><span class="dot"></span>'+_rangeTxt(INVDATE.from,INVDATE.to)+'</div></div>'
+    +'</div></div>';
+}
+/* movements tab — override with a date filter + empty state */
+function invMovesHTML(){
+  var ms=invMovesScoped().filter(function(m){var d=m.date.slice(0,10);return d>=INVDATE.from&&d<=INVDATE.to;});
+  var bar=can('view_inventory_history')?invDateBarHTML():'';
+  var body=ms.length?'<table id="invMovesTbl"><thead><tr><th>Ref</th><th>Date</th><th>Product</th><th>Branch</th><th>Type</th><th style="text-align:end">Before</th><th style="text-align:end">Change</th><th style="text-align:end">After</th><th style="text-align:end">Value</th><th>User</th></tr></thead><tbody>'
+    +ms.slice(0,300).map(function(m){return '<tr><td>'+m.ref+'</td><td>'+m.date+'</td><td><b>'+_esc(m.product)+'</b></td><td>'+m.branch+'</td><td>'+m.type+'</td><td style="text-align:end">'+m.before+'</td><td style="text-align:end;color:'+(m.change>=0?'var(--ok)':'var(--bad)')+'">'+(m.change>=0?'+':'')+m.change+'</td><td style="text-align:end">'+m.after+'</td><td style="text-align:end">'+invMoney(m.value)+'</td><td>'+m.user+'</td></tr>';}).join('')+'</tbody></table>'
+    :'<div class="tstate"><span class="ic">🗂️</span>No stock movements between '+_rangeTxt(INVDATE.from,INVDATE.to)+' for '+_esc(branchLabel())+'.</div>';
+  return bar+'<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><h3 style="margin:0">Stock movement ledger</h3><span class="pill">'+ms.length+' movements · '+_rangeTxt(INVDATE.from,INVDATE.to)+'</span></div><div style="margin-top:10px">'+body+'</div></div>';
+}
+
+/* ---- Historical "as-of" quantity — computed from the immutable movement ledger ---- */
+function invAsOfQty(sku,branch,ds){
+  var cut=_eod(ds);
+  var ms=INV.moves.filter(function(m){return m.sku===sku&&m.branch===branch;}).slice().sort(function(a,b){return a.date<b.date?-1:a.date>b.date?1:0;});
+  var onBefore=ms.filter(function(m){return m.date<=cut;});
+  if(onBefore.length)return onBefore[onBefore.length-1].after;   // qty after last movement on/before the date
+  var after=ms.filter(function(m){return m.date>cut;});
+  if(after.length)return after[0].before;                        // qty before the first later movement = historical opening
+  var p=invProductBySku(sku);return p?(p.stock[branch]||0):0;    // never moved → unchanged
+}
+function invAsOfReport(ds){
+  ds=ds||INVAS.date; var allow=allowedBranches();var branches=BRANCH==='all'?allow:[BRANCH];
+  var rows=invActive().map(function(p){
+    var perB={},tot=0;branches.forEach(function(b){var q=invAsOfQty(p.sku,b,ds);perB[b]=q;tot+=q;});
+    var cost=tot*p.cost, retail=tot*p.price;
+    return {p:p,perB:perB,qty:tot,cost:cost,retail:retail,profit:retail-cost,status:tot<=0?'out':tot<=p.min?'low':'ok'};
+  });
+  return {ds:ds,branches:branches,rows:rows,
+    units:rows.reduce(function(a,r){return a+r.qty;},0),costVal:rows.reduce(function(a,r){return a+r.cost;},0),
+    retail:rows.reduce(function(a,r){return a+r.retail;},0),profit:rows.reduce(function(a,r){return a+r.profit;},0),
+    low:rows.filter(function(r){return r.status==='low';}).length,out:rows.filter(function(r){return r.status==='out';}).length};
+}
+function invAsOfSetDate(v){if(v>_today()){toast('As-of date cannot be in the future');return;}INVAS.date=v;invDatePersist();renderInventory();}
+function invAsOfHTML(){
+  if(!can('view_asof'))return '<div class="tstate">Your role cannot view historical as-of reports.</div>';
+  var r=invAsOfReport();var branches=r.branches;
+  var K=[['Units on hand',r.units.toLocaleString()],['Cost value',invMoney(r.costVal)],['Retail value',money(r.retail)],['Potential profit',can('view_cost')?money(r.profit):'••••'],['Low stock',r.low],['Out of stock',r.out]];
+  var head='<div class="card" style="margin-bottom:13px"><div class="daterow"><div style="flex:1 1 auto"><label>Inventory as of end of day</label><input type="date" value="'+r.ds+'" max="'+_today()+'" onchange="invAsOfSetDate(this.value)"></div><div style="margin-left:auto;text-align:right"><label>Snapshot</label><div class="rangechip"><span class="dot"></span>As of '+r.ds+' · 23:59</div></div></div><div style="font-size:11.5px;color:var(--muted);margin-top:8px">Historical quantities are reconstructed from the immutable movement ledger — not the current stock relabelled. Cancelled/draft/future movements are excluded.</div></div>';
+  var kpis='<div class="grid g3" style="margin-bottom:13px">'+K.map(function(k){return '<div class="card kpi"><div class="l">'+k[0]+'</div><div class="v">'+k[1]+'</div><div class="s">as of '+r.ds+'</div></div>';}).join('')+'</div>';
+  var rows=r.rows.filter(function(x){return x.qty!==0||INVDATE.preset==='all';}).map(function(x){
+    return '<tr><td><b>'+_esc(x.p.name)+'</b></td><td>'+_esc(x.p.sku)+'</td>'
+      +branches.map(function(b){return '<td style="text-align:end">'+(x.perB[b]||0)+'</td>';}).join('')
+      +'<td style="text-align:end"><b>'+x.qty+'</b></td><td style="text-align:end">'+invMoney(x.cost)+'</td><td style="text-align:end">'+money(x.retail)+'</td>'
+      +'<td><span class="chip '+(x.status==='ok'?'ok':x.status==='low'?'warn':'bad')+'">'+x.status+'</span></td></tr>';}).join('');
+  var table=r.rows.length?'<table id="invAsofTbl"><thead><tr><th>Product</th><th>SKU</th>'+branches.map(function(b){return '<th style="text-align:end">'+_esc(b)+'</th>';}).join('')+'<th style="text-align:end">Total qty</th><th style="text-align:end">Cost value</th><th style="text-align:end">Retail</th><th>Status</th></tr></thead><tbody>'+(rows||'<tr><td colspan="'+(5+branches.length)+'" style="text-align:center;color:var(--muted);padding:16px">No stock on hand as of '+r.ds+'.</td></tr>')+'</tbody></table>':'<div class="tstate"><span class="ic">📦</span>No products.</div>';
+  return head+kpis+'<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><h3 style="margin:0">Stock on hand — as of '+r.ds+'</h3><span class="pill">'+_esc(branchLabel())+'</span></div><div style="margin-top:10px">'+table+'</div></div>';
+}
+
+/* ---------- module init ---------- */
+try{ empMigrate(); payRestore(); invDateRestore();
+  if(document.getElementById('v-payroll'))renderPay();
+}catch(e){ console.error('payroll/inv module init',e); }
 </script>
 </body>
 </html>
