@@ -103,3 +103,4 @@ class LinkVerifyIn(BaseModel):
     tg_id: str
     code: str
     device: Optional[str] = "Telegram"
+    username: Optional[str] = None

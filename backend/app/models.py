@@ -123,8 +123,10 @@ class AuditLog(Base):
 
 class TelegramLink(Base):
     __tablename__ = "telegram_links"
-    tg_id = Column(String, primary_key=True); user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"))
-    device = Column(String); linked_at = Column(DateTime(timezone=True), server_default=func.now())
+    tg_id = Column(String, primary_key=True); user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    username = Column(String); device = Column(String)
+    linked_at = Column(DateTime(timezone=True), server_default=func.now())
+    last_activity = Column(DateTime(timezone=True), server_default=func.now())
     expires_at = Column(DateTime(timezone=True))
 
 class LinkCode(Base):
