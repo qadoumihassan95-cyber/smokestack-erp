@@ -4,6 +4,7 @@ Runs on first boot when SEED_ON_START=true. Safe to run repeatedly."""
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from . import models
+from .config import settings
 from .security import hash_pw
 
 BRANCHES = ["Store A", "Store B", "Store C"]
@@ -26,11 +27,14 @@ PRODUCTS = [
 def seed(db: Session):
     if db.query(models.Branch).count():
         return  # already seeded
+    # Short demo password from env (defaults to 'demo1234'). hash_pw validates
+    # the 72-byte bcrypt limit and will raise a clear error on an over-long value.
+    seed_pw_hash = hash_pw(settings.seed_password)
     for b in BRANCHES:
         db.add(models.Branch(name=b))
     for uid, role, name, branches in USERS:
         db.add(models.User(id=uid, name=name, role=role, email=f"{role}@smokestack.local",
-                           password_hash=hash_pw("demo1234")))
+                           password_hash=seed_pw_hash))
         for br in (branches or []):
             db.add(models.UserBranch(user_id=uid, branch=br))
     db.flush()

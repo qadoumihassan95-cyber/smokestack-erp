@@ -21,6 +21,9 @@ class Settings:
     jwt_expire_minutes: int = int(os.getenv("JWT_EXPIRE_MINUTES", "720"))
     cors_origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()]
     seed_on_start: bool = _bool(os.getenv("SEED_ON_START"), True)
+    # Password used for the demo accounts created by the seed. Overridable via
+    # env so production can supply a real one without committing it to git.
+    seed_password: str = os.getenv("SEED_PASSWORD", "demo1234")
     link_code_ttl_min: int = int(os.getenv("LINK_CODE_TTL_MIN", "10"))
 
 settings = Settings()

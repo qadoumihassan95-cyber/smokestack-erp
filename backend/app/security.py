@@ -14,10 +14,26 @@ from . import models, permissions as P
 pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2 = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
+# bcrypt hashes at most the first 72 BYTES of a password. Rather than let the
+# hasher silently truncate (a real security footgun), we validate up front and
+# raise a clear error so a caller never believes a >72-byte password was stored
+# in full.
+BCRYPT_MAX_BYTES = 72
+
+def _check_len(p: str) -> None:
+    if len(p.encode("utf-8")) > BCRYPT_MAX_BYTES:
+        raise ValueError(
+            f"Password is too long: bcrypt supports at most {BCRYPT_MAX_BYTES} bytes."
+        )
+
 def hash_pw(p: str) -> str:
+    _check_len(p)
     return pwd.hash(p)
 
 def verify_pw(p: str, h: str) -> bool:
+    # An over-length password can never have been hashed, so it can't match.
+    if len(p.encode("utf-8")) > BCRYPT_MAX_BYTES:
+        return False
     try:
         return pwd.verify(p, h)
     except Exception:
