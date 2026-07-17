@@ -5028,10 +5028,10 @@ try{ empMigrate(); payRestore(); invDateRestore();
   function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
   function fmtDT(iso){ if(!iso) return '—'; try{ var d=new Date(iso); return d.toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }catch(e){ return '—'; } }
   function dur(m){ if(m==null) return '—'; return Math.floor(m/60)+'h '+(m%60)+'m'; }
-  function role(){ return (window.ROLE&&ROLE.kind)||''; }
+  function role(){ try{ return (typeof ROLE!=='undefined'&&ROLE&&ROLE.kind)||''; }catch(e){ return ''; } }
   function canApprove(){ return ['owner','admin','branch_manager','manager','accountant'].indexOf(role())>=0; }
   function canManage(){ return ['owner','admin'].indexOf(role())>=0; }
-  function stores(){ return (window.STORES||[]).slice(); }
+  function stores(){ try{ return (typeof STORES!=='undefined'&&STORES)?STORES.slice():[]; }catch(e){ return []; } }
   var ATT={ rows:[], pending:[], fBranch:'all', fStatus:'all' };
 
   var STCOL={active:'var(--good,#1a7f37)',completed:'var(--muted)',pending:'var(--warn,#b26a00)',rejected:'var(--bad,#c0392b)'};
