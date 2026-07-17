@@ -41,6 +41,10 @@ def seed(db: Session):
     seq = 0
     for sku, bc, name, sup, cost, price, mn, stock in PRODUCTS:
         db.add(models.Product(sku=sku, barcode=bc, name=name, supplier=sup, cost=cost, price=price, min_level=mn))
+        # Flush the product row BEFORE its stock/movements. Postgres enforces the
+        # products FK immediately, so the parent row must exist first. (SQLite
+        # doesn't enforce FKs by default, which is why this only bit in prod.)
+        db.flush()
         for br, q in stock.items():
             db.add(models.Stock(sku=sku, branch=br, qty=q))
             # a believable history that ends at current qty
