@@ -4727,7 +4727,10 @@ try{ empMigrate(); payRestore(); invDateRestore();
     deactivateEmployee:function(id){return call('/api/employees/'+encodeURIComponent(id)+'/deactivate',{method:'POST'});},
     finalizePayroll:function(s,e,b){return call('/api/payroll/finalize?start='+s+'&end='+e+'&branch='+encodeURIComponent(b||'all'),{method:'POST'});},
     transfers:function(){return call('/api/transfers');}, createTransfer:function(b){return call('/api/transfers',{method:'POST',body:b});},
-    issueTgCode:function(){return call('/api/telegram/link/issue',{method:'POST'});}
+    issueTgCode:function(){return call('/api/telegram/link/issue',{method:'POST'});},
+    tgLinkCode:function(){return call('/api/telegram/link-code',{method:'POST'});},
+    tgStatus:function(){return call('/api/telegram/status');},
+    tgUnlink:function(){return call('/api/telegram/unlink',{method:'POST'});}
   };
   window.SS_API_LIVE=API;
   function apiErr(e){ if(e&&e.status===403)return 'Not permitted (server rejected this action).'; if(e&&e.status===422)return 'Invalid data: '+(e.data&&e.data.detail?JSON.stringify(e.data.detail):e.message); return (e&&e.message)||'Request failed'; }
@@ -4812,6 +4815,7 @@ try{ empMigrate(); payRestore(); invDateRestore();
       if(typeof renderSettings==='function') try{renderSettings();}catch(e){}
       hideOverlay();
       _addLogout();
+      try{ if(typeof window.__tgStartPolling==='function') window.__tgStartPolling(); }catch(e){}
       toast('Signed in as '+T.user.name+' · data from PostgreSQL');
     }catch(e){ if(e.status===401){ apiLogout(true);} else { loginScreen(apiErr(e)); } }
   }
@@ -4878,8 +4882,120 @@ try{ empMigrate(); payRestore(); invDateRestore();
     try{ await call('/api/inventory/products/'+encodeURIComponent(sku)+'/reactivate',{method:'POST'}); await afterWrite('Product reactivated in database'); }
     catch(e){ toast(apiErr(e)); } finally{ busy=false; } });
 
-  /* ---- Telegram linking (Settings) ---- */
-  window.apiIssueTelegramCode = async function(){ try{ var r=await SS_API_LIVE.issueTgCode(); toast('Telegram code: '+r.code+' (valid '+r.ttl_minutes+' min) — send /link '+r.code+' to the bot'); return r; }catch(e){ toast(apiErr(e)); } };
+  /* ================= Telegram account linking (Settings → Telegram) ================= */
+  var TG = { code:null, expiresAt:0, connected:false, tick:null, poll:null };
+  var MONO = "'SF Mono',ui-monospace,Menlo,Consolas,monospace";
+
+  function tgFmt(iso){ if(!iso) return '—'; try{ var d=new Date(iso); return d.toLocaleString(undefined,{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}); }catch(e){ return '—'; } }
+  function tgSection(){ return document.getElementById('v-telegram'); }
+  function tgVisible(){ var s=tgSection(); return s && s.offsetParent!==null; }
+
+  function tgEnsurePanel(){
+    var sec = tgSection(); if(!sec || document.getElementById('tgLinkCard')) return;
+    var card = document.createElement('div');
+    card.className='card'; card.id='tgLinkCard'; card.style.marginBottom='16px';
+    card.innerHTML =
+      '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">'
+      +'<div><h3 style="margin:0">Telegram Account Linking</h3>'
+      +'<div class="sub" id="tgStatusLine" style="color:var(--muted)">Checking status…</div></div>'
+      +'<span class="pill" id="tgStatusPill">…</span></div>'
+      +'<div id="tgBody" style="margin-top:14px"></div>';
+    // insert right after the section header (.top) so it leads the page
+    var top = sec.querySelector('.top');
+    if(top && top.nextSibling) sec.insertBefore(card, top.nextSibling);
+    else sec.insertBefore(card, sec.firstChild);
+  }
+
+  function tgRender(st){
+    tgEnsurePanel();
+    var body=document.getElementById('tgBody'); if(!body) return;
+    var pill=document.getElementById('tgStatusPill'), line=document.getElementById('tgStatusLine');
+    var headPill=document.querySelector('#v-telegram .top .pill');
+    TG.connected = !!(st && st.connected);
+    if(TG.connected){
+      if(pill){ pill.textContent='✅ Connected'; pill.style.cssText='background:var(--good-bg,#e8f6ee);color:var(--good,#1a7f37)'; }
+      if(line) line.textContent='This account is linked to Telegram.';
+      if(headPill){ headPill.textContent='@'+(st.username||'telegram')+' · connected'; }
+      var rows=[['Telegram username', st.username?('@'+st.username):'—'],['Telegram ID', st.tg_id||'—'],
+                ['Linked', tgFmt(st.linked_at)],['Last activity', tgFmt(st.last_activity)],['Status','Connected']];
+      var html='<div style="display:grid;grid-template-columns:auto 1fr;gap:8px 18px;font-size:13.5px;max-width:520px">';
+      rows.forEach(function(r){ html+='<div style="color:var(--muted)">'+r[0]+'</div><div style="font-weight:600">'+r[1]+'</div>'; });
+      html+='</div><div style="margin-top:16px"><button class="btn g" id="tgUnlinkBtn" style="color:var(--bad,#c0392b);border-color:var(--bad,#c0392b)">Unlink Telegram</button></div>';
+      body.innerHTML=html;
+      var ub=document.getElementById('tgUnlinkBtn'); if(ub) ub.onclick=tgUnlink;
+      TG.code=null; TG.expiresAt=0;
+    } else {
+      if(pill){ pill.textContent='Not connected'; pill.style.cssText='background:var(--chip,#eef1f4);color:var(--muted)'; }
+      if(line) line.textContent='Not linked yet.';
+      if(headPill){ headPill.textContent='@SmokkestakERP_bot · not linked'; }
+      body.innerHTML=
+        '<div style="font-size:13px;color:var(--muted);line-height:1.7;margin-bottom:14px">'
+        +'Connect your Telegram to run the shop from chat. Generate a code below, then send '
+        +'<b>/link&nbsp;CODE</b> to <b>@SmokkestakERP_bot</b>. Codes expire after 5 minutes.</div>'
+        +'<div id="tgCodeWrap" style="display:none;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:14px">'
+        +'<span id="tgCode" style="font-family:'+MONO+';font-size:28px;font-weight:700;letter-spacing:5px">------</span>'
+        +'<button class="btn g" id="tgCopyBtn">Copy</button>'
+        +'<span class="sub" id="tgCountdown" style="color:var(--muted)"></span></div>'
+        +'<div style="display:flex;gap:8px;flex-wrap:wrap">'
+        +'<button class="btn p" id="tgGenBtn">Generate Link Code</button>'
+        +'<button class="btn g" id="tgRegenBtn" style="display:none">Regenerate</button></div>';
+      var gb=document.getElementById('tgGenBtn'); if(gb) gb.onclick=tgGenerate;
+      var rb=document.getElementById('tgRegenBtn'); if(rb) rb.onclick=tgGenerate;
+      var cp=document.getElementById('tgCopyBtn'); if(cp) cp.onclick=tgCopy;
+      if(TG.code && TG.expiresAt>Date.now()) tgShowCode(); // keep showing a live code across re-renders
+    }
+  }
+
+  function tgShowCode(){
+    var wrap=document.getElementById('tgCodeWrap'), el=document.getElementById('tgCode');
+    var gb=document.getElementById('tgGenBtn'), rb=document.getElementById('tgRegenBtn');
+    if(wrap) wrap.style.display='flex';
+    if(el) el.textContent=TG.code||'------';
+    if(gb) gb.style.display='none';
+    if(rb) rb.style.display='';
+    tgTickStart();
+  }
+  function tgTickStart(){ if(TG.tick) clearInterval(TG.tick); tgTick(); TG.tick=setInterval(tgTick,1000); }
+  function tgTick(){
+    var cd=document.getElementById('tgCountdown'); if(!cd){ if(TG.tick)clearInterval(TG.tick); return; }
+    var ms=TG.expiresAt-Date.now();
+    if(ms<=0){ cd.innerHTML='<span style="color:var(--bad,#c0392b);font-weight:600">Code expired — regenerate</span>'; if(TG.tick)clearInterval(TG.tick); TG.code=null; return; }
+    var s=Math.floor(ms/1000), m=Math.floor(s/60); s=s%60;
+    cd.textContent='Expires in '+m+':'+(s<10?'0':'')+s;
+  }
+  async function tgGenerate(){
+    var gb=document.getElementById('tgGenBtn'), rb=document.getElementById('tgRegenBtn');
+    if(gb){gb.disabled=true;} if(rb){rb.disabled=true;}
+    try{ var r=await SS_API_LIVE.tgLinkCode();
+      TG.code=r.code; TG.expiresAt=Date.now()+((r.expires_in||300)*1000);
+      tgShowCode(); toast('Link code generated — send /link '+r.code+' to the bot');
+    }catch(e){ toast(apiErr(e)); }
+    finally{ if(gb){gb.disabled=false;} if(rb){rb.disabled=false;} }
+  }
+  function tgCopy(){
+    if(!TG.code) return;
+    var done=function(){ toast('Code copied'); };
+    if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(TG.code).then(done,function(){tgCopyFallback();}); }
+    else tgCopyFallback();
+  }
+  function tgCopyFallback(){ try{ var t=document.createElement('textarea'); t.value=TG.code; document.body.appendChild(t); t.select(); document.execCommand('copy'); document.body.removeChild(t); toast('Code copied'); }catch(e){ toast('Copy failed — select the code manually'); } }
+  async function tgUnlink(){
+    if(!window.confirm('Unlink this Telegram account? The bot will stop working until you link again.')) return;
+    var b=document.getElementById('tgUnlinkBtn'); if(b){b.disabled=true;b.textContent='Unlinking…';}
+    try{ await SS_API_LIVE.tgUnlink(); toast('Telegram unlinked'); await tgRefresh(); }
+    catch(e){ toast(apiErr(e)); if(b){b.disabled=false;b.textContent='Unlink Telegram';} }
+  }
+  async function tgRefresh(){
+    try{ var st=await SS_API_LIVE.tgStatus(); tgRender(st); }catch(e){ /* stay quiet on transient errors */ }
+  }
+  function tgStartPolling(){
+    tgEnsurePanel(); tgRefresh();
+    if(TG.poll) clearInterval(TG.poll);
+    // auto-update the UI when linking completes from Telegram (poll only while the page is visible)
+    TG.poll=setInterval(function(){ if(window.API_MODE && tgVisible()) tgRefresh(); }, 4000);
+  }
+  window.apiIssueTelegramCode = tgGenerate;         // back-compat
+  window.__tgStartPolling = tgStartPolling;
 
   /* ---- boot: auto-resume session or show login ---- */
   document.addEventListener('DOMContentLoaded', function(){}); // no-op; app already inited
