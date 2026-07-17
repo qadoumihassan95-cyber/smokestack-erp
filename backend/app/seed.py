@@ -73,6 +73,19 @@ def seed(db: Session):
         db.add(models.Employee(id=eid, name=nm, branch=br, title="Staff", salary=sal, active=True))
     db.add(models.Customer(id="C-01", name="Downtown Vape Co", balance=1240.5))
     db.add(models.Supplier(id="S-01", name="Philip Morris", balance=-4820))
+    # Licenses & official documents (varied expiry dates to demonstrate alert buckets)
+    for nm, dt, br, num, auth, iss, exp, resp in [
+        ("Business License", "business_license", "Store A", "BL-2291", "TX Comptroller", 400, 320, "Owner"),
+        ("Tobacco Retailer Permit", "tobacco_license", "Store A", "TOB-8841", "TX Comptroller", 300, 25, "Owner"),
+        ("Sales Tax Permit", "sales_tax_permit", None, "STX-1120", "TX Comptroller", 500, 210, "Accountant"),
+        ("Fire Inspection", "fire_inspection", "Store B", "FI-337", "City Fire Marshal", 200, 6, "Branch Manager"),
+        ("General Liability Insurance", "insurance", None, "INS-55019", "Acme Insurance", 350, -8, "Owner"),
+        ("Health Permit", "health_permit", "Store C", "HP-702", "County Health Dept", 260, 75, "Branch Manager"),
+    ]:
+        db.add(models.License(name=nm, doc_type=dt, branch=br, doc_number=num, authority=auth,
+                              issue_date=datetime.utcnow().date() - timedelta(days=iss),
+                              expiry_date=datetime.utcnow().date() + timedelta(days=exp),
+                              status="active", responsible=resp, created_by="U-owner"))
     for br, amt in [("Store A", 8420), ("Store B", 5100), ("Store C", 4780)]:
         db.add(models.Ledger(branch=br, type="sale", amount=amt, tax=round(amt * 0.0825, 2), account="Cash"))
     db.add(models.Ledger(branch="Store A", type="expense", amount=320, category="Utilities", account="Checking"))

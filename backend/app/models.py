@@ -94,6 +94,7 @@ class Ledger(Base):
     amount = Column(Numeric(12, 2)); tax = Column(Numeric(12, 2), default=0)
     account = Column(String); category = Column(String); vendor = Column(String)
     employee = Column(String); product = Column(String); memo = Column(String)
+    custom_description = Column(String)   # free-text detail when category == "Other"
     entry_date = Column(Date, server_default=func.current_date(), index=True)
     created_by = Column(String); created_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -104,6 +105,26 @@ class Employee(Base):
     pay_type = Column(String, default="salary")
     salary = Column(Numeric(12, 2), default=0); hourly_rate = Column(Numeric(12, 2), default=0)
     active = Column(Boolean, default=True)
+    sched_start = Column(String, default="09:00")   # scheduled shift start HH:MM (branch tz)
+    sched_end = Column(String, default="17:00")     # scheduled shift end HH:MM
+    sched_days = Column(String, default="Mon-Sat")  # working days label
+    created_by = Column(String); created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class License(Base):
+    __tablename__ = "licenses"
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    name = Column(String, nullable=False)
+    doc_type = Column(String)              # business_license | tobacco_license | sales_tax_permit | ...
+    branch = Column(String, index=True)
+    doc_number = Column(String)
+    authority = Column(String)             # issuing authority
+    issue_date = Column(Date)
+    expiry_date = Column(Date, index=True)
+    status = Column(String, default="active")   # active | expiring | expired | archived
+    responsible = Column(String)           # responsible employee/name
+    notes = Column(Text)
+    attachment = Column(String)            # filename / URL of the uploaded PDF or image
     created_by = Column(String); created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class Purchase(Base):

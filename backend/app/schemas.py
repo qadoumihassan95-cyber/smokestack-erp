@@ -57,6 +57,7 @@ class ExpenseIn(BaseModel):
     amount: float
     account: Optional[str] = "Cash"
     memo: Optional[str] = None
+    custom_description: Optional[str] = None   # required by the API when category == "Other"
 
 class PurchaseIn(BaseModel):
     vendor: str
@@ -79,6 +80,9 @@ class EmployeeIn(BaseModel):
     pay_type: str = "salary"
     salary: float = 0
     hourly_rate: float = 0
+    sched_start: Optional[str] = "09:00"
+    sched_end: Optional[str] = "17:00"
+    sched_days: Optional[str] = "Mon-Sat"
 
 class EmployeeUpdate(BaseModel):
     """Partial update — id comes from the URL path, all body fields optional."""
@@ -88,6 +92,21 @@ class EmployeeUpdate(BaseModel):
     pay_type: Optional[str] = None
     salary: Optional[float] = None
     hourly_rate: Optional[float] = None
+    sched_start: Optional[str] = None
+    sched_end: Optional[str] = None
+    sched_days: Optional[str] = None
+
+class LicenseIn(BaseModel):
+    name: str
+    doc_type: Optional[str] = "other"
+    branch: Optional[str] = None
+    doc_number: Optional[str] = None
+    authority: Optional[str] = None
+    issue_date: Optional[str] = None
+    expiry_date: Optional[str] = None
+    responsible: Optional[str] = None
+    notes: Optional[str] = None
+    attachment: Optional[str] = None
 
 class ApprovalDecision(BaseModel):
     comment: Optional[str] = ""
