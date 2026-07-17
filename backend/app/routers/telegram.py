@@ -121,11 +121,19 @@ def verify(body: LinkVerifyIn, db: Session = Depends(get_db)):
 
 @router.get("/session/{tg_id}")
 def session(tg_id: str, db: Session = Depends(get_db)):
-    link = db.get(models.TelegramLink, tg_id)
+    """Resolve a Telegram id to its ERP user + link metadata (used by the bot's /me).
+    Returns the full linked profile so the bot doesn't have to duplicate any logic."""
+    link = db.get(models.TelegramLink, (tg_id or "").strip())
     if not link:
+        return {"linked": False}
+    u = db.get(models.User, link.user_id)
+    if not u:
+        # Orphaned link (user deleted): treat as unlinked rather than 500.
         return {"linked": False}
     link.last_activity = datetime.now(timezone.utc)  # touch on every bot interaction
     db.commit()
-    u = db.get(models.User, link.user_id)
-    return {"linked": True, "user": {"id": u.id, "name": u.name, "role": u.role,
-                                     "branches": u.branch_names or None}}
+    return {"linked": True,
+            "user": {"id": u.id, "name": u.name, "role": u.role, "branches": u.branch_names or None},
+            "tg_id": link.tg_id, "username": link.username,
+            "linked_at": _iso(link.linked_at), "last_activity": _iso(link.last_activity),
+            "status": "connected"}
