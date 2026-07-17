@@ -6,11 +6,15 @@
 <title>SmokeStack — Accounting (V1)</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230f1420'/%3E%3Cpath d='M32 10c6 8 2 12 6 16 3 3 8 3 8 11a14 14 0 1 1-28 0c0-6 4-9 6-13 2 4 4 4 5 2 1-3-1-9 3-16z' fill='%23ff7a45'/%3E%3C/svg%3E">
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230f1420'/%3E%3Cpath d='M32 10c6 8 2 12 6 16 3 3 8 3 8 11a14 14 0 1 1-28 0c0-6 4-9 6-13 2 4 4 4 5 2 1-3-1-9 3-16z' fill='%23ff7a45'/%3E%3C/svg%3E">
-<meta name="theme-color" content="#0f1420">
+<meta name="theme-color" content="#FBFBFD">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="SmokeStack">
 <meta name="mobile-web-app-capable" content="yes">
+<!-- Premium typeface: Inter (Apple/SF-adjacent geometry, superb tabular numerals) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet">
 <style>
   :root{
     /* fixed mobile nav geometry — single source of truth */
@@ -19,15 +23,22 @@
     --mobile-safe-area-top:env(safe-area-inset-top, 0px);
     --mobile-top-bar-height:54px;
     --mobile-bottom-clearance:calc(var(--mobile-bottom-nav-height) + var(--mobile-safe-area-bottom) + 24px);
-    /* Professional white ERP palette (light, high-contrast, one warm brand accent) */
-    --bg:#f5f7fb;--panel:#ffffff;--panel2:#eef2f8;--line:#e2e8f2;--txt:#141a25;--muted:#5a6b85;
-        --brand:#ff7a45;--brand2:#ffb020;--ok:#0f9d63;--warn:#b7791f;--bad:#d92d20;--accent:#2563eb;
-        --shadow:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.08);
-        --shadow-md:0 4px 10px rgba(16,24,40,.08),0 2px 4px rgba(16,24,40,.05);
-        --shadow-lg:0 12px 34px rgba(16,24,40,.16);
-        --ok-bg:#e7f6ee;--warn-bg:#fdf3e2;--bad-bg:#fdecea;--accent-bg:#eaf1fe;}
+    /* ULTRA-PREMIUM light system — Apple-calm surfaces, Tesla depth, electric-blue accent */
+    --bg:#FBFBFD;--panel:#FFFFFF;--panel2:#F5F6F8;--line:#ECEDF1;--hair:#F0F1F4;
+        --txt:#0B0B0F;--muted:#6E7382;--muted2:#9AA0AD;
+        --brand:#0A84FF;--brand2:#409CFF;--ok:#12A150;--warn:#B4690E;--bad:#E5342B;--accent:#0A84FF;
+        --shadow:0 1px 2px rgba(16,24,40,.04),0 2px 6px rgba(16,24,40,.05);
+        --shadow-md:0 8px 24px rgba(16,24,40,.08),0 2px 6px rgba(16,24,40,.04);
+        --shadow-lg:0 28px 70px rgba(16,24,40,.16),0 8px 20px rgba(16,24,40,.06);
+        --ok-bg:#E7F6EE;--warn-bg:#FBF1E3;--bad-bg:#FDECEA;--accent-bg:#EAF2FF;
+        --ring:0 0 0 3.5px rgba(10,132,255,.26);
+        --r-sm:10px;--r-md:14px;--r-lg:18px;--r-xl:24px;}
   *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--txt);height:100vh;overflow:hidden}
+  body{font-family:"Inter",-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--txt);height:100vh;overflow:hidden;
+    -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;letter-spacing:-0.01em;text-rendering:optimizeLegibility}
+  /* tabular, aligned numerals for every figure/money value */
+  .kpi .v,td,.money,.num,input,.amount,b{font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1,"cv11" 1}
+  h1,h2,h3,.kpi .v{letter-spacing:-0.022em}
   .app{display:grid;grid-template-columns:216px 1fr;height:100vh}
   .side{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:16px 12px}
   .logo{display:flex;align-items:center;gap:9px;font-weight:800;font-size:18px;padding:6px 8px 4px}
@@ -564,6 +575,100 @@
     .backbtn{padding:9px 14px}  /* larger touch target on mobile */
     .cop-close{width:40px;height:40px}
   }
+
+  /* ============================================================================
+     ULTRA-PREMIUM SKIN v4  —  Apple-calm surfaces · Tesla depth · electric blue
+     Visual/interaction layer only. Icons are monoline SVG (currentColor).
+     ============================================================================ */
+  *{ -webkit-tap-highlight-color:transparent }
+  ::selection{ background:rgba(10,132,255,.16) }
+  ::-webkit-scrollbar{ width:10px;height:10px }
+  ::-webkit-scrollbar-thumb{ background:#D6D9E0;border-radius:10px;border:2px solid var(--bg) }
+  ::-webkit-scrollbar-thumb:hover{ background:#C2C6D0 }
+  a:focus-visible,button:focus-visible,[tabindex]:focus-visible{ outline:none;box-shadow:var(--ring);border-radius:10px }
+
+  /* ---- Sidebar ---- */
+  .side{ background:var(--panel);border-right:1px solid var(--hair);box-shadow:none;padding:18px 14px }
+  .logo{ font-size:19px;font-weight:800;letter-spacing:-.02em;color:var(--txt);gap:11px;padding:6px 8px 2px }
+  .logo .b{ width:30px;height:30px;border-radius:9px;background:linear-gradient(150deg,#3aa0ff,#0060d8);
+    box-shadow:0 5px 14px rgba(10,132,255,.36);display:flex;align-items:center;justify-content:center }
+  .logo .b svg{ width:17px;height:17px }
+  .tag{ color:var(--muted2);font-size:11px;font-weight:500;letter-spacing:.02em;padding:3px 8px 16px }
+  .nav a{ display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:11px;color:var(--muted);
+    font-weight:550;font-size:13.5px;margin-bottom:2px;transition:background .16s,color .16s }
+  .nav a .ni{ display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;flex:0 0 20px;opacity:.9 }
+  .nav a .ni svg{ width:20px;height:20px }
+  .nav a:hover{ background:var(--panel2);color:var(--txt) }
+  .nav a.active{ background:var(--accent-bg);color:var(--accent);box-shadow:none;font-weight:650 }
+  .nav a.active .ni{ opacity:1 }
+  .nav .grp{ color:var(--muted2);font-size:10.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;padding:16px 12px 6px }
+  .branchbox{ background:var(--panel2);border:1px solid var(--hair);border-radius:14px;padding:12px;margin:6px 4px 12px }
+  .branchbox label{ display:flex;align-items:center;gap:6px;color:var(--muted);font-weight:600;text-transform:none;letter-spacing:0;font-size:11px }
+  .branchbox label svg{ width:15px;height:15px }
+  .branchbox select{ border-radius:10px;background:#fff;border:1px solid var(--line);font-weight:600 }
+  .side .foot{ color:var(--muted2);border-top:1px solid var(--hair) }
+
+  /* ---- Page header / titles ---- */
+  .top h1{ font-size:26px;font-weight:800;letter-spacing:-.03em }
+  .top .sub{ color:var(--muted);font-size:13px;margin-top:2px }
+
+  /* ---- Cards & KPI tiles ---- */
+  .card{ border:1px solid var(--hair);border-radius:var(--r-lg);box-shadow:var(--shadow);transition:box-shadow .22s ease,transform .22s ease }
+  .kpi{ border-radius:var(--r-lg) }
+  .kpi:hover{ transform:translateY(-2px);box-shadow:var(--shadow-md) }
+  .kpi .l{ font-size:12px;color:var(--muted);font-weight:600 }
+  .kpi .v{ font-size:30px;font-weight:800;letter-spacing:-.03em;margin-top:6px }
+  .kpi .s{ font-size:11.5px;margin-top:4px;color:var(--muted) }
+  .card h3{ font-size:11px;color:var(--muted2);letter-spacing:.07em;font-weight:700 }
+
+  /* ---- Buttons ---- */
+  .btn{ border-radius:11px;font-weight:650;padding:10px 16px;transition:box-shadow .16s,filter .16s,transform .05s;letter-spacing:-.01em }
+  .btn:active{ transform:translateY(.5px) }
+  .btn.p{ background:linear-gradient(180deg,#2b93ff,var(--accent));color:#fff;box-shadow:0 4px 14px rgba(10,132,255,.30) }
+  .btn.p:hover{ box-shadow:0 7px 20px rgba(10,132,255,.40);filter:none }
+  .btn.g{ background:#fff;border:1px solid var(--line);color:var(--txt) }
+  .btn.g:hover{ background:var(--panel2) }
+  .askbtn{ background:linear-gradient(180deg,#2b93ff,var(--accent));color:#fff;border-radius:11px;font-weight:700;
+    box-shadow:0 4px 14px rgba(10,132,255,.30);letter-spacing:-.01em }
+  .askbtn:hover{ box-shadow:0 7px 20px rgba(10,132,255,.40);filter:none }
+  .askbtn svg{ width:16px;height:16px }
+
+  /* ---- Inputs ---- */
+  input,textarea,select,.sel{ border-radius:11px;border:1px solid var(--line);background:#fff;transition:border-color .15s,box-shadow .15s }
+  input:focus,textarea:focus,select:focus,.sel:focus{ outline:none;border-color:var(--accent);box-shadow:var(--ring) }
+
+  /* ---- Tables ---- */
+  th{ color:var(--muted2);font-size:10.5px;letter-spacing:.06em;border-bottom:1px solid var(--hair) }
+  td{ border-bottom:1px solid var(--hair);font-size:13px }
+  tbody tr{ transition:background .13s }
+  tbody tr:hover{ background:var(--panel2) }
+
+  /* ---- Pills, chips, row actions ---- */
+  .pill{ border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--muted);font-weight:600 }
+  .chip{ border-radius:7px;font-weight:650;letter-spacing:.01em }
+  .rowact{ border-radius:9px;border:1px solid var(--hair);color:var(--muted) }
+  .rowact:hover{ background:var(--panel2);color:var(--txt);border-color:var(--line) }
+  .rowact svg{ width:17px;height:17px }
+
+  /* ---- Overlays: drawer, dialog, menu ---- */
+  .drw{ border-radius:22px 0 0 22px;box-shadow:var(--shadow-lg);border-left:1px solid var(--hair) }
+  .dlg{ border-radius:20px;box-shadow:var(--shadow-lg);border:1px solid var(--hair) }
+  .amenu{ border-radius:14px;box-shadow:var(--shadow-lg);border:1px solid var(--hair);padding:7px }
+  .amenu button{ border-radius:9px;font-weight:550 }
+  .toast{ border-radius:12px;box-shadow:var(--shadow-lg);background:var(--panel);border:1px solid var(--hair) }
+
+  /* ---- Mobile chrome ---- */
+  @media(max-width:860px){
+    .mtop{ background:rgba(255,255,255,.72);backdrop-filter:saturate(180%) blur(22px);-webkit-backdrop-filter:saturate(180%) blur(22px);box-shadow:0 1px 0 var(--hair) }
+    .mtop-btn svg{ width:22px;height:22px }
+    .mtop-btn.accent{ background:linear-gradient(180deg,#2b93ff,var(--accent));color:#fff;box-shadow:0 4px 12px rgba(10,132,255,.34) }
+    .mbot{ background:rgba(255,255,255,.82);backdrop-filter:saturate(180%) blur(22px);-webkit-backdrop-filter:saturate(180%) blur(22px) }
+    .mbot button .i{ display:inline-flex;align-items:center;justify-content:center;height:23px }
+    .mbot button .i svg{ width:23px;height:23px }
+    .mbot button.on{ color:var(--accent) }
+    .nav a{ padding:11px 12px;font-size:15px }
+    .nav a .ni,.nav a .ni svg{ width:22px;height:22px }
+  }
 </style>
 <!-- Real (selectable-text) PDF generation — structured data, not screenshots -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -576,41 +681,41 @@
 <body>
 <!-- ===== MOBILE CHROME (hidden on desktop) ===== -->
 <header class="mtop">
-  <button class="mtop-btn" id="mMenu" aria-label="Menu">☰</button>
+  <button class="mtop-btn" id="mMenu" aria-label="Menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
   <div style="flex:1;min-width:0;text-align:center">
     <div class="mtop-title" id="mTitle">Dashboard</div>
     <div class="mtop-branch" id="mBranch" style="text-align:center"></div>
   </div>
-  <button class="mtop-btn accent" id="mAsk" aria-label="Ask Claude">✦</button>
+  <button class="mtop-btn accent" id="mAsk" aria-label="Ask Claude"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.7 4.6L18 9.3l-4.3 1.7L12 15.6l-1.7-4.6L6 9.3l4.3-1.7L12 3z"/></svg></button>
 </header>
 <div class="scrim" id="mScrim"></div>
 <nav class="mbot" id="mBot"></nav>
 
 <div class="app">
   <aside class="side">
-    <div class="logo"><span class="b">🔥</span> SmokeStack</div>
-    <div class="tag">Accounting · Version 1</div>
+    <div class="logo"><span class="b"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7l8-4 8 4-8 4-8-4z"/><path d="M4 12l8 4 8-4"/><path d="M4 17l8 4 8-4"/></svg></span> SmokeStack</div>
+    <div class="tag">Accounting Platform</div>
     <div class="branchbox">
-      <label for="branchSel">🏬 Branch</label>
+      <label for="branchSel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9l1-4h14l1 4M5 9v10h14V9M9 19v-5h6v5"/><path d="M4 9a2.4 2.4 0 0 0 4.7 0 2.4 2.4 0 0 0 4.6 0 2.4 2.4 0 0 0 4.7 0"/></svg> Branch</label>
       <select id="branchSel" aria-label="Active branch" onchange="setBranch(this.value)"></select>
       <div class="branch-role" id="branchRole"></div>
     </div>
     <nav class="nav" id="nav">
-      <a data-v="dash" class="active">📊 Dashboard</a>
-      <a data-v="ai">🤖 Ask Claude</a>
+      <a data-v="dash" class="active"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="8.5" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="11.5" width="7" height="9.5" rx="1.5"/><rect x="3" y="15" width="7" height="6" rx="1.5"/></svg></span>Dashboard</a>
+      <a data-v="ai"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.7 4.6L18 9.3l-4.3 1.7L12 15.6l-1.7-4.6L6 9.3l4.3-1.7L12 3z"/><path d="M18.5 14l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2z"/></svg></span>Ask Claude</a>
       <div class="grp">Daily Books</div>
-      <a data-v="sales">💵 Daily Sales</a>
-      <a data-v="expenses">🧾 Expenses</a>
-      <a data-v="purchases">📦 Purchases</a>
-      <a data-v="recon">🏦 Bank Reconciliation</a>
+      <a data-v="sales"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v10"/><path d="M14.5 9.3c0-1.1-1.1-1.9-2.6-1.9s-2.5.8-2.5 1.9c0 2.6 5.1 1.4 5.1 4 0 1.1-1.1 1.9-2.6 1.9s-2.6-.8-2.6-1.9"/></svg></span>Daily Sales</a>
+      <a data-v="expenses"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12v18l-2.3-1.5L13.4 21 11 19.5 8.6 21 6.3 19.5 6 21V3z"/><path d="M9 8h6M9 12h6"/></svg></span>Expenses</a>
+      <a data-v="purchases"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 8h11l-.9 12H7.4L6.5 8z"/><path d="M9 8a3 3 0 0 1 6 0"/></svg></span>Purchases</a>
+      <a data-v="recon"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16M5 20V10M19 20V10M9.5 20V10M14.5 20V10M12 3l8 5H4l8-5z"/></svg></span>Bank</a>
       <div class="grp">Compliance</div>
-      <a data-v="tax">🧮 Sales Tax</a>
-      <a data-v="payroll">👥 Payroll</a>
-      <div class="grp">More</div>
-      <a data-v="inventory">📦 Inventory</a>
-      <a data-v="reports">📈 Reports</a>
-      <a data-v="telegram">✈️ Telegram</a>
-      <a data-v="settings">⚙️ Settings</a>
+      <a data-v="tax"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18.5 5.5L5.5 18.5"/><circle cx="7.5" cy="7.5" r="2.1"/><circle cx="16.5" cy="16.5" r="2.1"/></svg></span>Sales Tax</a>
+      <a data-v="payroll"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0"/><path d="M16 5.2a3.2 3.2 0 0 1 0 6M17 15.3a5.5 5.5 0 0 1 3.5 4.7"/></svg></span>Payroll</a>
+      <div class="grp">Operations</div>
+      <a data-v="inventory"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4.4v9L12 21l-8-4.6v-9L12 3z"/><path d="M12 12l8-4.6M12 12v9M12 12L4 7.4"/></svg></span>Inventory</a>
+      <a data-v="reports"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><rect x="5" y="11" width="3.2" height="7" rx="1"/><rect x="10.4" y="6" width="3.2" height="12" rx="1"/><rect x="15.8" y="9" width="3.2" height="9" rx="1"/></svg></span>Reports</a>
+      <a data-v="telegram"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 3L2.5 10.3l6.2 2.4L11.5 20 15 13.7 21 3z"/><path d="M8.7 12.7L21 3"/></svg></span>Telegram</a>
+      <a data-v="settings"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v2.6M12 18.9v2.6M4.6 4.6l1.9 1.9M17.5 17.5l1.9 1.9M2.5 12h2.6M18.9 12h2.6M4.6 19.4l1.9-1.9M17.5 6.5l1.9-1.9"/></svg></span>Settings</a>
     </nav>
     <div class="foot">Accounting-first · AI-driven<br>Not legal or tax advice.</div>
   </aside>
@@ -621,7 +726,7 @@
       <div class="top"><div><h1>Dashboard</h1><div class="sub" id="dashSub">All stores · today</div></div>
         <div style="display:flex;gap:9px;align-items:center">
           <select id="storeSel" aria-label="Active branch" onchange="setBranch(this.value)"></select>
-          <button class="askbtn" onclick="go('ai')">🤖 Ask Claude</button>
+          <button class="askbtn" onclick="go('ai')"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.7 4.6L18 9.3l-4.3 1.7L12 15.6l-1.7-4.6L6 9.3l4.3-1.7L12 3z"/></svg> Ask Claude</button>
         </div>
       </div>
       <div class="grid g4" id="kpis"></div>
@@ -812,7 +917,7 @@
   <div class="drw-acts" id="drwActs"></div>
 </aside>
 <div class="amenu" id="aMenu"></div>
-<button class="fab-scan" id="fabScan" aria-label="Scan barcode" onclick="invScanForm()">▤</button>
+<button class="fab-scan" id="fabScan" aria-label="Scan barcode" onclick="invScanForm()"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V5.5A1.5 1.5 0 0 1 5.5 4H7M17 4h1.5A1.5 1.5 0 0 1 20 5.5V7M20 17v1.5a1.5 1.5 0 0 1-1.5 1.5H17M7 20H5.5A1.5 1.5 0 0 1 4 18.5V17M7 8v8M10 8v8M13.5 8v8M17 8v8"/></svg></button>
 <div class="dlg" id="dlg" role="dialog" aria-modal="true"><h3 id="dlgTitle"></h3><p id="dlgMsg"></p><textarea id="dlgReason" style="display:none" placeholder="Reason (required)…"></textarea>
   <div class="dlg-acts"><button onclick="dlgCancel()">Cancel</button><button id="dlgOk" class="pri" onclick="dlgConfirm()">Confirm</button></div></div>
 
@@ -3746,7 +3851,13 @@ function mountPageTools(){
 // ---------------- boot ----------------
 function refreshAll(){renderDash();renderSales();renderExp();renderPur();renderRecon();renderTax();renderPay();renderReports();renderClock();if(typeof renderInventory==='function')renderInventory();mountPageTools();}
 // ===================== MOBILE CONTROLLER =====================
-const MTABS=[['dash','\u{1F4CA}','Home'],['ai','\u2726','Claude'],['sales','\u{1F4B5}','Sales'],['reports','\u{1F4C8}','Reports'],['__more','\u2630','More']];
+const _mi=p=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
+const MTABS=[
+  ['dash', _mi('<rect x="3" y="3" width="7" height="8.5" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="11.5" width="7" height="9.5" rx="1.5"/><rect x="3" y="15" width="7" height="6" rx="1.5"/>'), 'Home'],
+  ['ai',   _mi('<path d="M12 3l1.7 4.6L18 9.3l-4.3 1.7L12 15.6l-1.7-4.6L6 9.3l4.3-1.7L12 3z"/>'), 'Claude'],
+  ['sales',_mi('<circle cx="12" cy="12" r="9"/><path d="M12 7v10"/><path d="M14.5 9.3c0-1.1-1.1-1.9-2.6-1.9s-2.5.8-2.5 1.9c0 2.6 5.1 1.4 5.1 4 0 1.1-1.1 1.9-2.6 1.9s-2.6-.8-2.6-1.9"/>'), 'Sales'],
+  ['reports',_mi('<path d="M3 21h18"/><rect x="5" y="11" width="3.2" height="7" rx="1"/><rect x="10.4" y="6" width="3.2" height="12" rx="1"/><rect x="15.8" y="9" width="3.2" height="9" rx="1"/>'), 'Reports'],
+  ['__more',_mi('<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>'), 'More']];
 const MTITLES={dash:'Dashboard',ai:'Ask Claude',sales:'Daily Sales',expenses:'Expenses',purchases:'Purchases',recon:'Bank Reconciliation',tax:'Sales Tax',payroll:'Payroll',reports:'Report Center',inventory:'Inventory',telegram:'Telegram',settings:'Settings'};
 function mDrawer(open){document.body.classList.toggle('drawer-open',open);}
 function mSync(v){
