@@ -36,9 +36,12 @@
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:"Inter",-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--txt);height:100vh;overflow:hidden;
     -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;letter-spacing:-0.01em;text-rendering:optimizeLegibility}
-  /* tabular, aligned numerals for every figure/money value */
-  .kpi .v,td,.money,.num,input,.amount,b{font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1,"cv11" 1}
-  h1,h2,h3,.kpi .v{letter-spacing:-0.022em}
+  /* Numerals — elegant PROPORTIONAL lining figures for display numbers (the
+     Linear / Mercury approach); TABULAR only inside data tables so columns align. */
+  .kpi .v,h1,h2,h3{ font-variant-numeric:proportional-nums lining-nums;font-feature-settings:"lnum" 1,"pnum" 1 }
+  td,.tnum{ font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1 }
+  h1,h2,h3,.kpi .v{ letter-spacing:-0.024em }
+  .kpi .v{ font-weight:800 }
   .app{display:grid;grid-template-columns:216px 1fr;height:100vh}
   .side{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:16px 12px}
   .logo{display:flex;align-items:center;gap:9px;font-weight:800;font-size:18px;padding:6px 8px 4px}
