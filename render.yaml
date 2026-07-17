@@ -52,3 +52,21 @@ services:
         value: https://smokestack-erp.onrender.com
       - key: SEED_ON_START
         value: "true"           # set to "false" after the first successful boot
+
+  # ---- Telegram bot (dedicated Background Worker; long-polling, NOT in FastAPI) ----
+  - type: worker
+    name: smokestack-telegram
+    runtime: python
+    plan: starter
+    region: oregon
+    branch: main
+    rootDir: backend/telegram_worker
+    buildCommand: pip install -r requirements.txt
+    startCommand: python worker.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.10"
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false              # set this secret in the Render dashboard (BotFather token)
+      - key: SMOKESTACK_API_BASE
+        value: https://smokestack-api.onrender.com
