@@ -695,6 +695,14 @@
     .seg{ width:100% }
     .segb{ flex:1;text-align:center;min-height:40px }
   }
+  /* Dashboard Costs/Profit period toggle */
+  .kpiperiod{display:inline-flex;gap:2px;background:var(--chip,#eef1f4);border-radius:10px;padding:3px}
+  .kpiperiod button{border:0;background:transparent;color:var(--muted);font-weight:600;font-size:13px;padding:7px 16px;border-radius:8px;cursor:pointer;transition:all .12s}
+  .kpiperiod button.on{background:var(--card,#fff);color:var(--txt);box-shadow:var(--shadow-sm,0 1px 2px rgba(0,0,0,.08))}
+  .kpi .delta{font-size:12px;font-weight:600;margin-top:4px}
+  .kpi .delta.up{color:var(--ok,#1a7f37)} .kpi .delta.down{color:var(--bad,#c0392b)}
+  .kpi .bd{font-size:11.5px;color:var(--muted);margin-top:6px}
+  @media(max-width:560px){ .kpiperiod{display:flex;width:100%} .kpiperiod button{flex:1;padding:8px 4px} }
 </style>
 <!-- Real (selectable-text) PDF generation — structured data, not screenshots -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -733,7 +741,6 @@
       <a data-v="sales"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v10"/><path d="M14.5 9.3c0-1.1-1.1-1.9-2.6-1.9s-2.5.8-2.5 1.9c0 2.6 5.1 1.4 5.1 4 0 1.1-1.1 1.9-2.6 1.9s-2.6-.8-2.6-1.9"/></svg></span>Daily Sales</a>
       <a data-v="expenses"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12v18l-2.3-1.5L13.4 21 11 19.5 8.6 21 6.3 19.5 6 21V3z"/><path d="M9 8h6M9 12h6"/></svg></span>Expenses</a>
       <a data-v="purchases"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 8h11l-.9 12H7.4L6.5 8z"/><path d="M9 8a3 3 0 0 1 6 0"/></svg></span>Purchases</a>
-      <a data-v="recon"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16M5 20V10M19 20V10M9.5 20V10M14.5 20V10M12 3l8 5H4l8-5z"/></svg></span>Bank</a>
       <div class="grp">Compliance</div>
       <a data-v="tax"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18.5 5.5L5.5 18.5"/><circle cx="7.5" cy="7.5" r="2.1"/><circle cx="16.5" cy="16.5" r="2.1"/></svg></span>Sales Tax</a>
       <a data-v="payroll"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0"/><path d="M16 5.2a3.2 3.2 0 0 1 0 6M17 15.3a5.5 5.5 0 0 1 3.5 4.7"/></svg></span>Payroll</a>
@@ -741,6 +748,8 @@
       <a data-v="inventory"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4.4v9L12 21l-8-4.6v-9L12 3z"/><path d="M12 12l8-4.6M12 12v9M12 12L4 7.4"/></svg></span>Inventory</a>
       <a data-v="reports"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><rect x="5" y="11" width="3.2" height="7" rx="1"/><rect x="10.4" y="6" width="3.2" height="12" rx="1"/><rect x="15.8" y="9" width="3.2" height="9" rx="1"/></svg></span>Reports</a>
       <a data-v="attendance"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>Attendance</a>
+      <a data-v="workhours"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4M8 14h4"/></svg></span>Work Hours</a>
+      <a data-v="licenses"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></span>Licenses</a>
       <a data-v="telegram"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 3L2.5 10.3l6.2 2.4L11.5 20 15 13.7 21 3z"/><path d="M8.7 12.7L21 3"/></svg></span>Telegram</a>
       <a data-v="settings"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v2.6M12 18.9v2.6M4.6 4.6l1.9 1.9M17.5 17.5l1.9 1.9M2.5 12h2.6M18.9 12h2.6M4.6 19.4l1.9-1.9M17.5 6.5l1.9-1.9"/></svg></span>Settings</a>
     </nav>
@@ -756,13 +765,21 @@
           <button class="askbtn" onclick="go('ai')"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.7 4.6L18 9.3l-4.3 1.7L12 15.6l-1.7-4.6L6 9.3l4.3-1.7L12 3z"/></svg> Ask Claude</button>
         </div>
       </div>
-      <div class="grid g4" id="kpis"></div>
+      <div class="kpiperiod" id="kpiPeriod" role="tablist" aria-label="KPI period">
+        <button type="button" data-p="today" role="tab">Today</button>
+        <button type="button" data-p="week" role="tab">Week</button>
+        <button type="button" data-p="month" role="tab">Month</button>
+        <button type="button" data-p="year" role="tab">Year</button>
+      </div>
+      <div class="grid g2" id="kpis" style="margin-top:11px"></div>
       <div class="grid g3" style="margin-top:13px">
         <div class="card" style="grid-column:span 2"><h3>Recent Transactions</h3><table id="recentTbl"></table></div>
         <div class="card"><h3>Pending Tasks</h3><div id="pending" style="font-size:13px;line-height:1.9"></div>
           <h3 style="margin-top:16px">Tax Summary (MTD)</h3><div id="taxMini" style="font-size:13px;line-height:1.9"></div>
+          <h3 style="margin-top:16px">Document Alerts</h3><div id="licMini" style="font-size:13px;line-height:1.9"><span style="color:var(--muted)">No alerts.</span></div>
         </div>
       </div>
+      <div id="dashAnalytics" style="margin-top:13px"></div>
     </section>
 
     <!-- AI ASSISTANT (Copilot) -->
@@ -821,7 +838,8 @@
         <div class="card"><h3>Add Expense</h3>
           <div class="field"><label for="eStore">Store</label><select id="eStore"></select></div>
           <div class="field"><label for="eAcct">Account</label><select id="eAcct"></select></div>
-          <div class="field"><label for="eCat">Category</label><select id="eCat"><option>Utilities</option><option>Rent</option><option>Payroll</option><option>Supplies</option><option>Marketing</option><option>Bank Charges</option><option>Other</option></select></div>
+          <div class="field"><label for="eCat">Category</label><select id="eCat" onchange="expToggleOther()"><option>Utilities</option><option>Rent</option><option>Payroll</option><option>Supplies</option><option>Marketing</option><option>Bank Charges</option><option>Other</option></select></div>
+          <div class="field" id="eDescWrap" style="display:none"><label for="eDesc">Expense description</label><input id="eDesc" placeholder="e.g. Cleaning materials, Employee meal, Delivery fee"><div id="eDescErr" style="display:none;color:var(--bad,#c0392b);font-size:12px;margin-top:4px">Please describe the expense.</div></div>
           <div class="row2"><div class="field"><label for="eAmt">Amount ($)</label><input id="eAmt" type="number" placeholder="0"></div>
           <div class="field"><label for="eVendor">Vendor</label><input id="eVendor" placeholder="optional"></div></div>
           <button class="btn p" onclick="submitExpense()">Save expense</button>
@@ -849,13 +867,6 @@
     </section>
 
     <!-- BANK RECON -->
-    <section class="view" id="v-recon">
-      <div class="top"><div><h1>Bank Reconciliation</h1><div class="sub">Match imported bank lines to your books.</div></div>
-        <button class="btn g" onclick="importDemo()">⬇ Import bank statement (demo)</button></div>
-      <div class="card"><table id="reconTbl"></table></div>
-      <div class="card" style="margin-top:12px;font-size:12px;color:var(--muted)">Imports supported: bank feed / CSV / Excel / OFX / QBO / MT940 / email receipts — auto-categorized on arrival. Unmatched lines become one-tap draft entries.</div>
-    </section>
-
     <!-- SALES TAX -->
     <section class="view" id="v-tax">
       <div class="top"><div><h1>Sales Tax</h1><div class="sub">Tracked per store & state. Ready for multi-state rates.</div></div></div>
@@ -879,7 +890,7 @@
       <div id="payPeriodBar"></div>
       <div class="grid g4" id="payKpis"></div>
       <div class="card" style="margin-top:13px"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><h3 style="margin:0">Employees</h3><span class="pill" id="payPeriodChip"></span></div><table id="payTbl" style="margin-top:10px"></table></div>
-      <div class="card" style="margin-top:12px;font-size:12px;color:var(--muted)">Employer taxes estimated at 7.65% FICA + ~2% unemployment. Withholding is illustrative — connect a payroll provider for filing in V2.</div>
+      <div class="card" style="margin-top:12px;font-size:12px;color:var(--muted)">Payroll shows gross pay and net pay per employee for the selected period. Net pay equals gross pay.</div>
     </section>
 
     <!-- REPORT CENTER -->
@@ -918,6 +929,20 @@
       <div class="top"><div><h1>Attendance</h1><div class="sub">Location-verified clock-in / clock-out from Telegram.</div></div>
         <span class="pill" id="attHeadPill">records</span></div>
       <div id="attBody"><div class="card"><div class="sub" style="color:var(--muted)">Sign in to view attendance.</div></div></div>
+    </section>
+
+    <!-- WORK HOURS -->
+    <section class="view" id="v-workhours">
+      <div class="top"><div><h1>Work Hours</h1><div class="sub">Employee work schedule &amp; hours from Telegram clock in / out.</div></div>
+        <span class="pill" id="whPill">—</span></div>
+      <div id="whBody"><div class="card"><div class="sub" style="color:var(--muted)">Sign in to view work hours.</div></div></div>
+    </section>
+
+    <!-- LICENSES -->
+    <section class="view" id="v-licenses">
+      <div class="top"><div><h1>Licenses &amp; Documents</h1><div class="sub">Official documents with expiration tracking &amp; alerts.</div></div>
+        <span class="pill" id="licPill">—</span></div>
+      <div id="licBody"><div class="card"><div class="sub" style="color:var(--muted)">Sign in to view licenses.</div></div></div>
     </section>
 
     <!-- SETTINGS -->
@@ -1116,15 +1141,7 @@ function renderDash(){curStore=BRANCH;const rows=scope(LEDGER);
   const cash = rows.filter(x=>x.account==='Cash').reduce((a,x)=>a+(x.type==='sale'?x.amount:x.type==='deposit'||x.type==='expense'||x.type==='purchase'||x.type==='payroll'?-x.amount:0),0);
   const bank = rows.filter(x=>x.account!=='Cash').reduce((a,x)=>a+(x.type==='deposit'||x.type==='sale'?x.amount:-x.amount),0);
   const taxPayable=monthRows.reduce((a,x)=>a+(x.tax||0),0);
-  const K=[["Today's Sales",money(salesToday),"var(--ok)",todayRows.filter(x=>x.type==='sale').length+" reports"],
-    ["This Week",money(salesWeek),"var(--txt)","7-day sales"],
-    ["Cash Balance",money(cash),"var(--brand2)","on hand"],
-    ["Bank Balance",money(bank),"var(--txt)","all accounts"],
-    ["Expenses (MTD)",money(expMonth),"var(--bad)","incl. payroll"],
-    ["Profit (MTD)",money(profit),profit>=0?"var(--ok)":"var(--bad)","sales − costs"],
-    ["Tax Payable",money(taxPayable),"var(--brand)","sales tax MTD"],
-    ["Purchases (MTD)",money(purMonth),"var(--txt)","cost of goods"]];
-  document.getElementById('kpis').innerHTML=K.slice(0,8).map(k=>`<div class="card kpi drill" tabindex="0" role="button" data-drill="${k[0]}" aria-label="${k[0]} — open source"><div class="l">${k[0]}</div><div class="v" style="color:${k[2]}">${k[1]}</div><div class="s">${k[3]}</div></div>`).join('');
+  renderTopKpis();   // top bar shows only Costs + Profit with a Today/Week/Month/Year toggle
   document.getElementById('dashSub').textContent=branchLabel()+' · '+daysAgo(0);
   // recent
   const rec=[...rows].sort((a,b)=>b.id-a.id).slice(0,8);
@@ -1135,6 +1152,56 @@ function renderDash(){curStore=BRANCH;const rows=scope(LEDGER);
   document.getElementById('pending').innerHTML=`${_pdot('var(--accent)')}<b>${money(cash>4000?cash-1000:0)}</b> cash ready to deposit<br>${_pdot('#E8A33A')}Store C hasn't reported today<br>${_pdot('var(--ok)')}Payroll due in 3 days<br>${_pdot('#EC7A3C')}Sales-tax filing in 12 days`;
   document.getElementById('taxMini').innerHTML=`Taxable sales (MTD): <b>${money(sum(monthRows,'sale'))}</b><br>Tax collected: <b style="color:var(--brand)">${money(taxPayable)}</b><br>Filing status: <b style="color:var(--warn)">Open</b>`;
 }
+
+// ---------------- Dashboard top bar: Costs + Profit (period toggle) ----------------
+function kpiPeriod(){ try{return localStorage.getItem('ss_kpi_period')||'month';}catch(e){return 'month';} }
+function setKpiPeriod(p){ try{localStorage.setItem('ss_kpi_period',p);}catch(e){} renderTopKpis(p); }
+function _dstr(d){ return d.toISOString().slice(0,10); }
+function _kpiRange(p){
+  var t=new Date(); t.setHours(0,0,0,0); var f,pf,pt,to=new Date(t);
+  if(p==='today'){ f=new Date(t); pf=new Date(t); pf.setDate(pf.getDate()-1); pt=new Date(pf); }
+  else if(p==='week'){ f=new Date(t); f.setDate(f.getDate()-f.getDay()); pf=new Date(f); pf.setDate(pf.getDate()-7); pt=new Date(f); pt.setDate(pt.getDate()-1); }
+  else if(p==='year'){ f=new Date(t.getFullYear(),0,1); pf=new Date(t.getFullYear()-1,0,1); pt=new Date(t.getFullYear()-1,11,31); }
+  else { f=new Date(t.getFullYear(),t.getMonth(),1); pt=new Date(f); pt.setDate(0); pf=new Date(pt.getFullYear(),pt.getMonth(),1); }
+  return {from:_dstr(f),to:_dstr(to),pfrom:_dstr(pf),pto:_dstr(pt)};
+}
+function _kpiLegacy(p){
+  var r=_kpiRange(p); var rows=scope(LEDGER);
+  function agg(f,t){ var w=rows.filter(x=>x.date>=f&&x.date<=t);
+    var rev=w.filter(x=>x.type==='sale').reduce((a,x)=>a+x.amount,0);
+    var tax=w.reduce((a,x)=>a+(x.type==='sale'?(x.tax||0):0),0);
+    var cogs=w.filter(x=>x.type==='purchase').reduce((a,x)=>a+x.amount,0);
+    var opex=w.filter(x=>x.type==='expense').reduce((a,x)=>a+x.amount,0);
+    var pay=w.filter(x=>x.type==='payroll').reduce((a,x)=>a+x.amount,0);
+    var costs=cogs+opex+pay; return {costs:costs,profit:rev-tax-costs,cogs:cogs,opex:opex,pay:pay,rev:rev}; }
+  var c=agg(r.from,r.to),pv=agg(r.pfrom,r.pto);
+  var pct=(a,b)=>b===0?(a===0?null:100):Math.round((a-b)/Math.abs(b)*1000)/10;
+  return {can_view_costs:(typeof can==='function'?can('view_cost'):true),can_view_profit:(typeof can==='function'?can('view_profit'):true),
+    costs:{current:c.costs,previous:pv.costs,delta_pct:pct(c.costs,pv.costs),breakdown:{cogs:c.cogs,expenses:c.opex,payroll:c.pay}},
+    profit:{current:c.profit,previous:pv.profit,delta_pct:pct(c.profit,pv.profit),revenue:c.rev}};
+}
+function _kpiCard(kind,label,d,color){
+  if(!d){ return `<div class="card kpi"><div class="l">${label} · ${kind}</div><div class="v" style="color:var(--muted)">🔒 Restricted</div><div class="bd">Hidden for your role.</div></div>`; }
+  var dp=d.delta_pct;
+  var deltaHtml = dp==null?'' : `<div class="delta ${dp>=0?'up':'down'}">${dp>=0?'▲':'▼'} ${Math.abs(dp)}% vs previous ${label}</div>`;
+  var bd = kind==='Costs'&&d.breakdown ? `<div class="bd">COGS ${money(d.breakdown.cogs)} · Expenses ${money(d.breakdown.expenses)} · Payroll ${money(d.breakdown.payroll)}</div>`
+         : (kind==='Profit'&&d.revenue!=null?`<div class="bd">Revenue ${money(d.revenue)} − costs</div>`:'');
+  return `<div class="card kpi drill" tabindex="0" role="button" data-drill="${kind}" aria-label="${kind} — open source"><div class="l">${kind} · ${label}</div><div class="v" style="color:${color}">${money(d.current)}</div>${deltaHtml}${bd}</div>`;
+}
+async function renderTopKpis(period){
+  period=period||kpiPeriod();
+  var lbl={today:'Today',week:'This Week',month:'This Month',year:'This Year'}[period]||'This Month';
+  document.querySelectorAll('#kpiPeriod button').forEach(b=>b.classList.toggle('on',b.dataset.p===period));
+  var host=document.getElementById('kpis'); if(!host) return;
+  var data;
+  if(window.API_MODE && window.SS_API_LIVE && SS_API_LIVE.kpi){
+    host.innerHTML='<div class="card kpi"><div class="l">Costs</div><div class="v" style="color:var(--muted)">…</div></div><div class="card kpi"><div class="l">Profit</div><div class="v" style="color:var(--muted)">…</div></div>';
+    try{ data=await SS_API_LIVE.kpi(period,(typeof BRANCH!=='undefined'?BRANCH:'all')); }catch(e){ data=_kpiLegacy(period); }
+  } else { data=_kpiLegacy(period); }
+  host.innerHTML=_kpiCard('Costs',lbl,(data.can_view_costs?data.costs:null),'var(--bad)')
+    + _kpiCard('Profit',lbl,(data.can_view_profit?data.profit:null),(data.profit&&data.profit.current>=0)?'var(--ok)':'var(--bad)');
+}
+document.addEventListener('click',function(e){var b=e.target.closest&&e.target.closest('#kpiPeriod button');if(b){setKpiPeriod(b.dataset.p);}});
 
 // ---------------- Daily Sales ----------------
 function renderSales(){const rows=scope(LEDGER).filter(x=>x.type==='sale').sort((a,b)=>b.id-a.id).slice(0,12);
@@ -1148,13 +1215,18 @@ function submitDailySales(){const store=document.getElementById('sStore').value;
   document.getElementById('sCash').value='';document.getElementById('sCard').value='';renderSales();renderDash();toast('Daily sales saved: '+money(total)+' ('+store+')');}
 
 // ---------------- Expenses ----------------
+function _hesc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function expLabel(x){ return (x.customDesc)?(_hesc(x.customDesc)+' <span style="color:var(--muted);font-size:11px">(Other)</span>'):_hesc(x.category||''); }
+function expToggleOther(){ var isO=(document.getElementById('eCat').value==='Other'); var w=document.getElementById('eDescWrap'); if(w)w.style.display=isO?'':'none'; if(!isO){var er=document.getElementById('eDescErr');if(er)er.style.display='none';} }
 function renderExp(){const rows=scope(LEDGER).filter(x=>x.type==='expense'||x.type==='payroll').sort((a,b)=>b.id-a.id).slice(0,12);
-  document.getElementById('expTbl').innerHTML=`<thead><tr><th>Date</th><th>Store</th><th>Category</th><th>Account</th><th style="text-align:end">Amount</th><th></th></tr></thead><tbody>`+
-    rows.map(x=>`<tr data-txid="${x.id}"><td>${x.date.slice(5)}</td><td>${x.store}</td><td>${x.category}</td><td>${x.account}</td><td style="text-align:end;color:var(--bad)"><b>${money(x.amount)}</b>${x.voided?'<span class="voided-badge">void</span>':''}</td><td style="text-align:center"><button type="button" class="rowact" data-rowmenu="${x.id}" aria-label="More actions" aria-haspopup="menu" aria-expanded="false">⋯</button></td></tr>`).join('')+`</tbody>`;
+  document.getElementById('expTbl').innerHTML=`<thead><tr><th>Date</th><th>Store</th><th>Category / Description</th><th>Account</th><th style="text-align:end">Amount</th><th></th></tr></thead><tbody>`+
+    rows.map(x=>`<tr data-txid="${x.id}"><td>${x.date.slice(5)}</td><td>${x.store}</td><td>${expLabel(x)}</td><td>${x.account}</td><td style="text-align:end;color:var(--bad)"><b>${money(x.amount)}</b>${x.voided?'<span class="voided-badge">void</span>':''}</td><td style="text-align:center"><button type="button" class="rowact" data-rowmenu="${x.id}" aria-label="More actions" aria-haspopup="menu" aria-expanded="false">⋯</button></td></tr>`).join('')+`</tbody>`;
   rowify('expTbl','expense');}
 function submitExpense(){const amt=+document.getElementById('eAmt').value||0;if(!amt)return toast('Enter an amount');
-  LEDGER.push({id:++uid,date:daysAgo(0),store:document.getElementById('eStore').value,account:document.getElementById('eAcct').value,type:"expense",category:document.getElementById('eCat').value,amount:amt,memo:document.getElementById('eVendor').value||document.getElementById('eCat').value});
-  document.getElementById('eAmt').value='';document.getElementById('eVendor').value='';renderExp();renderDash();toast('Expense saved: '+money(amt));}
+  var cat=document.getElementById('eCat').value; var desc=(document.getElementById('eDesc')?document.getElementById('eDesc').value:'').trim();
+  if(cat==='Other'&&!desc){ var er=document.getElementById('eDescErr'); if(er)er.style.display='block'; var de=document.getElementById('eDesc'); if(de)de.focus(); return toast('Please describe the expense'); }
+  LEDGER.push({id:++uid,date:daysAgo(0),store:document.getElementById('eStore').value,account:document.getElementById('eAcct').value,type:"expense",category:cat,customDesc:(cat==='Other'?desc:null),amount:amt,memo:document.getElementById('eVendor').value||(cat==='Other'?desc:cat)});
+  document.getElementById('eAmt').value='';document.getElementById('eVendor').value='';if(document.getElementById('eDesc'))document.getElementById('eDesc').value='';expToggleOther();renderExp();renderDash();toast('Expense saved: '+money(amt));}
 
 // ---------------- Purchases ----------------
 function renderPur(){const rows=scope(LEDGER).filter(x=>x.type==='purchase').sort((a,b)=>b.id-a.id).slice(0,12);
@@ -1171,7 +1243,7 @@ let RECON=[{date:daysAgo(0),desc:"CASH DEPOSIT",amt:4000,matched:true,cat:"Depos
  {date:daysAgo(1),desc:"ALTRIA GROUP INV",amt:-4820,matched:true,cat:"Inventory Purchase"},
  {date:daysAgo(1),desc:"STRIPE PAYOUT",amt:2260,matched:false,cat:"Card Sales"},
  {date:daysAgo(2),desc:"SHELL OIL 574",amt:-64,matched:false,cat:"Fuel Expense"}];
-function renderRecon(){document.getElementById('reconTbl').innerHTML=`<thead><tr><th>Date</th><th>Description</th><th>Auto-category</th><th>Amount</th><th>Status</th></tr></thead><tbody>`+
+function renderRecon(){var _rt=document.getElementById('reconTbl');if(!_rt)return;_rt.innerHTML=`<thead><tr><th>Date</th><th>Description</th><th>Auto-category</th><th>Amount</th><th>Status</th></tr></thead><tbody>`+
   RECON.map((r,i)=>`<tr><td>${r.date.slice(5)}</td><td><b>${r.desc}</b></td><td>${r.cat}</td><td style="color:${r.amt<0?'var(--bad)':'var(--ok)'}">${money2(Math.abs(r.amt))}</td><td>${r.matched?'<span class="chip c-sale">Matched</span>':`<button class="btn g" style="padding:5px 10px" onclick="matchRecon(${i})">Record</button>`}</td></tr>`).join('')+`</tbody>`;}
 function matchRecon(i){RECON[i].matched=true;const r=RECON[i];LEDGER.push({id:++uid,date:r.date,store:STORES[0],account:"Business Bank",type:r.amt<0?"expense":"deposit",category:r.cat,amount:Math.abs(r.amt),memo:r.desc});renderRecon();renderDash();toast('Recorded & matched: '+r.desc);}
 function importDemo(){toast('Bank statement imported — 5 lines auto-categorized');go('recon');}
@@ -1191,13 +1263,13 @@ function renderTax(){const [st,rate]=document.getElementById('taxState').value.s
 // employees are branch records too — an employee/manager only sees staff at their branch(es)
 function scopeEmp(){const allow=allowedBranches();return EMPLOYEES.filter(e=>allow.includes(e.store)&&(BRANCH==='all'||e.store===BRANCH));}
 function renderPay(){const emps=scopeEmp();const totalGross=emps.reduce((a,e)=>a+e.gross,0);const empTax=+(totalGross*0.0765).toFixed(0);const unemp=+(totalGross*0.02).toFixed(0);const net=totalGross-empTax;
-  const K=[["Gross Payroll",money(totalGross),"var(--txt)"],["Employer FICA (7.65%)",money(empTax),"var(--brand)"],["Unemployment (~2%)",money(unemp),"var(--brand2)"],["Total Cost",money(totalGross+empTax+unemp),"var(--bad)"]];
+  const K=[["Gross Payroll",money(totalGross),"var(--txt)"],["Net Pay",money(totalGross),"var(--brand)"],["Total Cost",money(totalGross),"var(--bad)"]];
   document.getElementById('payKpis').innerHTML=K.map(k=>{const dr=KPI_DRILL[k[0]];return `<div class="card kpi${dr?' drill':''}" ${dr?`tabindex="0" role="button" data-drill="${k[0]}"`:''}><div class="l">${k[0]}</div><div class="v" style="color:${k[2]}">${k[1]}</div><div class="s">${branchLabel()}</div></div>`;}).join('');
-  document.getElementById('payTbl').innerHTML=`<thead><tr><th>Employee</th><th>Store</th><th style="text-align:end">Gross</th><th style="text-align:end">Empl. tax</th><th style="text-align:end">Net</th></tr></thead><tbody>`+
+  document.getElementById('payTbl').innerHTML=`<thead><tr><th>Employee</th><th>Store</th><th style="text-align:end">Gross</th><th style="text-align:end">Net</th></tr></thead><tbody>`+
     (emps.length?emps.map(e=>{const t=+(e.gross*0.0765).toFixed(0);return `<tr><td><b>${e.name}</b></td><td>${e.store}</td><td style="text-align:end">${money(e.gross)}</td><td style="text-align:end;color:var(--brand)">${money(t)}</td><td style="text-align:end"><b>${money(e.gross-t)}</b></td></tr>`;}).join('')
       :`<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:16px">No employees at ${branchLabel()}.</td></tr>`)+`</tbody>`;}
 function runPayroll(){const emps=scopeEmp();const g=emps.reduce((a,e)=>a+e.gross,0);if(!g)return toast('No employees at '+branchLabel());
-  LEDGER.push({id:++uid,date:daysAgo(0),store:BRANCH!=='all'?BRANCH:STORES[0],account:"Checking",type:"payroll",category:"Payroll",amount:g,memo:"Payroll run"});refreshAll();toast('Payroll recorded: '+money(g)+' + employer taxes');}
+  LEDGER.push({id:++uid,date:daysAgo(0),store:BRANCH!=='all'?BRANCH:STORES[0],account:"Checking",type:"payroll",category:"Payroll",amount:g,memo:"Payroll run"});refreshAll();toast('Payroll recorded: '+money(g));}
 
 // ---------------- Reports ----------------
 // =================== REPORT CENTER (scoped rep*) ===================
@@ -1205,7 +1277,7 @@ let REP={inited:false,cat:'Financial',current:null,search:'',
   filters:{period:'month',store:'all',category:'all',vendor:'all',account:'all',employee:'all',product:'all',customer:'all'},
   tx:[],products:[],customers:[],vendors:[],employees:[]};
 const PIE=['#ff7a45','#5b8def','#ffb020','#31c48d','#b478f0','#f05252','#93a0bd','#00a896'];
-const RCATS=[['Financial','📒'],['Sales','💵'],['Expenses','🧾'],['Purchasing','🚚'],['Inventory','📦'],['Customers','🧑'],['Vendors','🏭'],['Employees','👥'],['Cash','🏦'],['Tax','🧮'],['AI Insights','🤖']];
+const RCATS=[['Financial','📒'],['Sales','💵'],['Expenses','🧾'],['Purchasing','🚚'],['Inventory','📦'],['Customers','🧑'],['Vendors','🏭'],['Employees','👥'],['Cash','🏦'],['Tax','🧮'],['Business Insights','🤖']];
 function cap(s){return String(s).charAt(0).toUpperCase()+String(s).slice(1);}
 function pct(v,t){return (t?Math.round(v/t*100):0)+'%';}
 function fmtV(v,m){return m?money(v):v;}
@@ -1424,7 +1496,7 @@ function repCatalog(){const C=[];const R=(cat,id,name,ic,desc,fn)=>C.push({cat,i
   R('Vendors','vpayable','Outstanding Payables','📤','Amounts you owe',()=>{const owed=REP.vendors.filter(v=>v.balance>0);const tot=owed.reduce((a,v)=>a+v.balance,0);return {kpis:[['Payables',money(tot)],['Vendors',owed.length],['Avg',money(tot/(owed.length||1))],['Due soon',owed.length]],chart:repBar(owed.map(v=>[v.name,v.balance]),'var(--warn)'),table:{cols:['Vendor','Balance owed'],align:['start','end'],rows:owed.map(v=>[v.name,money(v.balance)])},insight:`You owe <b>${money(tot)}</b> across ${owed.length} vendors — schedule payments to protect terms.`};});
   R('Vendors','vtop','Top Vendors','🏆','By total spend',()=>bRank({src:'vendors',key:'spend',order:'desc',cols:['Vendor','Total spend']}));
   // Employees
-  R('Employees','epayroll','Payroll Summary','👥','Payroll by employee',()=>bList({src:'employees',cols:[['Employee',r=>r.name],['Store',r=>r.store],['Gross',r=>money(r.gross),'end'],['Empl. tax',r=>money(Math.round(r.gross*0.0765)),'end']],chartKey:'gross',kpis:(r)=>[['Gross payroll',money(r.reduce((a,e)=>a+e.gross,0))],['Employer tax',money(Math.round(r.reduce((a,e)=>a+e.gross,0)*0.0765))],['Employees',r.length],['Avg',money(r.reduce((a,e)=>a+e.gross,0)/r.length)]]}));
+  R('Employees','epayroll','Payroll Summary','👥','Payroll by employee',()=>bList({src:'employees',cols:[['Employee',r=>r.name],['Store',r=>r.store],['Gross',r=>money(r.gross),'end'],['Net',r=>money(r.gross),'end']],chartKey:'gross',kpis:(r)=>[['Gross payroll',money(r.reduce((a,e)=>a+e.gross,0))],['Net payroll',money(r.reduce((a,e)=>a+e.gross,0))],['Employees',r.length],['Avg',money(r.reduce((a,e)=>a+e.gross,0)/r.length)]]}));
   R('Employees','esalary','Salary History','📜','Gross by employee',()=>bRank({src:'employees',key:'gross',order:'desc',cols:['Employee','Gross']}));
   R('Employees','eot','Overtime','⏱️','Overtime hours',()=>bRank({src:'employees',key:'overtime',order:'desc',money:false,cols:['Employee','OT hours']}));
   R('Employees','eatt','Attendance','📋','Attendance %',()=>bRank({src:'employees',key:'attendance',order:'desc',money:false,cols:['Employee','Attendance %']}));
@@ -1435,7 +1507,6 @@ function repCatalog(){const C=[];const R=(cat,id,name,ic,desc,fn)=>C.push({cat,i
   R('Cash','creg','Cash Register Summary','🧾','Cash sales by store',()=>{REP.filters.account='Cash';return bGroup({dim:'store',txType:'sale',color:'var(--ok)'});});
   R('Cash','cdep','Deposit History','🏦','Deposits made',()=>bLedger({filter:x=>x.type==='deposit',ins:'Regular deposits reduce cash-on-hand risk. Aim to bank surplus daily.'}));
   R('Cash','cwith','Withdrawals','📤','Cash out',()=>bLedger({filter:x=>['expense','purchase','payroll'].includes(x.type),sort:(a,b)=>b.amount-a.amount,ins:'Every dollar leaving the business — keep receipts for each line for clean books.'}));
-  R('Cash','crecon','Cash Reconciliation','⚖️','Book vs bank',()=>bStatement('recon'));
   // Tax
   R('Tax','tvat','VAT Summary','🧮','Sales-tax overview',()=>bTax('summary'));
   R('Tax','tcoll','VAT Collected','📥','Tax collected',()=>bTax('collected'));
@@ -1443,14 +1514,14 @@ function repCatalog(){const C=[];const R=(cat,id,name,ic,desc,fn)=>C.push({cat,i
   R('Tax','tliab','Tax Liability','💰','Payable balance',()=>bTax('liability'));
   R('Tax','tfile','Tax Filing Report','📋','Filing packet',()=>bTax('filing'));
   // AI / BI
-  R('AI Insights','kpi','KPI Dashboard','📊','All key metrics',()=>bKpi());
-  R('AI Insights','tprofit','Profit Trend','📈','Net profit over time',()=>bSeries({gran:'month',metric:'profit',chart:'area',color:'var(--ok)'}));
-  R('AI Insights','trev','Revenue Trend','💹','Revenue over time',()=>bSeries({gran:'month',metric:'revenue',chart:'area'}));
-  R('AI Insights','texp','Expense Trend','📉','Expenses over time',()=>bSeries({gran:'month',metric:'expense',chart:'area',color:'var(--bad)'}));
-  R('AI Insights','tcash','Cash Trend','💧','Cash over time',()=>bSeries({gran:'month',metric:'cash',chart:'area',color:'var(--accent)'}));
-  R('AI Insights','frev','Forecast Revenue','🔮','3-month projection',()=>bForecast({metric:'revenue'}));
-  R('AI Insights','fcash','Forecast Cash Flow','🔮','Cash projection',()=>bForecast({metric:'cash',color:'var(--accent)'}));
-  R('AI Insights','ai','AI Business Insights','🤖','Automated observations',()=>bInsights());
+  R('Business Insights','kpi','KPI Dashboard','📊','All key metrics',()=>bKpi());
+  R('Business Insights','tprofit','Profit Trend','📈','Net profit over time',()=>bSeries({gran:'month',metric:'profit',chart:'area',color:'var(--ok)'}));
+  R('Business Insights','trev','Revenue Trend','💹','Revenue over time',()=>bSeries({gran:'month',metric:'revenue',chart:'area'}));
+  R('Business Insights','texp','Expense Trend','📉','Expenses over time',()=>bSeries({gran:'month',metric:'expense',chart:'area',color:'var(--bad)'}));
+  R('Business Insights','tcash','Cash Trend','💧','Cash over time',()=>bSeries({gran:'month',metric:'cash',chart:'area',color:'var(--accent)'}));
+  R('Business Insights','frev','Forecast Revenue','🔮','3-month projection',()=>bForecast({metric:'revenue'}));
+  R('Business Insights','fcash','Forecast Cash Flow','🔮','Cash projection',()=>bForecast({metric:'cash',color:'var(--accent)'}));
+  R('Business Insights','ai','Business Insights','🤖','Automated observations',()=>bInsights());
   return C;}
 let RCATALOG=[];
 
@@ -1859,7 +1930,7 @@ function copSide(){const el=document.getElementById('copSide');if(!el)return;con
     ? `<div class="cop-srow" data-act="shortcut" data-val="${copEsc(x.q)}" title="${copEsc(x.q)}">${x.i} <span>${copFmt(x.t)}</span></div>`
     : `<div class="cop-srow" style="cursor:default">${x.i} <span>${copFmt(x.t)}</span></div>`).join('')
     ||'<div class="cop-empty">Nothing needs your attention right now.</div>';
-  el.innerHTML=sec('AI Insights',insHtml)+sec('Suggested actions',suggested)+sec("Today's shortcuts",`<div class="cop-schips">${shortcuts}</div>`)+sec('Recent prompts',recent)+sec('Pinned',favs)+sec('Recent uploads',uploads);
+  el.innerHTML=sec('Business Insights',insHtml)+sec('Suggested actions',suggested)+sec("Today's shortcuts",`<div class="cop-schips">${shortcuts}</div>`)+sec('Recent prompts',recent)+sec('Pinned',favs)+sec('Recent uploads',uploads);
 }
 function copBindSide(){const el=document.getElementById('copSide');
   el.addEventListener('click',e=>{const fav=e.target.closest('[data-fav]');const tmpl=e.target.closest('[data-tmpl]');const row=e.target.closest('[data-act="shortcut"]');
@@ -1884,16 +1955,15 @@ function copInit(){copBindStream();copBindMenu();copBindFiles();copBindSide();
 // ---- 1. Knowledge graph: what every module is, holds, measures and connects to ----
 const ERP_GRAPH={
   dash:{name:'Dashboard',live:true,purpose:'The daily control tower — today\'s sales, cash, bank, expenses, profit, tax payable and what needs attention.',
-        metrics:['sales today','sales this week','cash balance','bank balance','expenses MTD','profit MTD','tax payable','purchases MTD'],rel:['sales','expenses','purchases','tax','recon']},
+        metrics:['sales today','sales this week','cash balance','bank balance','expenses MTD','profit MTD','tax payable','purchases MTD'],rel:['sales','expenses','purchases','tax']},
   ai:{name:'Ask Claude',live:true,purpose:'Conversational front door to the whole ERP — ask, analyse, or post entries in plain English.',metrics:[],rel:['*']},
   sales:{name:'Daily Sales',live:true,purpose:'Report each store\'s daily cash + card takings. Sales tax is computed automatically.',
         metrics:['revenue','transactions','sales tax collected','sales by store','sales by product','sales by employee'],rel:['tax','dash','reports','payroll']},
-  expenses:{name:'Expenses',live:true,purpose:'Operating costs: utilities, rent, supplies, marketing, bank charges.',metrics:['expenses','expense by category','expense trend'],rel:['dash','recon','reports']},
-  purchases:{name:'Purchases',live:true,purpose:'Money paid to suppliers for stock. This is your cost of goods.',metrics:['purchases','spend by vendor','vendor orders'],rel:['recon','reports','inventory']},
-  recon:{name:'Bank Reconciliation',live:true,purpose:'Match bank lines to your books; anything unmatched becomes a one-tap entry.',metrics:['matched','unmatched','bank balance'],rel:['expenses','purchases','dash']},
+  expenses:{name:'Expenses',live:true,purpose:'Operating costs: utilities, rent, supplies, marketing, bank charges.',metrics:['expenses','expense by category','expense trend'],rel:['dash','reports']},
+  purchases:{name:'Purchases',live:true,purpose:'Money paid to suppliers for stock. This is your cost of goods.',metrics:['purchases','spend by vendor','vendor orders'],rel:['reports','inventory']},
   tax:{name:'Sales Tax',live:true,purpose:'Taxable sales, rate by state, tax collected and payable, with the filing date.',metrics:['taxable sales','tax rate','tax collected','tax payable'],rel:['sales','dash','reports']},
-  payroll:{name:'Payroll',live:true,purpose:'Gross pay, employer FICA (7.65%), unemployment (~2%), net pay, and posting a payroll run.',metrics:['gross payroll','employer tax','net pay','total labour cost'],rel:['expenses','employees','dash']},
-  reports:{name:'Report Center',live:true,purpose:'90 reports across Financial, Sales, Expenses, Purchasing, Inventory, Customers, Vendors, Employees, Cash, Tax and AI Insights.',metrics:['P&L','trends','rankings','drill-down'],rel:['*']},
+  payroll:{name:'Payroll',live:true,purpose:'Gross pay, net pay, and posting a payroll run. Net pay equals gross pay — no tax is deducted.',metrics:['gross payroll','net pay','total labour cost'],rel:['expenses','employees','dash']},
+  reports:{name:'Report Center',live:true,purpose:'90 reports across Financial, Sales, Expenses, Purchasing, Inventory, Customers, Vendors, Employees, Cash, Tax and Business Insights.',metrics:['P&L','trends','rankings','drill-down'],rel:['*']},
   telegram:{name:'Telegram',live:true,purpose:'Employees clock in/out and report sales from chat; the bot writes to the same books.',metrics:['clock events'],rel:['payroll','sales']},
   settings:{name:'Settings',live:true,purpose:'Stores, accounts, tax rates.',metrics:[],rel:['*']},
   inventory:{name:'Inventory',live:false,note:'Stock levels, product costs and movement are already tracked in the warehouse, so I can answer stock questions — but the full Inventory workspace (counts, adjustments, transfers) ships in Version 2.',
@@ -1903,11 +1973,11 @@ const ERP_GRAPH={
   suppliers:{name:'Suppliers',live:false,note:'Vendor spend, order counts and balances are in Purchases and the Vendors reports; a dedicated Suppliers workspace ships in Version 2.',metrics:['spend','orders','balance'],rel:['purchases','reports']},
   branches:{name:'Branches / Transfers',live:false,note:'Multi-store is live everywhere (every entry carries a store), but stock transfers between branches ship with Inventory in Version 2.',metrics:['sales by store','profit by store'],rel:['*']},
   products:{name:'Products',live:false,note:'Product catalogue (cost, price, stock, turnover) powers the Inventory and Sales reports today; a product-management workspace ships with Inventory in Version 2.',metrics:['cost','price','stock','turnover','margin per product'],rel:['inventory','sales','purchases','reports']},
-  accounting:{name:'Accounting',live:true,view:'reports',purpose:'The whole product is accounting-first — the ledger IS the accounting module. P&L, cash, tax and reconciliation all project from one transaction table.',metrics:['P&L','cash basis profit','ledger'],rel:['reports','recon','tax','dash']},
+  accounting:{name:'Accounting',live:true,view:'reports',purpose:'The whole product is accounting-first — the ledger IS the accounting module. P&L, cash, tax and reconciliation all project from one transaction table.',metrics:['P&L','cash basis profit','ledger'],rel:['reports','tax','dash']},
   notifications:{name:'Notifications',live:false,note:'Alerts surface today inside the Dashboard ("Pending tasks") and through me — low stock, silent stores, tax deadlines. A notification centre with delivery rules ships in Version 2.',metrics:['alerts'],rel:['dash','ai']},
   permissions:{name:'User permissions',live:false,note:'V1 runs as a single owner account. Role-based access (owner / manager / cashier, per-store scoping) is designed but ships in Version 2 — I will not pretend a permission check exists when it does not.',metrics:['roles','scopes'],rel:['settings']},
   audit:{name:'Audit logs',live:false,note:'Every entry already carries a store, account, date and channel (web / Telegram / import / AI), which is the substrate for an audit trail — but the immutable, user-attributed audit log ships in Version 2.',metrics:['who','what','when','channel'],rel:['settings','reports']},
-  documents:{name:'Documents',live:false,note:'You can attach receipts and statements to me in chat and I extract the figures, but a document vault with retention and search ships in Version 2.',metrics:['receipts','statements'],rel:['ai','recon','expenses']}
+  documents:{name:'Documents',live:false,note:'You can attach receipts and statements to me in chat and I extract the figures, but a document vault with retention and search ships in Version 2.',metrics:['receipts','statements'],rel:['ai','expenses']}
 };
 
 /* ---- Domain knowledge: what an experienced accountant/ops manager actually knows.
@@ -1934,9 +2004,9 @@ const ERP_KB=[
   {k:['sales tax','nexus','how does sales tax work','file sales tax'],
    t:'US sales tax',
    a:'Sales tax is **not your money** — you collect it from the customer and hold it for the state. Texas is **8.25%** (6.25% state + up to 2% local), and SmokeStack stores it tax-inclusive on every taxable sale.\n\nYou file and remit on a schedule the state assigns (monthly, quarterly or annually, based on volume). **Nexus** means an obligation to collect in a state — physical presence always creates it; economic nexus (a revenue threshold) can create it even without a store there. Multi-state rates are a settings change here, not a code change.\n\nNot tax advice — confirm your filing frequency and rates with your CPA.'},
-  {k:['payroll tax','fica','futa','employer tax','withholding'],
+  {k:['payroll tax','net pay','payroll cost'],
    t:'Payroll taxes',
-   a:'On top of gross wages you owe **employer FICA at 7.65%** (6.2% Social Security + 1.45% Medicare) — the employee pays a matching 7.65% out of their pay — plus **unemployment tax** (FUTA federally, plus state UI), roughly 2% here.\n\nSo an employee costing "$3,000 a month" actually costs you about **$3,290**. Budget on total cost, not gross. Full withholding tables and pay stubs arrive with a payroll provider integration in Version 2.'},
+   a:'Payroll here is straightforward: **net pay equals gross pay** — no employee tax is deducted. Budget labour cost on gross wages. Press **Run payroll** to post the run to the ledger.'},
   {k:['shrinkage','theft','loss'],
    t:'Shrinkage',
    a:'Shrinkage is stock you paid for that never becomes a sale — theft, damage, miscounts, or till errors. Retail runs about **1–2% of revenue**; tobacco and vape run higher because the items are small and valuable.\n\nYou detect it by comparing counted stock against expected stock. Ask me to *find unusual transactions* and I\'ll flag refund spikes and duplicate entries, which are the patterns that most often hide it.'},
@@ -1948,7 +2018,7 @@ const ERP_KB=[
    a:'Federal law sets the minimum purchase age at **21** for all tobacco and nicotine products, and ID checks are the single highest-risk area in this business — a failed compliance check can cost the licence.\n\nOther live areas: state/local **retail licences**, **flavoured-product restrictions** (which vary by city, not just state), the **PACT Act** for any shipping, and Texas permits for tobacco retail.\n\nAge verification at point-of-sale is designed for the V2 POS module. I\'m not a lawyer — treat this as orientation, not legal advice, and confirm with counsel.'}
 ];
 const MODULE_ALIASES={dashboard:'dash',home:'dash',sales:'sales','daily sales':'sales',revenue:'sales',expense:'expenses',expenses:'expenses',cost:'expenses',purchase:'purchases',purchases:'purchases',
-  supplier:'suppliers',suppliers:'suppliers',vendor:'suppliers',vendors:'suppliers',bank:'recon',reconciliation:'recon',recon:'recon',tax:'tax','sales tax':'tax',vat:'tax',payroll:'payroll',
+  supplier:'suppliers',suppliers:'suppliers',vendor:'suppliers',vendors:'suppliers',tax:'tax','sales tax':'tax',vat:'tax',payroll:'payroll',
   report:'reports',reports:'reports','report center':'reports',telegram:'telegram',settings:'settings',inventory:'inventory',stock:'inventory',product:'inventory',products:'inventory',
   customer:'customers',customers:'customers',crm:'customers',employee:'employees',employees:'employees',staff:'employees',branch:'branches',branches:'branches',transfers:'branches',transfer:'branches',
   accounting:'accounting',ledger:'accounting','chart of accounts':'accounting','p&l':'accounting','profit and loss':'accounting',
@@ -1968,14 +2038,11 @@ const WORKFLOWS=[
    s:['Open **Purchases**.','Enter the vendor, the date and the amount.','Add a description of what you bought and any notes.','Save — it posts as **cost of goods**, which is what drives your gross margin.'],
    tip:'Remember purchases hit profit on a cash basis: a big restock will depress this month\'s profit even though you\'ll sell that stock over the coming weeks.'},
   {k:['run payroll','running payroll','pay staff','paying staff','process payroll','processing payroll','payroll run','do payroll'],view:'payroll',t:'Run payroll',
-   s:['Open **Payroll**.','Check each employee\'s gross for the period.','Review the computed employer taxes: **FICA 7.65%** plus roughly **2% unemployment**.','Press **Run payroll** — it posts to the ledger as a payroll entry.'],
+   s:['Open **Payroll**.','Check each employee\'s gross and net for the period (net equals gross — no employee tax).','Press **Run payroll** — it posts to the ledger as a payroll entry.'],
    tip:'Budget on *total cost*, not gross: $3,000 of wages really costs you about $3,290.'},
   {k:['file sales tax','filing sales tax','file taxes','filing taxes','sales tax return','remit tax','remitting tax','tax report','file my taxes'],view:'tax',t:'File your sales tax',
    s:['Open **Sales Tax**.','Confirm the state and rate (Texas defaults to 8.25%).','Check **taxable sales** and **tax collected** for the period, and the by-store breakdown.','Press **Generate tax report** and file with the state by the due date (currently **Jul 20**).'],
    tip:'The tax you collected is not revenue — it is the state\'s money sitting in your account. Don\'t spend it.'},
-  {k:['reconcile','reconciling','reconcile the bank','bank reconciliation','match transactions','matching transactions','import bank','bank statement','import a statement'],view:'recon',t:'Reconcile the bank',
-   s:['Open **Bank Reconciliation**.','Import the statement (CSV, OFX, QBO or MT940) — lines are auto-categorised.','Work down the unmatched lines.','Press **Record** on each one to post it to the books in a tap.'],
-   tip:'Reconciling weekly is the single habit that keeps a small retail business\'s books trustworthy.'},
   {k:['add a store','adding a store','new store','add an account','adding an account','set up a store','create a store'],view:'settings',t:'Add a store or account',
    s:['Open **Settings**.','Add the store or account by name.','It immediately appears in every dropdown, report filter and in my answers.'],
    tip:'Every transaction carries a store, so multi-store reporting works from the moment you add one.'}
@@ -2317,7 +2384,7 @@ function bCashflow(p){
   const float=1000;const suggest=Math.max(0,Math.round((onHand-float)/100)*100);
   return {text:`Over ${p.period.label} you took **${money(cashSales)}** in cash and moved **${money(deposited)}** to the bank, leaving roughly **${money(onHand)}** on hand.\n\nKeeping a **${money(float)}** float for change, I'd deposit **${money(suggest)}**. Cash sitting in a drawer is uninsured and untraceable — banking it also makes your reconciliation clean.`,
     card:bCard('Cash position',money(onHand),[['Cash sales',money(cashSales)],['Deposited',money(deposited)],['Cash paid out',money(cashSales-deposited-onHand)],['Suggested deposit',`<b style="color:var(--brand)">${money(suggest)}</b>`]]),
-    actions:[{label:'Open Reconciliation',act:'nav',val:'recon'}]};
+    actions:[{label:'Open Reports',act:'nav',val:'reports'}]};
 }
 function bBriefing(){
   const t=bRange('today'),w=bRange('week');
@@ -2492,7 +2559,7 @@ function bPayrollCheck(p){
   if(outliers.length)flags.push(`**${outliers.length} run${outliers.length>1?'s are':' is'} more than 25% off your ${money(avg)} average** (${outliers.map(d=>`${d}: ${money(byDate[d])}`).join(', ')}). An extra pay period landing inside the window is the usual innocent explanation.`);
   if(labourPct>25)flags.push(`**Labour is ${labourPct.toFixed(1)}% of revenue**, above the 15–20% that's normal for retail. Either hours are too high for the traffic, or revenue is too low for the staffing.`);
   if(labourPct&&labourPct<10)flags.push(`Labour is only ${labourPct.toFixed(1)}% of revenue — unusually lean. Check that every pay run has actually been posted.`);
-  return {text:`Payroll over ${per.label}: **${money(total)}** across ${dates.length} runs, averaging ${money(avg)}.\n\nOn top of gross you owe **employer FICA (7.65%)** and roughly **2% unemployment** — so the true cost of ${money(gross)} of wages is about **${money(gross*1.0965)}**.\n\n${flags.length?flags.map(f=>`- ${f}`).join('\n'):`Nothing anomalous: run sizes are consistent and labour is ${labourPct.toFixed(1)}% of revenue, inside the normal retail band.`}`,
+  return {text:`Payroll over ${per.label}: **${money(total)}** across ${dates.length} runs, averaging ${money(avg)}.\n\nNet pay equals gross pay — no employee tax is applied, so labour cost is simply the ${money(gross)} of wages.\n\n${flags.length?flags.map(f=>`- ${f}`).join('\n'):`Nothing anomalous: run sizes are consistent and labour is ${labourPct.toFixed(1)}% of revenue, inside the normal retail band.`}`,
     card:bTable('Payroll runs',['Date','Amount','vs average'],dates.slice(-6).map(d=>[d,money(byDate[d]),
       `<b style="color:${Math.abs(byDate[d]-avg)/avg>0.25?'var(--warn)':'var(--ok)'}">${byDate[d]>=avg?'+':'−'}${money(Math.abs(byDate[d]-avg))}</b>`])),
     actions:[{label:'Open Payroll',act:'nav',val:'payroll'}]};
@@ -2969,7 +3036,8 @@ function openRowMenu(e,id){const x=txById(id);if(!x)return;
 }
 
 // ---- KPI drill-down: card → source view (carries the active branch automatically) ----
-const KPI_DRILL={"Today's Sales":'sales','This Week':'sales','Cash Balance':'recon','Bank Balance':'recon',
+const KPI_DRILL={"Today's Sales":'sales','This Week':'sales',
+  'Costs':'expenses','Profit':'reports',
   'Expenses (MTD)':'expenses','Profit (MTD)':'reports','Tax Payable':'tax','Purchases (MTD)':'purchases',
   'Taxable Sales (MTD)':'tax','Tax Collected':'tax','Tax Payable ':'tax','Gross Payroll':'payroll','Total Cost':'payroll'};
 function kpiDrill(label){const v=KPI_DRILL[label];if(v){go(v);toast('Opened '+label+' → '+branchLabel());}}
@@ -3778,7 +3846,7 @@ function invLabelPDF(sku){const p=invProductBySku(sku);if(!p)return;
               multi-page tables, landscape when wide, page numbers, totals,
               meaningful filename. Falls back to Print if the library is offline. */
 const PAGE_TITLES={dash:'Dashboard Summary',sales:'Daily Sales',expenses:'Expenses',purchases:'Purchases',
-  recon:'Bank Reconciliation',tax:'Sales Tax',payroll:'Payroll & Payroll Tax',reports:'Report',inventory:'Inventory',settings:'Settings'};
+  tax:'Sales Tax',payroll:'Payroll & Payroll Tax',reports:'Report',inventory:'Inventory',settings:'Settings'};
 function pageMeta(view){
   return {title:PAGE_TITLES[view]||'Report',branch:branchLabel(),
     dateRange:(view==='reports'&&typeof REP!=='undefined')?cap(REP.filters.period):'as of '+daysAgo(0),
@@ -3881,7 +3949,7 @@ function pageTools(view){
 }
 // inject the tools into every page header once (idempotent)
 function mountPageTools(){
-  const map={'v-dash':'dash','v-sales':'sales','v-expenses':'expenses','v-purchases':'purchases','v-recon':'recon',
+  const map={'v-dash':'dash','v-sales':'sales','v-expenses':'expenses','v-purchases':'purchases',
     'v-tax':'tax','v-payroll':'payroll','v-reports':'reports','v-inventory':'inventory'};
   Object.entries(map).forEach(([vid,view])=>{
     const sec=document.getElementById(vid);if(!sec)return;const top=sec.querySelector('.top');if(!top||top.querySelector('.ptools'))return;
@@ -3893,7 +3961,7 @@ function mountPageTools(){
 }
 
 // ---------------- boot ----------------
-function refreshAll(){renderDash();renderSales();renderExp();renderPur();renderRecon();renderTax();renderPay();renderReports();renderClock();if(typeof renderInventory==='function')renderInventory();mountPageTools();}
+function refreshAll(){renderDash();renderSales();renderExp();renderPur();renderTax();renderPay();renderReports();renderClock();if(typeof renderInventory==='function')renderInventory();mountPageTools();}
 // ===================== MOBILE CONTROLLER =====================
 const _mi=p=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
 const MTABS=[
@@ -3902,7 +3970,7 @@ const MTABS=[
   ['sales',_mi('<circle cx="12" cy="12" r="9"/><path d="M12 7v10"/><path d="M14.5 9.3c0-1.1-1.1-1.9-2.6-1.9s-2.5.8-2.5 1.9c0 2.6 5.1 1.4 5.1 4 0 1.1-1.1 1.9-2.6 1.9s-2.6-.8-2.6-1.9"/>'), 'Sales'],
   ['reports',_mi('<path d="M3 21h18"/><rect x="5" y="11" width="3.2" height="7" rx="1"/><rect x="10.4" y="6" width="3.2" height="12" rx="1"/><rect x="15.8" y="9" width="3.2" height="9" rx="1"/>'), 'Reports'],
   ['__more',_mi('<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>'), 'More']];
-const MTITLES={dash:'Dashboard',ai:'Ask Claude',sales:'Daily Sales',expenses:'Expenses',purchases:'Purchases',recon:'Bank Reconciliation',tax:'Sales Tax',payroll:'Payroll',reports:'Report Center',inventory:'Inventory',attendance:'Attendance',telegram:'Telegram',settings:'Settings'};
+const MTITLES={dash:'Dashboard',ai:'Ask Claude',sales:'Daily Sales',expenses:'Expenses',purchases:'Purchases',tax:'Sales Tax',payroll:'Payroll',reports:'Report Center',inventory:'Inventory',attendance:'Attendance',workhours:'Work Hours',licenses:'Licenses & Documents',telegram:'Telegram',settings:'Settings'};
 function mDrawer(open){document.body.classList.toggle('drawer-open',open);}
 function mSync(v){
   const t=document.getElementById('mTitle');if(t)t.textContent=MTITLES[v]||'SmokeStack';
@@ -4115,7 +4183,7 @@ function voiceSubmit(){var tx=document.getElementById('voiceTx');var t=(tx?tx.va
    ========================================================================== */
 var AIACT={pending:null,busy:false};
 var VIEW_WORDS=[['inventory',/invent|stock|product/],['sales',/daily sale|\bsales\b/],['expenses',/expense/],
-  ['purchases',/purchase|\bpo\b|vendor bill/],['recon',/reconcil|bank/],['tax',/sales tax|\bvat\b|tax owe|tax due/],
+  ['purchases',/purchase|\bpo\b|vendor bill/],['tax',/sales tax|\bvat\b|tax owe|tax due/],
   ['payroll',/payroll|wage|salary/],['reports',/report/],['telegram',/telegram/],['settings',/setting|permission|role/],
   ['dash',/dashboard|home/],['ai',/assistant|claude/]];
 function _matchView(d){for(var i=0;i<VIEW_WORDS.length;i++)if(VIEW_WORDS[i][1].test(d))return VIEW_WORDS[i][0];return null;}
@@ -4219,7 +4287,6 @@ var HELP={
   sales:{name:'Daily Sales',what:'Record each store\'s daily cash and card totals. Sales tax is computed and set aside automatically.',do:['Pick the store','Enter cash & card totals','Save — dashboard, reports and tax update together'],ask:'How do I record a sale?'},
   expenses:{name:'Expenses',what:'Log operating expenses and payroll against a branch and payment account.',do:['Pick the store & account','Choose a category','Enter the amount and Save'],ask:'How do I add a cleaning expense?'},
   purchases:{name:'Purchases',what:'Record inventory purchases / vendor bills per branch.',do:['Pick the store & vendor','Enter the amount','Save the purchase'],ask:'How do I create a purchase?'},
-  recon:{name:'Bank Reconciliation',what:'Match your bank feed to book entries so your cash balance is trustworthy.',do:['Review each bank line','Match it to a book entry','Reconcile when balanced'],ask:'How do I reconcile the bank?'},
   tax:{name:'Sales Tax',what:'See tax collected, what to set aside, and the filing due date for the chosen state.',do:['Pick the state','Read the amount to set aside','Print/PDF for filing'],ask:'How much sales tax do I owe this month?'},
   payroll:{name:'Payroll',what:'Review gross, taxes and net pay for employees, and the time clock.',do:['Review each employee','Check the totals','Print the payroll report'],ask:'How do I run payroll?'},
   inventory:{name:'Inventory',what:'Products, per-branch stock, movements, transfers, receiving and barcode tools.',do:['Add a product or scan a barcode','Add stock / adjust / transfer','Print barcode labels'],ask:'How do I receive inventory?'},
@@ -4239,7 +4306,6 @@ var HOWTO=[
   [/receiv.*inventory|receiv.*stock|add stock|goods received/,'Receive inventory','inventory',['Open **Inventory**.','Use **Scan / Enter Barcode → Receive** for continuous receiving, or a product\'s **Add Stock**.','Enter qty (and batch/expiry if needed).','Save — a movement and receiving doc are recorded.']],
   [/transfer.*(stock|store|branch)/,'Transfer stock between stores','inventory',['Open **Inventory**.','Click **Transfer**.','Pick From store, To store, product and quantity.','Create — stock ships from source and is added on receive.']],
   [/add.*expense|record.*expense/,'Add an expense','expenses',['Open **Expenses**.','Pick the store, account and category.','Enter the amount.','Save — it posts to the ledger and dashboard.']],
-  [/reconcil|bank/,'Reconcile the bank','recon',['Open **Bank Reconciliation**.','Match each bank line to a book entry.','Resolve any differences.','Reconcile once balanced.']],
   [/run.*payroll|do.*payroll/,'Run payroll','payroll',['Open **Payroll**.','Review gross, taxes and net per employee.','Check the totals.','Print the payroll report.']],
   [/sales tax|calculate.*tax|how much.*tax/,'Sales tax','tax',['Open **Sales Tax**.','Pick your state — the rate applies automatically.','Read the amount to set aside and the due date.','Print/PDF for filing.']],
   [/print.*report|download.*report|export.*report/,'Print a report','reports',['Open **Reports**.','Search or pick a category, then open a report.','Click **Print** or **PDF** (top-right).']],
@@ -4259,7 +4325,6 @@ var TOURS={
   sales:[['#v-sales .top','Daily Sales','Record each store\'s cash & card totals here.'],['#v-sales .card','Entry form','Pick the store, enter totals, Save — tax is automatic.']],
   expenses:[['#v-expenses .top','Expenses','Log operating costs and payroll.'],['#v-expenses .card','New expense','Store, account, category, amount — then Save.']],
   purchases:[['#v-purchases .top','Purchases','Record inventory purchases and vendor bills.'],['#v-purchases .card','New purchase','Store, vendor, amount — then Save.']],
-  recon:[['#v-recon .top','Bank Reconciliation','Match your bank feed to book entries.'],['#reconTbl','Bank lines','Reconcile each line to trust your cash balance.']],
   tax:[['#v-tax .top','Sales Tax','See collected tax, what to set aside, and the due date.'],['#v-tax .card','By state','Pick a state to apply the correct rate.']],
   payroll:[['#v-payroll .top','Payroll','Gross, taxes, net pay and the time clock.'],['#v-payroll .card','Employees','Review each employee, then Print the report.']],
   inventory:[['#invAddHeaderBtn','Add Product','Create a product — or use Scan to add by barcode.'],['#invBody','Products & stock','Add stock, adjust, transfer, and print labels.']],
@@ -4336,11 +4401,12 @@ function empById(id){return EMPLOYEES.find(function(e){return e.id===id;});}
 function empMonthlyGross(e){return e.payType==='hourly'?_nn(e.hourlyRate)*_nn(e.stdHours):_nn(e.salary!=null?e.salary:e.gross);}
 function _periodDays(a,b){return Math.max(1,Math.round((new Date(b)-new Date(a))/86400000)+1);}
 function empPeriodCalc(e,a,b){
+  // Employee tax has been removed from payroll entirely — no FICA/withholding
+  // deduction, no employer tax. Net pay = gross + allowances − non-tax deductions.
   var g=Math.round(empMonthlyGross(e)*_periodDays(a,b)/30);
   var allow=_nn(e.transportAllow)+_nn(e.otherAllow);
-  var empTax=Math.round(g*(_nn(e.fica)/100)), wh=Math.round(g*(_nn(e.wh)/100)), ded=_nn(e.deductions);
-  var employerTax=Math.round(g*(_nn(e.fica)/100))+Math.round(g*(_nn(e.unemp)/100));
-  return {gross:g,allow:allow,empTax:empTax,wh:wh,ded:ded,deductions:empTax+wh+ded,net:g+allow-empTax-wh-ded,employerTax:employerTax};
+  var ded=_nn(e.deductions);
+  return {gross:g,allow:allow,empTax:0,wh:0,ded:ded,deductions:ded,net:g+allow-ded,employerTax:0};
 }
 function empEligible(e){return e.active!==false && e.status!=='inactive' && (!e.termDate || e.termDate>=PAY.start);}
 
@@ -4381,7 +4447,7 @@ function renderPay(){
   var emps=scopeEmp();
   var totG=0,totDed=0,totEmployer=0,totNet=0;
   emps.forEach(function(e){if(!empEligible(e))return;var c=empPeriodCalc(e,PAY.start,PAY.end);totG+=c.gross;totDed+=c.deductions;totEmployer+=c.employerTax;totNet+=c.net;});
-  var K=[["Gross Payroll",money(totG),"var(--txt)"],["Employee Deductions",money(totDed),"var(--brand)"],["Employer Taxes",money(totEmployer),"var(--brand2)"],["Total Cost",money(totG+totEmployer),"var(--bad)"]];
+  var K=[["Gross Payroll",money(totG),"var(--txt)"],["Net Pay",money(totNet),"var(--brand)"],["Total Cost",money(totG),"var(--bad)"]];
   var pk=document.getElementById('payKpis'); if(pk)pk.innerHTML=K.map(function(k){return '<div class="card kpi"><div class="l">'+k[0]+'</div><div class="v" style="color:'+k[2]+'">'+k[1]+'</div><div class="s">'+_esc(branchLabel())+'</div></div>';}).join('');
   var canSal=can('view_payroll')||can('view_cost');
   var body=emps.length?emps.map(function(e){
@@ -4391,12 +4457,11 @@ function renderPay(){
       +'<td>'+_esc(e.id)+'</td><td>'+_esc(e.store)+'</td><td>'+_esc(e.title)+'</td>'
       +'<td>'+(e.payType==='hourly'?'Hourly':'Salary')+'</td>'
       +'<td style="text-align:end">'+(canSal?money(c.gross):'••••')+'</td>'
-      +'<td style="text-align:end;color:var(--brand)">'+(canSal?money(c.empTax+c.wh):'••••')+'</td>'
       +'<td style="text-align:end"><b>'+(canSal?money(c.net):'••••')+'</b></td>'
       +'<td style="text-align:center"><button type="button" class="rowact" data-empmenu="'+_esc(e.id)+'" aria-label="More actions" aria-haspopup="menu" aria-expanded="false" onclick="event.stopPropagation();empRowMenu(event,\''+_esc(e.id)+'\')">⋯</button></td></tr>';
   }).join(''):'<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:18px">No employees at '+_esc(branchLabel())+'. '+(can('add_employee')?'Use <b>+ Add Employee</b> to create one.':'')+'</td></tr>';
   var pt=document.getElementById('payTbl');
-  if(pt)pt.innerHTML='<thead><tr><th>Employee</th><th>ID</th><th>Branch</th><th>Title</th><th>Pay</th><th style="text-align:end">Gross</th><th style="text-align:end">Empl. tax</th><th style="text-align:end">Net</th><th></th></tr></thead><tbody>'+body+'</tbody>';
+  if(pt)pt.innerHTML='<thead><tr><th>Employee</th><th>ID</th><th>Branch</th><th>Title</th><th>Pay</th><th style="text-align:end">Gross</th><th style="text-align:end">Net</th><th></th></tr></thead><tbody>'+body+'</tbody>';
 }
 /* delegated: row click opens employee; ⋯ opens the shared action menu */
 document.addEventListener('click',function(e){
@@ -4458,8 +4523,6 @@ function empForm(id){
       +F('Recurring deductions','efDed','number',num('deductions'),false,'min="0" step="0.01"')
     +'</div>'
     +'<div class="drw-sec">Tax &amp; payment</div><div class="efgrid">'
-      +F('Payroll tax / withholding %','efWh','number',e?num('wh'):0,false,'min="0" step="0.1"')
-      +F('FICA %','efFica','number',e?num('fica'):7.65,false,'min="0" step="0.01"')
       +F('Unemployment %','efUnemp','number',e?num('unemp'):2,false,'min="0" step="0.01"')
       +'<div class="ef"><label>Payment method</label><select id="efMethod">'+opt(['Bank transfer','Cash','Check'],v('payMethod','Bank transfer'))+'</select></div>'
       +F('Bank account / reference','efBank','text',v('bankRef'))
@@ -4534,9 +4597,7 @@ function empOpen(id,focus){var e=empById(id);if(!e)return;empMigrate();
     +'<div class="drw-sec">Current period · '+_rangeTxt(PAY.start,PAY.end)+'</div>'
     +'<div class="drw-kv"><div class="k">Gross pay</div><div class="v"><b>'+m(c.gross)+'</b></div>'
       +'<div class="k">Allowances</div><div class="v">'+m(c.allow)+'</div>'
-      +'<div class="k">Employee taxes (FICA+WH)</div><div class="v">'+m(c.empTax+c.wh)+'</div>'
       +'<div class="k">Other deductions</div><div class="v">'+m(c.ded)+'</div>'
-      +'<div class="k">Employer taxes</div><div class="v">'+m(c.employerTax)+'</div>'
       +'<div class="k">Net pay</div><div class="v"><b style="color:var(--accent)">'+m(c.net)+'</b></div>'
       +'<div class="k">Payment status</div><div class="v">'+(e.runs&&e.runs.some(function(r){return r.end===PAY.end;})?'Paid':'Pending')+'</div></div>'
     +'<div class="drw-sec">Previous payroll periods</div>'+runsHtml
@@ -4567,7 +4628,7 @@ function payPreview(){
     +'<div class="drw-kv"><div class="k">Branch</div><div class="v">'+_esc(branchLabel())+'</div><div class="k">Period</div><div class="v">'+_rangeTxt(PAY.start,PAY.end)+'</div><div class="k">Eligible employees</div><div class="v">'+emps.length+'</div></div>'
     +'<table style="margin-top:10px"><thead><tr><th>Employee</th><th>Branch</th><th style="text-align:end">Gross</th><th style="text-align:end">Deductions</th><th style="text-align:end">Net</th></tr></thead><tbody>'+rows
     +'<tr style="border-top:2px solid var(--line)"><td colspan="2"><b>Totals</b></td><td style="text-align:end"><b>'+money(tot.gross)+'</b></td><td style="text-align:end"><b>'+money(tot.ded)+'</b></td><td style="text-align:end"><b>'+money(tot.net)+'</b></td></tr></tbody></table>'
-    +'<div class="drw-sec">Employer cost</div><div class="drw-kv"><div class="k">Gross payroll</div><div class="v">'+money(tot.gross)+'</div><div class="k">Employer taxes</div><div class="v">'+money(tot.employer)+'</div><div class="k">Total cost</div><div class="v"><b>'+money(tot.gross+tot.employer)+'</b></div></div>';
+    +'<div class="drw-sec">Total cost</div><div class="drw-kv"><div class="k">Gross payroll</div><div class="v">'+money(tot.gross)+'</div><div class="k">Total cost</div><div class="v"><b>'+money(tot.gross)+'</b></div></div>';
   var canFin=can('finalize_payroll')||can('run_payroll');
   document.getElementById('drwActs').innerHTML=(canFin?'<button class="pri" onclick="payFinalize('+(overlap?'true':'false')+')">✓ Finalize payroll</button>':'')+'<button onclick="drwClose()">Cancel</button>';
   document.getElementById('drw').classList.add('on');scrim(true);
@@ -4586,7 +4647,7 @@ function payFinalize(allowOverlap){
     LEDGER.push({id:++uid,date:PAY.end,store:BRANCH!=='all'?BRANCH:STORES[0],account:'Checking',type:'payroll',category:'Payroll',amount:totG,memo:'Payroll '+PAY.start+'→'+PAY.end});
     PAY.finalized.push({branch:branchKey,start:PAY.start,end:PAY.end,gross:totG,ts:nowStamp(),by:ROLE.kind});payPersist();
     audit('finalize','payroll',PAY.start+'_'+PAY.end,branchKey+' gross '+money(totG),'WEB');
-    drwClose();refreshAll();toast('Payroll finalized: '+money(totG)+' + '+money(totEmployer)+' employer taxes');
+    drwClose();refreshAll();toast('Payroll finalized: '+money(totG));
   } finally { PAY.busy=false; }
 }
 /* keep the old AI/quick runPayroll working, now period-aware */
@@ -4595,7 +4656,7 @@ function runPayroll(){ if(_view&&_view()==='payroll'){payPreview();return;} payF
 function empPrintDoc(e,mode){
   if(!e)return; if(!can('print'))return toast('Not permitted');
   var c=empPeriodCalc(e,PAY.start,PAY.end);
-  var rows=[['Gross pay',money(c.gross)],['Allowances',money(c.allow)],['Employee taxes (FICA+WH)',money(c.empTax+c.wh)],['Other deductions',money(c.ded)],['Net pay',money(c.net)],['Employer taxes',money(c.employerTax)]];
+  var rows=[['Gross pay',money(c.gross)],['Allowances',money(c.allow)],['Other deductions',money(c.ded)],['Net pay',money(c.net)]];
   var w=window.open('','_blank');if(!w)return toast('Allow pop-ups to print');
   w.document.write('<!doctype html><html><head><title>Payroll '+_esc(e.name)+'</title><style>@page{size:A4;margin:16mm}body{font-family:Inter,system-ui,Arial;color:#111}h1{font-size:19px;margin:0}.s{color:#666;font-size:12px;margin:2px 0 14px}table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}td{padding:7px 6px;border-bottom:1px solid #eee}td:last-child{text-align:right;font-variant-numeric:tabular-nums}.tot{font-weight:800;border-top:2px solid #333}.ft{margin-top:18px;color:#888;font-size:11px}</style></head><body>'
     +'<h1>Employee Payroll — '+_esc(e.name)+'</h1><div class="s">'+_esc(e.id)+' · '+_esc(e.store)+' · '+_esc(e.title)+' · Pay period: '+_rangeTxt(PAY.start,PAY.end)+'</div>'
@@ -4744,7 +4805,16 @@ try{ empMigrate(); payRestore(); invDateRestore();
     attApprove:function(id){return call('/api/attendance/'+id+'/approve',{method:'POST'});},
     attReject:function(id){return call('/api/attendance/'+id+'/reject',{method:'POST'});},
     attBranch:function(b){return call('/api/attendance/branch/'+encodeURIComponent(b));},
-    attBranchSave:function(b,body){return call('/api/attendance/branch/'+encodeURIComponent(b),{method:'PUT',body:body});}
+    attBranchSave:function(b,body){return call('/api/attendance/branch/'+encodeURIComponent(b),{method:'PUT',body:body});},
+    worksheet:function(q){return call('/api/attendance/worksheet'+(q?('?'+q):''));},
+    kpi:function(period,branch){return call('/api/reports/kpi?period='+encodeURIComponent(period||'month')+'&branch='+encodeURIComponent(branch||'all'));},
+    analytics:function(branch){return call('/api/reports/analytics?branch='+encodeURIComponent(branch||'all'));},
+    comparisons:function(branch){return call('/api/reports/comparisons?branch='+encodeURIComponent(branch||'all'));},
+    licenses:function(branch){return call('/api/licenses?branch='+encodeURIComponent(branch||'all'));},
+    licenseAlerts:function(){return call('/api/licenses/alerts');},
+    licenseCreate:function(b){return call('/api/licenses',{method:'POST',body:b});},
+    licenseUpdate:function(id,b){return call('/api/licenses/'+id,{method:'PUT',body:b});},
+    licenseDelete:function(id){return call('/api/licenses/'+id,{method:'DELETE'});}
   };
   window.SS_API_LIVE=API;
   function apiErr(e){ if(e&&e.status===403)return 'Not permitted (server rejected this action).'; if(e&&e.status===422)return 'Invalid data: '+(e.data&&e.data.detail?JSON.stringify(e.data.detail):e.message); return (e&&e.message)||'Request failed'; }
@@ -4802,7 +4872,7 @@ try{ empMigrate(); payRestore(); invDateRestore();
     var sx = await Promise.all([API.sales(), API.expenses(), API.purchases()]);
     var L=[];
     sx[0].forEach(function(x){ L.push({id:'S'+x.id, date:x.date, store:x.branch, account:x.account||'Cash', type:'sale', amount:x.amount, tax:x.tax||0, category:'Sales', product:x.product, employee:x.employee, memo:x.product||'Daily sales'}); });
-    sx[1].forEach(function(x){ L.push({id:'E'+x.id, date:x.date, store:x.branch, account:x.account||'Cash', type:'expense', category:x.category, amount:x.amount, memo:x.memo||x.category}); });
+    sx[1].forEach(function(x){ L.push({id:'E'+x.id, date:x.date, store:x.branch, account:x.account||'Cash', type:'expense', category:x.category, customDesc:x.custom_description||null, amount:x.amount, memo:x.memo||x.custom_description||x.category}); });
     sx[2].forEach(function(x){ L.push({id:x.id, date:x.date, store:x.branch, account:'Business Bank', type:'purchase', vendor:x.vendor, amount:x.amount, memo:x.vendor}); });
     LEDGER = L; if(typeof REP!=='undefined'&&REP) REP.tx = L; window.uid = 900000;
     // employees
@@ -4845,7 +4915,9 @@ try{ empMigrate(); payRestore(); invDateRestore();
 
   wrap('submitExpense', async function(orig){ var amt=+((document.getElementById('eAmt')||{}).value)||0; if(!amt)return toast('Enter an amount');
     var branch=(document.getElementById('eStore')||{}).value, cat=(document.getElementById('eCat')||{}).value, acct=(document.getElementById('eAcct')||{}).value, vendor=(document.getElementById('eVendor')||{}).value;
-    if(busy)return; busy=true; try{ await API.addExpense({branch:branch,category:cat,amount:amt,account:acct,memo:vendor}); document.getElementById('eAmt').value=''; if(document.getElementById('eVendor'))document.getElementById('eVendor').value=''; await afterWrite('Expense saved to database: '+money(amt)); }catch(e){ toast(apiErr(e)); } finally{ busy=false; } });
+    var desc=(document.getElementById('eDesc')?document.getElementById('eDesc').value:'').trim();
+    if(cat==='Other'&&!desc){ var er=document.getElementById('eDescErr'); if(er)er.style.display='block'; var de=document.getElementById('eDesc'); if(de)de.focus(); return toast('Please describe the expense'); }
+    if(busy)return; busy=true; try{ await API.addExpense({branch:branch,category:cat,amount:amt,account:acct,memo:vendor,custom_description:(cat==='Other'?desc:null)}); document.getElementById('eAmt').value=''; if(document.getElementById('eVendor'))document.getElementById('eVendor').value=''; if(document.getElementById('eDesc'))document.getElementById('eDesc').value=''; if(typeof expToggleOther==='function')expToggleOther(); await afterWrite('Expense saved to database: '+money(amt)); }catch(e){ toast(apiErr(e)); } finally{ busy=false; } });
 
   wrap('submitPurchase', async function(orig){ var amt=+((document.getElementById('pAmt')||{}).value)||0; if(!amt)return toast('Enter an amount');
     var branch=(document.getElementById('pStore')||{}).value, vendor=(document.getElementById('pVendor')||{}).value;
@@ -5186,6 +5258,233 @@ try{ empMigrate(); payRestore(); invDateRestore();
   document.addEventListener('DOMContentLoaded',function(){
     try{ var cur=document.querySelector('.view.on'); if(cur&&cur.id==='v-attendance') attRender(); }catch(e){}
   });
+})();
+
+/* ==========================================================================
+   V3: Work Hours, Licenses & Documents, dashboard charts + Business Insights.
+   Reads the live /api endpoints; falls back to empty states off-line.
+   ========================================================================== */
+(function(){
+  var API=window.SS_API_LIVE;
+  function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+  function br(){return (typeof BRANCH!=='undefined')?BRANCH:'all';}
+  function m(v){return (typeof money==='function')?money(v):('$'+Math.round(v||0));}
+  function hm(min){ if(min==null)return '—'; return Math.floor(min/60)+'h '+(min%60)+'m'; }
+  function fmtDT(iso){ if(!iso)return '—'; try{var d=new Date(iso);return d.toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});}catch(e){return '—';} }
+  function fmtD(iso){ if(!iso)return '—'; try{return new Date(iso).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'});}catch(e){return iso;} }
+  function toastMsg(t){ if(typeof toast==='function')toast(t); }
+  function csvDownload(name,head,rows){
+    var lines=[head.join(',')].concat(rows.map(function(r){return r.map(function(v){v=(v==null?'':String(v));return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;}).join(',');}));
+    var blob=new Blob([lines.join('\n')],{type:'text/csv'});var u=URL.createObjectURL(blob);var a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(u);toastMsg('Exported '+rows.length+' rows');
+  }
+  function printDoc(title,headCols,rows){
+    var w=window.open('','_blank'); if(!w)return toastMsg('Allow pop-ups to print');
+    var th=headCols.map(function(h){return '<th>'+esc(h)+'</th>';}).join('');
+    var tb=rows.map(function(r){return '<tr>'+r.map(function(c){return '<td>'+esc(c)+'</td>';}).join('')+'</tr>';}).join('');
+    w.document.write('<!doctype html><html><head><title>'+esc(title)+'</title><style>@page{size:A4 landscape;margin:14mm}body{font-family:Inter,system-ui,Arial;color:#111}h1{font-size:18px;margin:0 0 2px}.s{color:#666;font-size:12px;margin-bottom:12px}table{width:100%;border-collapse:collapse;font-size:11.5px}th{background:#283042;color:#fff;text-align:left;padding:6px}td{padding:5px 6px;border-bottom:1px solid #ddd}</style></head><body><h1>SmokeStack — '+esc(title)+'</h1><div class="s">'+new Date().toLocaleString()+'</div><table><thead><tr>'+th+'</tr></thead><tbody>'+tb+'</tbody></table><script>window.onload=function(){window.print();}<\/script></body></html>');
+    w.document.close();
+  }
+  // ---- tiny SVG charts (responsive, print-safe, no external libs) ----
+  function barChart(data,opts){
+    opts=opts||{}; if(!data||!data.length)return '<div class="sub" style="color:var(--muted);padding:14px 0">No data for this period.</div>';
+    var max=Math.max.apply(null,data.map(function(d){return Math.abs(d.value||0);}))||1;
+    var w=Math.max(320,data.length*54), h=150, bw=Math.min(40,(w-20)/data.length-8);
+    var bars=data.map(function(d,i){var bh=Math.round((Math.abs(d.value)/max)*110);var x=14+i*((w-20)/data.length);var y=125-bh;
+      return '<g><rect x="'+x+'" y="'+y+'" width="'+bw+'" height="'+bh+'" rx="3" fill="'+(opts.color||'var(--brand,#6c5ce7)')+'"><title>'+esc(d.label)+': '+(opts.money?m(d.value):d.value)+'</title></rect>'
+        +'<text x="'+(x+bw/2)+'" y="140" font-size="9" fill="#888" text-anchor="middle">'+esc(String(d.label).slice(0,6))+'</text></g>';}).join('');
+    return '<svg viewBox="0 0 '+w+' 150" width="100%" preserveAspectRatio="xMidYMid meet" style="max-width:100%">'+bars+'</svg>';
+  }
+  function lineChart(data,opts){
+    opts=opts||{}; if(!data||!data.length)return '<div class="sub" style="color:var(--muted);padding:14px 0">No data.</div>';
+    var vals=data.map(function(d){return d.value||0;});var max=Math.max.apply(null,vals),min=Math.min.apply(null,vals,0);var rng=(max-min)||1;
+    var w=Math.max(320,data.length*54),h=150;
+    var pts=data.map(function(d,i){var x=14+i*((w-28)/(data.length-1||1));var y=125-((d.value-min)/rng)*105;return [x,y,d];});
+    var poly=pts.map(function(p){return p[0]+','+p[1];}).join(' ');
+    var dots=pts.map(function(p){return '<circle cx="'+p[0]+'" cy="'+p[1]+'" r="3" fill="'+(opts.color||'var(--ok,#1a7f37)')+'"><title>'+esc(p[2].label)+': '+(opts.money?m(p[2].value):p[2].value)+'</title></circle><text x="'+p[0]+'" y="140" font-size="9" fill="#888" text-anchor="middle">'+esc(String(p[2].label).slice(0,6))+'</text>';}).join('');
+    return '<svg viewBox="0 0 '+w+' 150" width="100%" preserveAspectRatio="xMidYMid meet" style="max-width:100%"><polyline points="'+poly+'" fill="none" stroke="'+(opts.color||'var(--ok,#1a7f37)')+'" stroke-width="2.5"/>'+dots+'</svg>';
+  }
+  function chartCard(title,svg,sub){ return '<div class="card"><h3 style="margin:0 0 2px">'+esc(title)+'</h3>'+(sub?'<div class="sub" style="color:var(--muted);margin-bottom:6px">'+esc(sub)+'</div>':'')+svg+'</div>'; }
+
+  // ================= WORK HOURS =================
+  var WH={period:'month',branch:'all',employee:'all',status:'all',start:'',end:'',rows:[]};
+  async function renderWorkHours(){
+    var host=document.getElementById('whBody'); if(!host)return;
+    if(!window.API_MODE||!API){ host.innerHTML='<div class="card"><div class="sub" style="color:var(--muted)">Work hours are available when connected to the backend.</div></div>'; return; }
+    host.innerHTML='<div class="card"><div class="sub" style="color:var(--muted)">Loading work hours…</div></div>';
+    var q='period='+encodeURIComponent(WH.period)+'&branch='+encodeURIComponent(br())+'&status='+encodeURIComponent(WH.status)+'&employee='+encodeURIComponent(WH.employee);
+    if(WH.period==='custom'&&WH.start&&WH.end)q+='&start='+WH.start+'&end='+WH.end;
+    try{ WH.rows=await API.worksheet(q); }catch(e){ host.innerHTML='<div class="card"><div class="sub" style="color:var(--muted)">'+(e&&e.status===403?'Not permitted to view work hours.':'Could not load work hours.')+'</div></div>'; return; }
+    var emps={}; WH.rows.forEach(function(r){if(r.employee)emps[r.employee]=1;});
+    var pill=document.getElementById('whPill'); if(pill)pill.textContent=WH.rows.length+' record'+(WH.rows.length===1?'':'s');
+    var periods=[['today','Today'],['week','This Week'],['month','This Month'],['custom','Custom']];
+    var stores=(typeof STORES!=='undefined'?STORES:[]);
+    var html='<div class="card"><div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between">'
+      +'<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">'
+      +'<div class="kpiperiod" id="whPeriod">'+periods.map(function(p){return '<button type="button" data-p="'+p[0]+'" class="'+(WH.period===p[0]?'on':'')+'">'+p[1]+'</button>';}).join('')+'</div>'
+      +(WH.period==='custom'?'<input type="date" id="whStart" value="'+WH.start+'" style="max-width:150px"><input type="date" id="whEnd" value="'+WH.end+'" style="max-width:150px">':'')
+      +'</div><div style="display:flex;gap:6px;flex-wrap:wrap">'
+      +'<select id="whEmp" style="max-width:170px"><option value="all">All employees</option>'+Object.keys(emps).map(function(n){return '<option'+(WH.employee===n?' selected':'')+'>'+esc(n)+'</option>';}).join('')+'</select>'
+      +'<select id="whStatus" style="max-width:150px">'+['all','active','completed','pending','rejected'].map(function(s){return '<option value="'+s+'"'+(WH.status===s?' selected':'')+'>'+(s==='all'?'All statuses':s.charAt(0).toUpperCase()+s.slice(1))+'</option>';}).join('')+'</select>'
+      +'<button class="btn g" id="whPrint" style="padding:6px 10px;font-size:12px">Print</button><button class="btn g" id="whPdf" style="padding:6px 10px;font-size:12px">PDF</button><button class="btn g" id="whXls" style="padding:6px 10px;font-size:12px">Excel</button>'
+      +'</div></div></div>';
+    if(!WH.rows.length){ html+='<div class="card" style="margin-top:12px"><div class="sub" style="color:var(--muted)">No clock records for this filter. Records appear here after employees clock in/out from Telegram.</div></div>'; }
+    else{
+      html+='<div class="card" style="margin-top:12px;overflow-x:auto"><table style="min-width:1000px"><thead><tr>'
+        +'<th>Employee</th><th>ID</th><th>Branch</th><th>Scheduled</th><th>Clock-in</th><th>Clock-out</th><th style="text-align:end">Worked</th><th style="text-align:end">Late</th><th style="text-align:end">Overtime</th><th>Status</th><th>Location</th><th style="text-align:end">Dist</th><th>Source</th><th>Approval</th><th>Notes</th></tr></thead><tbody>';
+      WH.rows.forEach(function(r){
+        var loc=(r.lat!=null&&r.lng!=null)?(r.lat.toFixed(4)+', '+r.lng.toFixed(4)):'—';
+        html+='<tr><td><b>'+esc(r.employee||'—')+'</b></td><td>'+esc(r.employee_id||'—')+'</td><td>'+esc(r.branch)+'</td>'
+          +'<td>'+esc(r.sched_start||'—')+'–'+esc(r.sched_end||'—')+'</td><td>'+fmtDT(r.clock_in)+'</td><td>'+fmtDT(r.clock_out)+'</td>'
+          +'<td style="text-align:end">'+hm(r.worked_minutes)+'</td><td style="text-align:end'+(r.late_minutes>0?';color:var(--warn,#b26a00)':'')+'">'+(r.late_minutes||0)+'m</td>'
+          +'<td style="text-align:end'+(r.overtime_minutes>0?';color:var(--brand)':'')+'">'+(r.overtime_minutes||0)+'m</td>'
+          +'<td>'+esc(r.status)+'</td><td style="font-size:11px">'+loc+'</td><td style="text-align:end">'+(r.distance!=null?r.distance+' m':'—')+'</td>'
+          +'<td>'+esc(r.source||'—')+'</td><td>'+esc(r.approval||'—')+'</td><td>'+esc(r.notes||'—')+'</td></tr>';
+      });
+      html+='</tbody></table></div>';
+    }
+    host.innerHTML=html;
+    var pe=document.getElementById('whPeriod'); if(pe)pe.querySelectorAll('button').forEach(function(b){b.onclick=function(){WH.period=b.dataset.p;renderWorkHours();};});
+    var se=document.getElementById('whStart'); if(se)se.onchange=function(){WH.start=se.value;if(WH.end)renderWorkHours();};
+    var ee=document.getElementById('whEnd'); if(ee)ee.onchange=function(){WH.end=ee.value;if(WH.start)renderWorkHours();};
+    var em=document.getElementById('whEmp'); if(em)em.onchange=function(){WH.employee=em.value;renderWorkHours();};
+    var stt=document.getElementById('whStatus'); if(stt)stt.onchange=function(){WH.status=stt.value;renderWorkHours();};
+    var cols=['Employee','ID','Branch','Scheduled','Clock-in','Clock-out','Worked','Late(min)','Overtime(min)','Status','Distance(m)','Source','Approval','Notes'];
+    var toRows=function(){return WH.rows.map(function(r){return [r.employee,r.employee_id,r.branch,(r.sched_start+'-'+r.sched_end),fmtDT(r.clock_in),fmtDT(r.clock_out),hm(r.worked_minutes),r.late_minutes||0,r.overtime_minutes||0,r.status,(r.distance==null?'':r.distance),r.source,r.approval,r.notes];});};
+    var pb=document.getElementById('whPrint'); if(pb)pb.onclick=function(){printDoc('Work Hours',cols,toRows());};
+    var pd=document.getElementById('whPdf'); if(pd)pd.onclick=function(){printDoc('Work Hours',cols,toRows());};
+    var xb=document.getElementById('whXls'); if(xb)xb.onclick=function(){csvDownload('work_hours_'+new Date().toISOString().slice(0,10)+'.csv',cols,toRows());};
+  }
+
+  // ================= LICENSES =================
+  var LIC={rows:[],alerts:null};
+  var LIC_TYPES=[['business_license','Business License'],['tobacco_license','Tobacco License'],['sales_tax_permit','Sales Tax Permit'],['fire_inspection','Fire Inspection'],['insurance','Insurance'],['health_permit','Health Permit'],['employee_permit','Employee Permit'],['government','Government Document'],['lease','Lease Document'],['other','Other']];
+  function typeName(t){var f=LIC_TYPES.filter(function(x){return x[0]===t;})[0];return f?f[1]:(t||'Other');}
+  function bucketBadge(b,days){
+    var map={expired:['Expired','var(--bad,#c0392b)'],d7:['≤7 days','var(--bad,#c0392b)'],d30:['≤30 days','var(--warn,#b26a00)'],d60:['≤60 days','var(--warn,#b26a00)'],d90:['≤90 days','var(--brand,#6c5ce7)'],ok:['Valid','var(--ok,#1a7f37)'],unknown:['No date','var(--muted)']};
+    var e=map[b]||map.unknown; var lbl=(days!=null&&days>=0&&b!=='ok')?e[0]+' ('+days+'d)':(days!=null&&days<0?'Expired '+Math.abs(days)+'d ago':e[0]);
+    return '<span style="display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:600;background:var(--chip,#eef1f4);color:'+e[1]+'">'+lbl+'</span>';
+  }
+  async function renderLicenses(){
+    var host=document.getElementById('licBody'); if(!host)return;
+    if(!window.API_MODE||!API){ host.innerHTML='<div class="card"><div class="sub" style="color:var(--muted)">Licenses are available when connected to the backend.</div></div>'; return; }
+    host.innerHTML='<div class="card"><div class="sub" style="color:var(--muted)">Loading licenses…</div></div>';
+    try{ LIC.rows=await API.licenses(br()); LIC.alerts=await API.licenseAlerts(); }
+    catch(e){ host.innerHTML='<div class="card"><div class="sub" style="color:var(--muted)">'+(e&&e.status===403?'Not permitted to view licenses.':'Could not load licenses.')+'</div></div>'; return; }
+    var pill=document.getElementById('licPill'); if(pill)pill.textContent=LIC.rows.length+' document'+(LIC.rows.length===1?'':'s');
+    var al=LIC.alerts||{count:0,items:[]};
+    var html='';
+    if(al.count){ html+='<div class="card" style="margin-bottom:12px;border-left:3px solid var(--warn,#b26a00)"><h3 style="margin:0 0 6px">⚠️ Expiration alerts ('+al.count+')</h3>'
+      +'<div style="font-size:13px;line-height:1.9">'+al.items.slice(0,8).map(function(i){return '• <b>'+esc(i.name)+'</b> ('+esc(i.branch||'All')+') — '+bucketBadge(i.bucket,i.days_to_expiry);}).join('<br>')+'</div></div>'; }
+    html+='<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px"><h3 style="margin:0">Documents</h3>'
+      +'<div style="display:flex;gap:6px;flex-wrap:wrap">'+(can('create')?'<button class="btn p" id="licAdd" style="padding:6px 12px;font-size:12px">+ Add document</button>':'')
+      +'<button class="btn g" id="licPrint" style="padding:6px 10px;font-size:12px">Print</button><button class="btn g" id="licPdf" style="padding:6px 10px;font-size:12px">PDF</button><button class="btn g" id="licXls" style="padding:6px 10px;font-size:12px">Excel</button></div></div>';
+    if(!LIC.rows.length){ html+='<div class="sub" style="color:var(--muted)">No documents yet.'+(can('create')?' Use “Add document”.':'')+'</div>'; }
+    else{
+      html+='<div style="overflow-x:auto"><table style="min-width:820px"><thead><tr><th>Document</th><th>Type</th><th>Branch</th><th>Number</th><th>Authority</th><th>Expires</th><th>Status</th><th>Responsible</th><th></th></tr></thead><tbody>';
+      LIC.rows.forEach(function(x){
+        html+='<tr><td><b>'+esc(x.name)+'</b></td><td>'+esc(typeName(x.doc_type))+'</td><td>'+esc(x.branch||'All')+'</td><td>'+esc(x.doc_number||'—')+'</td><td>'+esc(x.authority||'—')+'</td>'
+          +'<td>'+fmtD(x.expiry_date)+'</td><td>'+bucketBadge(x.bucket,x.days_to_expiry)+'</td><td>'+esc(x.responsible||'—')+'</td>'
+          +'<td style="text-align:right;white-space:nowrap">'+(can('edit')?'<button class="btn g" data-lic-edit="'+x.id+'" style="padding:3px 8px;font-size:11px">Edit</button> ':'')+(can('delete')?'<button class="btn g" data-lic-del="'+x.id+'" style="padding:3px 8px;font-size:11px;color:var(--bad,#c0392b)">Delete</button>':'')+'</td></tr>';
+      });
+      html+='</tbody></table></div>';
+    }
+    html+='</div>';
+    host.innerHTML=html;
+    var add=document.getElementById('licAdd'); if(add)add.onclick=function(){licForm(null);};
+    host.querySelectorAll('[data-lic-edit]').forEach(function(b){b.onclick=function(){var id=+b.getAttribute('data-lic-edit');licForm(LIC.rows.filter(function(r){return r.id===id;})[0]);};});
+    host.querySelectorAll('[data-lic-del]').forEach(function(b){b.onclick=function(){licDelete(+b.getAttribute('data-lic-del'));};});
+    var cols=['Document','Type','Branch','Number','Authority','Issue','Expires','Status','Days','Responsible','Notes'];
+    var rows=LIC.rows.map(function(x){return [x.name,typeName(x.doc_type),x.branch||'All',x.doc_number,x.authority,x.issue_date,x.expiry_date,x.status,x.days_to_expiry,x.responsible,x.notes];});
+    var p=document.getElementById('licPrint'); if(p)p.onclick=function(){printDoc('Licenses & Documents',cols,rows);};
+    var pf=document.getElementById('licPdf'); if(pf)pf.onclick=function(){printDoc('Licenses & Documents',cols,rows);};
+    var x=document.getElementById('licXls'); if(x)x.onclick=function(){csvDownload('licenses_'+new Date().toISOString().slice(0,10)+'.csv',cols,rows);};
+  }
+  function licForm(rec){
+    var stores=(typeof STORES!=='undefined'?STORES:[]);
+    var isEdit=!!rec; rec=rec||{};
+    var body='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 14px">'
+      +fld('Document name','lfName',rec.name||'','text',true)
+      +'<div><label>Type</label><select id="lfType">'+LIC_TYPES.map(function(t){return '<option value="'+t[0]+'"'+((rec.doc_type||'other')===t[0]?' selected':'')+'>'+t[1]+'</option>';}).join('')+'</select></div>'
+      +'<div><label>Branch</label><select id="lfBranch"><option value="">All branches</option>'+stores.map(function(s){return '<option'+(rec.branch===s?' selected':'')+'>'+esc(s)+'</option>';}).join('')+'</select></div>'
+      +fld('Document number','lfNum',rec.doc_number||'','text')
+      +fld('Issuing authority','lfAuth',rec.authority||'','text')
+      +fld('Issue date','lfIssue',(rec.issue_date||''),'date')
+      +fld('Expiration date','lfExp',(rec.expiry_date||''),'date')
+      +fld('Responsible','lfResp',rec.responsible||'','text')
+      +fld('Attachment (URL/filename)','lfAtt',rec.attachment||'','text')
+      +'</div><div style="margin-top:8px"><label>Notes</label><textarea id="lfNotes" rows="2" style="width:100%">'+esc(rec.notes||'')+'</textarea></div>'
+      +'<div id="lfErr" style="display:none;color:var(--bad,#c0392b);font-size:12px;margin-top:8px"></div>';
+    var acts='<button class="pri" id="lfSave">'+(isEdit?'Save changes':'Add document')+'</button><button onclick="drwClose()">Cancel</button>';
+    if(typeof drwOpen==='function'){ drwOpen((isEdit?'Edit document':'Add document'),body,acts); }
+    else { openMiniModal((isEdit?'Edit document':'Add document'),body,acts); }
+    var sv=document.getElementById('lfSave'); if(sv)sv.onclick=function(){licSave(isEdit?rec.id:null);};
+  }
+  function fld(label,id,val,type,req){ return '<div><label>'+esc(label)+(req?' *':'')+'</label><input id="'+id+'" type="'+(type||'text')+'" value="'+esc(val)+'"></div>'; }
+  function openMiniModal(title,body,acts){
+    var d=document.getElementById('licModal'); if(d)d.remove();
+    d=document.createElement('div'); d.id='licModal'; d.style.cssText='position:fixed;inset:0;z-index:9998;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;padding:16px';
+    d.innerHTML='<div class="card" style="max-width:640px;width:100%;max-height:90vh;overflow:auto"><h3 style="margin:0 0 12px">'+esc(title)+'</h3>'+body+'<div style="margin-top:14px;display:flex;gap:8px">'+acts+'</div></div>';
+    document.body.appendChild(d); window.drwClose=function(){var x=document.getElementById('licModal');if(x)x.remove();};
+    d.addEventListener('click',function(e){if(e.target===d)drwClose();});
+  }
+  async function licSave(id){
+    var g=function(x){var el=document.getElementById(x);return el?el.value.trim():'';};
+    var body={name:g('lfName'),doc_type:g('lfType'),branch:g('lfBranch')||null,doc_number:g('lfNum'),authority:g('lfAuth'),issue_date:g('lfIssue')||null,expiry_date:g('lfExp')||null,responsible:g('lfResp'),attachment:g('lfAtt'),notes:g('lfNotes')};
+    if(!body.name){var er=document.getElementById('lfErr');if(er){er.style.display='block';er.textContent='Document name is required.';}return;}
+    try{ if(id)await API.licenseUpdate(id,body); else await API.licenseCreate(body); if(typeof drwClose==='function')drwClose(); toastMsg(id?'Document updated':'Document added'); renderLicenses(); renderLicMini(); }
+    catch(e){ var er2=document.getElementById('lfErr'); if(er2){er2.style.display='block';er2.textContent=(e&&e.message)||'Save failed';} }
+  }
+  async function licDelete(id){
+    var x=LIC.rows.filter(function(r){return r.id===id;})[0];
+    if(!window.confirm('Delete “'+((x&&x.name)||'this document')+'”? This cannot be undone.'))return;
+    try{ await API.licenseDelete(id); toastMsg('Document deleted'); renderLicenses(); renderLicMini(); }catch(e){ toastMsg((e&&e.message)||'Delete failed'); }
+  }
+  async function renderLicMini(){
+    var el=document.getElementById('licMini'); if(!el||!window.API_MODE||!API)return;
+    try{ var al=await API.licenseAlerts(); if(!al.count){el.innerHTML='<span style="color:var(--muted)">All documents valid.</span>';return;}
+      el.innerHTML=al.items.slice(0,4).map(function(i){var c=i.bucket==='expired'||i.bucket==='d7'?'var(--bad,#c0392b)':'var(--warn,#b26a00)';return '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+c+';margin-right:8px"></span><b>'+esc(i.name)+'</b> — '+(i.days_to_expiry<0?'expired':(i.days_to_expiry+'d left'));}).join('<br>')+(al.count>4?'<br><a href="#licenses" onclick="go(\'licenses\')" style="color:var(--brand)">+'+(al.count-4)+' more</a>':'');
+    }catch(e){}
+  }
+
+  // ================= DASHBOARD ANALYTICS + BUSINESS INSIGHTS =================
+  async function renderDashAnalytics(){
+    var host=document.getElementById('dashAnalytics'); if(!host||!window.API_MODE||!API)return;
+    try{
+      var a=await API.analytics(br());
+      var cmp=null; try{cmp=await API.comparisons(br());}catch(e){}
+      var g='<div class="grid g2">';
+      g+=chartCard('Profit trend (6 mo)',lineChart(a.profit_trend,{money:true,color:'var(--ok,#1a7f37)'}),'Net profit by month');
+      g+=chartCard('Costs over time (6 mo)',lineChart(a.costs_trend,{money:true,color:'var(--bad,#c0392b)'}),'Total costs by month');
+      g+=chartCard('Branch comparison',barChart(a.branch_comparison.map(function(b){return {label:b.branch,value:b.profit};}),{money:true,color:'var(--brand,#6c5ce7)'}),'Profit this month by branch');
+      g+=chartCard('Expenses by category',barChart(a.expenses_by_category,{money:true,color:'var(--warn,#b26a00)'}),'This month');
+      g+=chartCard('Best-selling products',barChart(a.best_products,{color:'var(--brand2,#00b894)'}),'Units sold, last 90 days');
+      g+=chartCard('Peak business hours',barChart(a.peak_hours,{color:'var(--accent,#0984e3)'}),'Units moved by hour');
+      g+='</div>';
+      // Business Insights: comparisons + forecast + recommendations
+      if(cmp){
+        var cmpRow=function(t,o){var d=o.delta_pct;return '<tr><td>'+t+'</td><td style="text-align:end">'+m(o.current)+'</td><td style="text-align:end;color:var(--muted)">'+m(o.previous)+'</td><td style="text-align:end;color:'+(d>=0?'var(--ok,#1a7f37)':'var(--bad,#c0392b)')+'">'+(d==null?'—':(d>=0?'▲':'▼')+' '+Math.abs(d)+'%')+'</td></tr>';};
+        var tbl=function(title,blk){return '<div style="flex:1 1 260px"><h3 style="margin:0 0 6px;font-size:14px">'+title+'</h3><table style="width:100%;font-size:12.5px"><thead><tr><th></th><th style="text-align:end">Current</th><th style="text-align:end">Previous</th><th style="text-align:end">Δ</th></tr></thead><tbody>'+cmpRow('Revenue',blk.revenue)+cmpRow('Costs',blk.costs)+cmpRow('Profit',blk.profit)+'</tbody></table></div>';};
+        g+='<div class="card" style="margin-top:13px"><h3 style="margin:0 0 2px">Business Insights</h3><div class="sub" style="color:var(--muted);margin-bottom:8px">Period-over-period comparison from live data. Forecasts and recommendations are calculated — not guaranteed.</div>'
+          +'<div style="display:flex;gap:22px;flex-wrap:wrap">'+tbl('Week over week',cmp.week_over_week)+tbl('Month over month',cmp.month_over_month)+tbl('Year over year',cmp.year_over_year)+'</div>'
+          +'<div style="margin-top:12px;padding:10px 12px;background:var(--chip,#eef1f4);border-radius:10px;font-size:13px"><b>Forecast — '+esc(cmp.forecast.metric)+' ('+esc(cmp.forecast.next_period)+'):</b> '+m(cmp.forecast.value)+' <span style="color:var(--muted)">· '+esc(cmp.forecast.basis)+'. '+esc(cmp.forecast.disclaimer)+'</span></div>'
+          +'<div style="margin-top:10px"><b style="font-size:13px">Recommendations</b><ul style="margin:6px 0 0;padding-left:18px;font-size:13px;line-height:1.7">'+cmp.recommendations.map(function(r){return '<li>'+esc(r)+'</li>';}).join('')+'</ul></div></div>';
+      }
+      host.innerHTML=g;
+    }catch(e){ host.innerHTML=''; }
+  }
+
+  // ---- router hook + boot ----
+  var _go=window.go;
+  window.go=function(v,opts){ var r=_go.apply(this,arguments);
+    try{
+      if(v==='workhours') renderWorkHours();
+      else if(v==='licenses') renderLicenses();
+      else if(v==='dash'){ renderDashAnalytics(); renderLicMini(); }
+    }catch(e){}
+    return r; };
+  var _boot=window.apiRehydrate;
+  if(typeof _boot==='function'){ window.apiRehydrate=async function(){ var r=await _boot.apply(this,arguments); try{renderLicMini();renderDashAnalytics();}catch(e){} return r; }; }
+  document.addEventListener('DOMContentLoaded',function(){ setTimeout(function(){ try{ if(window.API_MODE){renderLicMini();renderDashAnalytics();} }catch(e){} },1200); });
 })();
 </script>
 </body>
