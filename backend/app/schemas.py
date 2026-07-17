@@ -43,6 +43,7 @@ class StockOp(BaseModel):
     branch: str
     qty: int
     reason: Optional[str] = None
+    unit_cost: Optional[float] = None   # optional cost override on receive (else product cost)
 
 class TransferIn(BaseModel):
     sku: str
