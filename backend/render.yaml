@@ -1,0 +1,31 @@
+# Render Blueprint — SmokeStack ERP backend (API web service + managed Postgres).
+# This is a SEPARATE service from the existing static web app; it does not touch it.
+databases:
+  - name: smokestack-db
+    plan: basic-256mb          # scale up as records grow
+    postgresMajorVersion: "16"
+
+services:
+  - type: web
+    name: smokestack-api
+    runtime: python
+    plan: starter
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    preDeployCommand: alembic upgrade head      # run migrations before new code serves
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: smokestack-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRE_MINUTES
+        value: "720"
+      - key: CORS_ORIGINS
+        value: https://smokestack-erp.onrender.com
+      - key: SEED_ON_START
+        value: "true"          # set to "false" after first boot in production
