@@ -100,8 +100,8 @@ def home_kb():
         [("📥 Receive Stock", "op:recv"), ("🔄 Transfer Stock", "op:xfer")],
         [("🧮 Adjust Stock", "op:adj"), ("🛒 Purchases", "op:pur")],
         [("🔍 Search Product", "inv:search"), ("📸 Scan Barcode", "op:scan")],
-        [("📊 Reports & Insights", "reports_home"), ("⚙️ Settings", "nav:set")],
-        [("🔄 Refresh", "home")],
+        [("🕒 Attendance", "att:menu"), ("📊 Reports & Insights", "reports_home")],
+        [("⚙️ Settings", "nav:set"), ("🔄 Refresh", "home")],
     ])
 
 
@@ -1218,6 +1218,264 @@ async def barcode_lookup(tg_id, code):
     return ("🔎 Matches:", kb(footer(rows)), None)
 
 
+# ========================================================= PHASE 1 — attendance (GPS)
+_APP = None  # set in post_init; used to push manager/employee notifications
+ATT_APPROVE = {"owner", "admin", "branch_manager", "manager", "accountant"}
+ATT_CONSENT_TEXT = (
+    "📍 <b>Location &amp; privacy</b>\n\n"
+    "SmokeStack uses your current location <b>only</b> when you tap Clock In or Clock Out, "
+    "to verify you're near your assigned branch. It never tracks you continuously and stores "
+    "nothing beyond each punch.\n\nTap Continue to enable attendance."
+)
+
+
+def can_approve(role):
+    return role in ATT_APPROVE
+
+
+def _hm(iso):
+    if not iso:
+        return "—"
+    try:
+        return datetime.fromisoformat(iso.replace("Z", "+00:00")).strftime("%H:%M UTC")
+    except Exception:  # noqa: BLE001
+        return "—"
+
+
+async def render_att_menu(tg_id):
+    token, user, _ = await get_ctx(tg_id)
+    if not token:
+        return await render_home(tg_id)
+    rows = [[("🟢 Clock In", "att:in"), ("🔴 Clock Out", "att:out")],
+            [("🕒 My Attendance", "att:me:today"), ("📍 My Branch", "att:branch")],
+            [("📅 Today’s Status", "att:today")]]
+    if can_approve(user["role"]):
+        rows.append([("⚠️ Approvals", "att:pending")])
+    return ("🕒 <b>Attendance</b>\nClock in / out with your current location.", kb(footer(rows)), None)
+
+
+async def render_att_today(tg_id):
+    token, user, _ = await get_ctx(tg_id)
+    if not token:
+        return await render_home(tg_id)
+    _, d = await _req("GET", "/api/attendance/today", token=token)
+    d = d or {}
+    labels = {"none": "Not clocked in", "active": "Currently clocked in", "completed": "Clocked out",
+              "pending": "Pending manager approval", "rejected": "Rejected"}
+    stt = d.get("state", "none")
+    lines = ["📅 <b>Today’s status</b>", "", f"State: <b>{labels.get(stt, stt)}</b>"]
+    if stt != "none":
+        lines.append(f"Branch: {html.escape(str(d.get('branch') or '—'))}")
+        if d.get("clock_in"):
+            lines.append(f"Clock-in: {_hm(d['clock_in'])}")
+        if d.get("clock_out"):
+            lines.append(f"Clock-out: {_hm(d['clock_out'])}")
+        if d.get("worked_minutes") is not None:
+            wm = d["worked_minutes"]
+            lines.append(f"Worked: {wm // 60}h {wm % 60}m")
+        if d.get("ci_dist") is not None:
+            lines.append(f"Distance: {d['ci_dist']} m")
+    return ("\n".join(lines), kb(footer(refresh="att:today")), None)
+
+
+async def render_att_me(tg_id, period):
+    token, user, _ = await get_ctx(tg_id)
+    if not token:
+        return await render_home(tg_id)
+    _, rows = await _req("GET", f"/api/attendance/me?period={period}", token=token)
+    lines = [f"🕒 <b>My attendance · {period}</b>", ""]
+    for a in (rows or [])[:10]:
+        wm = a.get("worked_minutes")
+        dur = f"{wm // 60}h{wm % 60}m" if wm is not None else "—"
+        lines.append(f"• {str(a.get('clock_in'))[:10]} {html.escape(a['branch'])} · {a['status']} ({dur})")
+    if len(lines) == 2:
+        lines.append("No records.")
+    tabs = [[("Today", "att:me:today"), ("This Week", "att:me:week"), ("This Month", "att:me:month")]]
+    return ("\n".join(lines), kb(footer(tabs, refresh=f"att:me:{period}")), None)
+
+
+async def render_att_branch(tg_id):
+    token, user, _ = await get_ctx(tg_id)
+    if not token:
+        return await render_home(tg_id)
+    _, branches = await _req("GET", "/api/branches", token=token)
+    lines = ["📍 <b>My branch(es)</b>", ""]
+    for b in (branches or []):
+        _, s = await _req("GET", f"/api/attendance/branch/{quote(b)}", token=token)
+        if s:
+            coords = "set" if s.get("lat") is not None else "not set"
+            lines.append(f"• {html.escape(b)} — radius {s['radius_m']} m · coords {coords} · "
+                         f"verify {'on' if s.get('loc_verify') else 'off'}")
+    return ("\n".join(lines), kb(footer(refresh="att:branch")), None)
+
+
+async def render_att_pending(tg_id):
+    token, user, _ = await get_ctx(tg_id)
+    if not token or not can_approve(user["role"]):
+        return ("🔒 Not permitted.", kb(footer()), None)
+    _, rows = await _req("GET", "/api/attendance/pending", token=token)
+    rows = rows or []
+    if not rows:
+        return ("✅ No pending attendance approvals.", kb(footer(refresh="att:pending")), None)
+    lines = ["⚠️ <b>Attendance approvals</b>", ""]
+    btns = []
+    for a in rows[:6]:
+        lines.append(f"• {html.escape(a['employee'] or '')} @ {html.escape(a['branch'])} — "
+                     f"{a.get('ci_dist')} m · {html.escape(a.get('reason') or 'no reason')}")
+        btns.append([(f"✅ #{a['id']}", f"att:appr:{a['id']}"), (f"❌ #{a['id']}", f"att:rej:{a['id']}")])
+    return ("\n".join(lines), kb(footer(btns, refresh="att:pending")), None)
+
+
+async def attendance_submit(tg_id, mode, lat, lng, live, branch=None):
+    token, user, _ = await get_ctx(tg_id)
+    if not token:
+        return await render_home(tg_id)
+    path = "/api/attendance/clock-" + ("in" if mode == "in" else "out")
+    body = {"lat": lat, "lng": lng, "live": bool(live)}
+    if branch:
+        body["branch"] = branch
+    try:
+        status, d = await _req("POST", path, token=token, body=body)
+    except Exception:  # noqa: BLE001
+        return ("⚠️ Couldn't reach the server. Please try again.",
+                kb([[("🔁 Try Again", f"att:{mode}")], [("🏠 Main Menu", "att:menu")]]), None)
+    if status >= 400:
+        det = (d.get("detail") if isinstance(d, dict) else None) or "Request failed."
+        return (f"⚠️ {html.escape(str(det))}",
+                kb([[("🔁 Try Again", f"att:{mode}")], [("🏠 Main Menu", "att:menu")]]), None)
+    if mode == "out":
+        wm = d.get("worked_minutes", 0) or 0
+        return (f"✅ <b>Clock-out successful</b>\nBranch: {html.escape(d['branch'])}\n"
+                f"Clock-in: {_hm(d.get('clock_in'))}\nClock-out: {_hm(d.get('clock_out'))}\n"
+                f"Worked: <b>{wm // 60}h {wm % 60}m</b>\nStatus: Completed",
+                kb([[("📅 View Today", "att:today")], [("🏠 Main Menu", "att:menu")]]), None)
+    r = d.get("result")
+    if r == "choose":
+        rows = [[(f"{c['branch']} — {c['distance']} m", f"att:choose:{c['branch']}")] for c in d["candidates"]]
+        return ("Choose your branch:", kb(rows + [[("❌ Cancel", "att:menu")]]), None)
+    if r == "in":
+        return (f"✅ <b>Clock-in successful</b>\nEmployee: {html.escape(user['name'])}\n"
+                f"Branch: {html.escape(d['branch'])}\nTime: {_hm(d.get('time'))}\n"
+                f"Distance from branch: {d['distance']} meters\n"
+                f"Status: {'Late' if d.get('late') else 'On time'}",
+                kb([[("🕒 View Today", "att:today")], [("🏠 Main Menu", "att:menu")]]), None)
+    if r == "pending":
+        await notify_approvers(tg_id, user, d)
+        return (f"🕒 <b>Clock-in submitted for approval</b>\nBranch: {html.escape(d['branch'])}\n"
+                f"Your distance: {d['distance']} m (allowed {d['radius']} m)\n"
+                f"A manager has been notified — you'll be updated once reviewed.",
+                kb([[("🏠 Main Menu", "att:menu")]]), None)
+    # outside (override disabled)
+    return (f"❌ You are outside the allowed attendance area.\nNearest branch: {html.escape(d['branch'])}\n"
+            f"Your distance: {d['distance']} m\nAllowed radius: {d['radius']} m",
+            kb([[("🔄 Share Location Again", "att:in")], [("🏠 Main Menu", "att:menu")]]), None)
+
+
+async def notify_approvers(tg_id, user, d):
+    if not _APP:
+        return
+    try:
+        _, ap = await _req("GET", f"/api/attendance/approvers?branch={quote(d['branch'])}",
+                           headers={"X-Bot-Token": TOKEN})
+        for a in (ap or {}).get("approvers", []):
+            if str(a["tg_id"]) == str(tg_id):
+                continue
+            txt = (f"⚠️ <b>Attendance approval request</b>\nEmployee: {html.escape(user['name'])}\n"
+                   f"Branch: {html.escape(d['branch'])}\nDistance: {d['distance']} m "
+                   f"(allowed {d['radius']} m)\nTap to decide:")
+            mk = kb([[("✅ Approve", f"att:appr:{d['id']}"), ("❌ Reject", f"att:rej:{d['id']}")]])
+            await _APP.bot.send_message(chat_id=int(a["tg_id"]), text=txt, reply_markup=mk,
+                                        parse_mode=ParseMode.HTML)
+    except Exception as e:  # noqa: BLE001
+        log.warning("notify_approvers: %s", e)
+
+
+async def att_decide(tg_id, data):
+    token, user, _ = await get_ctx(tg_id)
+    if not token or not can_approve(user["role"]):
+        return ("🔒 Not permitted.", kb(footer()), None)
+    aid = data.split(":")[2]
+    act = "approve" if data.startswith("att:appr:") else "reject"
+    status, d = await _req("POST", f"/api/attendance/{aid}/{act}", token=token)
+    if status >= 400:
+        return (f"⚠️ Couldn't {act} #{aid}.", kb(footer(refresh="att:pending")), None)
+    # notify the employee
+    if _APP and d.get("tg_id"):
+        try:
+            emsg = ("✅ Your attendance was <b>approved</b> — you're clocked in."
+                    if act == "approve" else "❌ Your attendance request was <b>rejected</b>.")
+            await _APP.bot.send_message(chat_id=int(d["tg_id"]), text=emsg, parse_mode=ParseMode.HTML)
+        except Exception:  # noqa: BLE001
+            pass
+    verb = "✅ Approved" if act == "approve" else "❌ Rejected"
+    return (f"{verb} attendance #{aid} ({html.escape(str(d.get('employee') or ''))}).",
+            kb(footer(refresh="att:pending")), None)
+
+
+async def handle_att_location_cb(update, ctx, tg_id, data):
+    """Handles the callbacks that need a reply-keyboard location share or the stored pin."""
+    token, user, prefs = await get_ctx(tg_id)
+    if not token:
+        r = await render_home(tg_id)
+        await show(update, ctx, r[0], r[1])
+        return
+    if data.startswith("att:choose:"):
+        branch = data.split(":", 2)[2]
+        loc = st(tg_id).get("att_last_loc")
+        if not loc:
+            r = await render_att_menu(tg_id)
+            await show(update, ctx, "Location expired — tap Clock In again.", r[1])
+            return
+        text, markup, _ = await attendance_submit(tg_id, "in", loc[0], loc[1], True, branch=branch)
+        await show(update, ctx, text, markup)
+        return
+    mode = "out" if data in ("att:out",) or data == "att:consent:out" else "in"
+    if data.startswith("att:consent:"):
+        try:
+            await _req("PUT", "/api/telegram/prefs", token=token, body={"att_consent": True})
+        except Exception:  # noqa: BLE001
+            pass
+        s = st(tg_id)
+        s["prefs"] = {**(s.get("prefs") or {}), "att_consent": True}
+    elif not prefs.get("att_consent"):
+        await show(update, ctx, ATT_CONSENT_TEXT,
+                   kb([[("✅ Continue", f"att:consent:{mode}")], [("❌ Cancel", "att:menu")]]))
+        return
+    from telegram import ReplyKeyboardMarkup, KeyboardButton
+    s = st(tg_id)
+    s["att_await"] = mode
+    s["att_ts"] = time.time()
+    rk = ReplyKeyboardMarkup([[KeyboardButton("📍 Share Current Location", request_location=True)], ["❌ Cancel"]],
+                             one_time_keyboard=True, resize_keyboard=True)
+    verb = "clock in" if mode == "in" else "clock out"
+    await ctx.bot.send_message(chat_id=update.effective_chat.id,
+                               text=f"📍 Tap <b>Share Current Location</b> below to {verb}. "
+                                    "Your location is used only for this punch.",
+                               reply_markup=rk, parse_mode=ParseMode.HTML)
+
+
+async def on_location(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    from telegram import ReplyKeyboardRemove
+    tg_id = str(update.effective_user.id)
+    s = st(tg_id)
+    mode = s.get("att_await")
+    if not mode:
+        return
+    if time.time() - s.get("att_ts", 0) > 300:                 # request freshness
+        s.pop("att_await", None)
+        await update.message.reply_text("That location request expired. Open Attendance and tap Clock In again.",
+                                        reply_markup=ReplyKeyboardRemove())
+        return
+    loc = update.message.location
+    live = not bool(update.message.forward_date)               # forwarded pin != live GPS
+    s.pop("att_await", None)
+    s["att_last_loc"] = (loc.latitude, loc.longitude)
+    await update.message.reply_text("📍 Location received — verifying…", reply_markup=ReplyKeyboardRemove())
+    text, markup, _ = await attendance_submit(tg_id, mode, loc.latitude, loc.longitude, live)
+    await ctx.bot.send_message(chat_id=update.effective_chat.id, text=text, reply_markup=markup,
+                               parse_mode=ParseMode.HTML)
+
+
 # -------------------------------------------------------------------- callback router
 async def dispatch(tg_id, data):
     """Return (text, keyboard, document-tuple|None). document-tuple = (bytes, filename, caption)."""
@@ -1225,6 +1483,18 @@ async def dispatch(tg_id, data):
         st(tg_id).pop("flow", None)
         st(tg_id)["stack"] = []
         return await render_home(tg_id)
+    if data == "att:menu":
+        return await render_att_menu(tg_id)
+    if data == "att:today":
+        return await render_att_today(tg_id)
+    if data.startswith("att:me:"):
+        return await render_att_me(tg_id, data.split(":")[2])
+    if data == "att:branch":
+        return await render_att_branch(tg_id)
+    if data == "att:pending":
+        return await render_att_pending(tg_id)
+    if data.startswith("att:appr:") or data.startswith("att:rej:"):
+        return await att_decide(tg_id, data)
     # ---- Phase 2: operational flows ----
     if data == "reports_home":
         return ("📊 <b>Reports & Insights</b>\nChoose a view:", reports_home_kb(), None)
@@ -1357,6 +1627,15 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     s["last_cb"] = q.id
     data = q.data or "home"
+    # Attendance location callbacks need a reply-keyboard / stored pin — handle before dispatch.
+    if data in ("att:in", "att:out") or data.startswith("att:consent:") or data.startswith("att:choose:"):
+        try:
+            await handle_att_location_cb(update, ctx, tg_id, data)
+        except Exception as e:  # noqa: BLE001
+            log.exception("attendance cb error: %s", e)
+            await ctx.bot.send_message(chat_id=update.effective_chat.id, text="⚠️ Something went wrong.",
+                                       reply_markup=home_kb(), parse_mode=ParseMode.HTML)
+        return
     # Back navigation via server-side stack (intra-flow callbacks manage their own steps)
     _intra = data.startswith(("f:", "fp:"))
     if data == "back":
@@ -1382,9 +1661,18 @@ async def _send(update, ctx, res):
 
 
 async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    from telegram import ReplyKeyboardRemove
     tg_id = str(update.effective_user.id)
     s = st(tg_id)
     txt = (update.message.text or "").strip()
+    # cancel a pending location share
+    if s.get("att_await") and txt.startswith("❌"):
+        s.pop("att_await", None)
+        await update.message.reply_text("Cancelled.", reply_markup=ReplyKeyboardRemove())
+        r = await render_att_menu(tg_id)
+        await ctx.bot.send_message(chat_id=update.effective_chat.id, text=r[0], reply_markup=r[1],
+                                   parse_mode=ParseMode.HTML)
+        return
     # barcode entry mode
     if s.get("await_barcode"):
         await _send(update, ctx, await barcode_lookup(tg_id, txt))
@@ -1480,6 +1768,8 @@ async def cmd_me(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def post_init(app):
+    global _APP
+    _APP = app
     try:
         await app.bot.set_my_commands([
             BotCommand("start", "Open dashboard"), BotCommand("menu", "Open dashboard"),
@@ -1499,6 +1789,7 @@ def main():
     app.add_handler(CommandHandler("link", cmd_link))
     app.add_handler(CommandHandler("me", cmd_me))
     app.add_handler(CallbackQueryHandler(on_callback))
+    app.add_handler(MessageHandler(filters.LOCATION, on_location))
     app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, on_media))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
     log.info("SmokeStack Telegram dashboard starting (long polling); API_BASE=%s", API_BASE)

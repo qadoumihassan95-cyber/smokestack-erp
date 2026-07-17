@@ -252,3 +252,133 @@ def test_confirm_dedup_guard():
     fl["submitting"] = True                    # simulate an in-flight submit
     text, _, _ = run(W.flow_submit(tg))
     assert "processing" in text.lower()
+
+
+# ---------- Phase-1: attendance ----------
+class AttFake:
+    """API stub for attendance flows. `clockin` controls the clock-in response shape."""
+    def __init__(self, role="employee", consent=True, clockin=None):
+        self.role = role
+        self.consent = consent
+        self.clockin = clockin or {"result": "in", "status": "active", "branch": "Store A",
+                                   "distance": 42, "time": "2026-07-17T09:00:00+00:00", "late": False}
+        self.calls = []
+
+    async def get_ctx(self, tg_id):
+        return "tkn", {"id": "U-emp", "name": "Sam Rivera", "role": self.role, "branches": ["Store A"]}, \
+               {"att_consent": self.consent}
+
+    async def req(self, method, path, token=None, body=None, headers=None):
+        self.calls.append((method, path, body))
+        if path == "/api/attendance/clock-in":
+            return 200, self.clockin
+        if path == "/api/attendance/clock-out":
+            return 200, {"result": "out", "branch": "Store A", "clock_in": "2026-07-17T09:00:00+00:00",
+                         "clock_out": "2026-07-17T17:30:00+00:00", "worked_minutes": 510}
+        if path == "/api/attendance/today":
+            return 200, {"state": "active", "branch": "Store A", "clock_in": "2026-07-17T09:00:00+00:00",
+                         "ci_dist": 42}
+        if path.startswith("/api/attendance/me"):
+            return 200, [{"clock_in": "2026-07-17T09:00:00+00:00", "branch": "Store A",
+                          "status": "completed", "worked_minutes": 510}]
+        if path == "/api/attendance/pending":
+            return 200, [{"id": 7, "employee": "Ana Gomez", "branch": "Store A", "ci_dist": 300,
+                          "reason": "Delivery", "approval": "pending"}]
+        if path.startswith("/api/attendance/7/approve"):
+            return 200, {"status": "active", "employee": "Ana Gomez", "tg_id": None, "branch": "Store A"}
+        if path.startswith("/api/attendance/branch/"):
+            return 200, {"radius_m": 150, "lat": 32.2211, "loc_verify": True}
+        if path.startswith("/api/branches"):
+            return 200, ["Store A"]
+        if path.startswith("/api/telegram/prefs"):
+            return 200, {"prefs": {"att_consent": True}}
+        return 200, {}
+
+
+def _att_patch(fake):
+    W.get_ctx = fake.get_ctx
+    W._req = fake.req
+
+
+def test_att_menu_employee_no_approvals():
+    _att_patch(AttFake(role="employee"))
+    text, markup, _ = run(W.render_att_menu("m1"))
+    labels = _btn_texts(markup)
+    assert any("Clock In" in l for l in labels) and any("Clock Out" in l for l in labels)
+    assert not any("Approval" in l for l in labels)      # employees don't see approvals
+
+
+def test_att_menu_manager_sees_approvals():
+    _att_patch(AttFake(role="branch_manager"))
+    _, markup, _ = run(W.render_att_menu("m2"))
+    assert any("Approval" in l for l in _btn_texts(markup))
+
+
+def test_att_consent_gate_prompts_first():
+    _att_patch(AttFake(consent=False))
+
+    class Upd:
+        effective_chat = type("C", (), {"id": 111})()
+    sent = {}
+
+    async def fake_show(update, ctx, text, markup):
+        sent["text"] = text; sent["markup"] = markup
+    orig = W.show
+    W.show = fake_show
+    try:
+        run(W.handle_att_location_cb(Upd(), None, "m3", "att:in"))
+    finally:
+        W.show = orig
+    assert "privacy" in sent["text"].lower()
+    assert any(cb.startswith("att:consent:") for cb in _btn_cbs(sent["markup"]))
+
+
+def test_att_clock_in_inside_radius_message():
+    f = AttFake()
+    _att_patch(f)
+    text, _, _ = run(W.attendance_submit("m4", "in", 32.2211, 35.2544, True))
+    assert "Clock-in successful" in text and "42 meters" in text
+    assert any(p == "/api/attendance/clock-in" for (m, p, b) in f.calls)
+
+
+def test_att_clock_in_outside_creates_pending():
+    f = AttFake(clockin={"result": "pending", "branch": "Store A", "distance": 300,
+                         "radius": 150, "id": 9})
+    _att_patch(f)
+    text, _, _ = run(W.attendance_submit("m5", "in", 32.30, 35.25, True))
+    assert "approval" in text.lower() and "300 m" in text
+
+
+def test_att_clock_in_choose_branch():
+    f = AttFake(clockin={"result": "choose",
+                         "candidates": [{"branch": "Store A", "distance": 40},
+                                        {"branch": "Store B", "distance": 80}]})
+    _att_patch(f)
+    text, markup, _ = run(W.attendance_submit("m6", "in", 32.2211, 35.2544, True))
+    assert "choose" in text.lower()
+    assert any(cb.startswith("att:choose:") for cb in _btn_cbs(markup))
+
+
+def test_att_clock_out_shows_duration():
+    _att_patch(AttFake())
+    text, _, _ = run(W.attendance_submit("m7", "out", 32.2211, 35.2544, True))
+    assert "Clock-out successful" in text and "8h 30m" in text
+
+
+def test_att_today_status_render():
+    _att_patch(AttFake())
+    text, _, _ = run(W.render_att_today("m8"))
+    assert "clocked in" in text.lower() and "Store A" in text
+
+
+def test_att_pending_render_has_decision_buttons():
+    _att_patch(AttFake(role="owner"))
+    text, markup, _ = run(W.render_att_pending("m9"))
+    cbs = _btn_cbs(markup)
+    assert any(c.startswith("att:appr:7") for c in cbs) and any(c.startswith("att:rej:7") for c in cbs)
+
+
+def test_att_pending_blocked_for_employee():
+    _att_patch(AttFake(role="employee"))
+    text, _, _ = run(W.render_att_pending("m10"))
+    assert "permitted" in text.lower()
