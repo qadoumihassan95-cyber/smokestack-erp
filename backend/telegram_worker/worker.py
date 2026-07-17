@@ -93,26 +93,61 @@ async def link(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
 
 
+NOT_LINKED_MSG = (
+    "You're not linked yet. \U0001F517\n\n"
+    "To connect your ERP account:\n"
+    "1️⃣ Open the web app and sign in\n"
+    "2️⃣ Go to Settings → Telegram and tap *Generate Link Code*\n"
+    "3️⃣ Send me:  /link CODE\n\n"
+    "Then /me will show your account."
+)
+
+
+def _fmt_dt(iso):
+    if not iso:
+        return "—"
+    try:
+        from datetime import datetime
+        s = iso.replace("Z", "+00:00")
+        return datetime.fromisoformat(s).strftime("%b %d, %Y %H:%M UTC")
+    except Exception:  # noqa: BLE001
+        return str(iso)
+
+
+def format_me(data, tg_username=None, tg_id=None):
+    """Pure formatter for /me. `data` is the /session/{tg_id} response.
+    Returns the reply text. Kept side-effect free so it can be unit-tested."""
+    if not data or not data.get("linked"):
+        return NOT_LINKED_MSG
+    u = data.get("user") or {}
+    branches = u.get("branches")
+    br = ", ".join(branches) if branches else "All branches"
+    uname = data.get("username") or tg_username
+    uname = ("@" + uname) if uname else "—"
+    tid = data.get("tg_id") or tg_id or "—"
+    return (
+        "✅ *Connected to SmokeStack ERP*\n\n"
+        f"*Name:* {u.get('name', '—')}\n"
+        f"*Role:* {u.get('role', '—')}\n"
+        f"*Branches:* {br}\n"
+        f"*Telegram:* {uname}\n"
+        f"*Telegram ID:* {tid}\n"
+        f"*Status:* Connected\n"
+        f"*Linked:* {_fmt_dt(data.get('linked_at'))}"
+    )
+
+
 async def me(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    tg_id = str(update.effective_user.id)
+    u = update.effective_user
+    tg_id = str(u.id)
     try:
         status, data = await _api_get(f"/api/telegram/session/{tg_id}")
     except Exception as e:  # noqa: BLE001
         log.warning("session lookup failed to reach API: %s", e)
         await update.message.reply_text("Couldn't reach the ERP server. Please try again shortly.")
         return
-    if data.get("linked"):
-        u = data.get("user", {})
-        branches = u.get("branches")
-        br = ", ".join(branches) if branches else "all branches"
-        await update.message.reply_text(
-            f"You're linked as *{u.get('name')}* — {u.get('role')} ({br}).",
-            parse_mode="Markdown",
-        )
-    else:
-        await update.message.reply_text(
-            "You're not linked yet. Use  /link CODE  (get the code in the web app → Settings → Telegram)."
-        )
+    text = format_me(data, tg_username=(u.username or u.full_name), tg_id=tg_id)
+    await update.message.reply_text(text, parse_mode="Markdown")
 
 
 def main():
