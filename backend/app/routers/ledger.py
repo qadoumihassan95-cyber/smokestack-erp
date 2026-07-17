@@ -1,0 +1,63 @@
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+from ..database import get_db
+from .. import models, security as S
+from ..schemas import ExpenseIn, PurchaseIn, SaleIn
+from datetime import datetime
+
+router = APIRouter(prefix="/api", tags=["ledger"])
+
+def _row(x):
+    return {"id": x.id, "branch": x.branch, "type": x.type, "amount": float(x.amount or 0),
+            "tax": float(x.tax or 0), "category": x.category, "vendor": x.vendor,
+            "account": x.account, "product": x.product, "employee": x.employee,
+            "memo": x.memo, "date": str(x.entry_date)}
+
+@router.get("/sales")
+def sales(branch: str = "all", db: Session = Depends(get_db), user: models.User = Depends(S.require("view"))):
+    brs = S.scope_branches(user, db) if branch == "all" else [branch]
+    q = db.query(models.Ledger).filter(models.Ledger.type == "sale", models.Ledger.branch.in_(brs))
+    return [_row(x) for x in q.order_by(models.Ledger.id.desc()).limit(200).all()]
+
+@router.post("/sales", status_code=201)
+def add_sale(body: SaleIn, db: Session = Depends(get_db), user: models.User = Depends(S.require("create"))):
+    S.assert_branch(user, db, body.branch)
+    r = models.Ledger(branch=body.branch, type="sale", amount=body.amount, tax=body.tax,
+                      account=body.account, product=body.product, employee=body.employee, created_by=user.id)
+    db.add(r); db.commit()
+    S.audit(db, user, "create", "sale", r.id, f"{body.amount} @ {body.branch}")
+    return _row(r)
+
+@router.get("/expenses")
+def expenses(branch: str = "all", db: Session = Depends(get_db), user: models.User = Depends(S.require("view"))):
+    brs = S.scope_branches(user, db) if branch == "all" else [branch]
+    q = db.query(models.Ledger).filter(models.Ledger.type == "expense", models.Ledger.branch.in_(brs))
+    return [_row(x) for x in q.order_by(models.Ledger.id.desc()).limit(200).all()]
+
+@router.post("/expenses", status_code=201)
+def add_expense(body: ExpenseIn, db: Session = Depends(get_db), user: models.User = Depends(S.require("create"))):
+    S.assert_branch(user, db, body.branch)
+    r = models.Ledger(branch=body.branch, type="expense", amount=body.amount, category=body.category,
+                      account=body.account, memo=body.memo, created_by=user.id)
+    db.add(r); db.commit()
+    S.audit(db, user, "create", "expense", r.id, f"{body.category} {body.amount} @ {body.branch}")
+    return _row(r)
+
+@router.get("/purchases")
+def purchases(branch: str = "all", db: Session = Depends(get_db), user: models.User = Depends(S.require("view"))):
+    brs = S.scope_branches(user, db) if branch == "all" else [branch]
+    q = db.query(models.Purchase).filter(models.Purchase.branch.in_(brs))
+    return [{"id": p.id, "vendor": p.vendor, "branch": p.branch, "amount": float(p.amount or 0),
+             "status": p.status, "date": str(p.purchase_date)} for p in q.order_by(models.Purchase.purchase_date.desc()).all()]
+
+@router.post("/purchases", status_code=201)
+def add_purchase(body: PurchaseIn, db: Session = Depends(get_db), user: models.User = Depends(S.require("create"))):
+    S.assert_branch(user, db, body.branch)
+    pid = f"PO-{int(datetime.utcnow().timestamp())}"
+    p = models.Purchase(id=pid, vendor=body.vendor, branch=body.branch, amount=body.amount, status="pending_approval")
+    db.add(p)
+    db.add(models.Approval(id=f"AP-{pid}", kind="purchase", ref=pid, branch=body.branch, amount=body.amount,
+                           requested_by=user.name, summary=f"Purchase {pid} · {body.vendor} · ${body.amount:.0f}"))
+    db.commit()
+    S.audit(db, user, "create", "purchase", pid, f"{body.vendor} {body.amount}")
+    return {"id": pid, "status": "pending_approval"}
