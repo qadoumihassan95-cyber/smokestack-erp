@@ -64,6 +64,18 @@ def st(tg_id):
     return STATE.setdefault(str(tg_id), {"stack": [], "lists": {}, "last_cb": None})
 
 
+def note_user(update):
+    """Record the Telegram identity of the sender. Each tg_id gets its own
+    STATE entry, so concurrent conversations never share context."""
+    try:
+        u = update.effective_user
+        s = st(u.id)
+        s["tg_username"] = u.username or ""
+        s["tg_name"] = (u.full_name or "").strip()
+    except Exception:  # noqa: BLE001
+        pass
+
+
 async def get_ctx(tg_id):
     """Return (token, user, prefs) for a linked user, or (None, None, None)."""
     s = st(tg_id)
@@ -77,7 +89,12 @@ async def get_ctx(tg_id):
         s["user"] = data["user"]
         s["prefs"] = data.get("prefs", {})
         s["token_exp"] = now + 600
+        s["disabled"] = False
         return s["token"], s["user"], s["prefs"]
+    # 403 means the account exists but an administrator disabled it — remember
+    # that so we can explain it instead of showing the generic "not linked" screen.
+    s["disabled"] = (status == 403)
+    s.pop("token", None)
     return None, None, None
 
 
@@ -217,7 +234,12 @@ def delta_line(cur, prev):
 async def render_home(tg_id):
     token, user, _ = await get_ctx(tg_id)
     if not token:
-        return ("👋 <b>Welcome to SmokeStack ERP</b>\n\nLink your account to run the shop from chat.",
+        if st(tg_id).get("disabled"):
+            # the account is still linked, an administrator turned it off
+            return ("<b>Access disabled</b>\n\nThis Telegram account has been disabled by an "
+                    "administrator. Ask an owner or manager to re-enable it in "
+                    "Settings \u2192 Telegram \u2192 Telegram Management Center.", kb([]), None)
+        return ("<b>Welcome to SmokeStack ERP</b>\n\nLink your account to run the shop from chat.",
                 unlinked_kb(), None)
     return (HOME_TEXT, home_kb(), None)
 
@@ -896,9 +918,17 @@ def _validate(kind, text):
 
 async def bot_audit(tg_id, user, action, entity, ref, detail, result="ok"):
     try:
+        s = st(tg_id)
+        u = user or s.get("user") or {}
+        brs = u.get("branches") or []
         await _req("POST", "/api/telegram/audit", headers={"X-Bot-Token": TOKEN},
-                   body={"tg_id": str(tg_id), "user_id": (user or {}).get("id"), "action": action,
-                         "entity": entity, "ref": str(ref or ""), "detail": detail, "result": result})
+                   body={"tg_id": str(tg_id), "user_id": u.get("id"), "action": action,
+                         "entity": entity, "ref": str(ref or ""), "detail": detail, "result": result,
+                         "tg_username": s.get("tg_username") or "",
+                         "branch": s.get("branch") or (brs[0] if len(brs) == 1 else
+                                                       (", ".join(brs) if brs else "All branches")),
+                         "role": u.get("role") or "",
+                         "ip": "telegram"})
     except Exception as e:  # noqa: BLE001
         log.warning("bot_audit failed: %s", e)
 
@@ -1491,6 +1521,7 @@ async def handle_att_location_cb(update, ctx, tg_id, data):
 async def on_location(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     from telegram import ReplyKeyboardRemove
     tg_id = str(update.effective_user.id)
+    note_user(update)
     s = st(tg_id)
     mode = s.get("att_await")
     if not mode:
@@ -1699,6 +1730,7 @@ async def _send(update, ctx, res):
 async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     from telegram import ReplyKeyboardRemove
     tg_id = str(update.effective_user.id)
+    note_user(update)
     s = st(tg_id)
     txt = (update.message.text or "").strip()
     # cancel a pending location share
@@ -1727,6 +1759,7 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def on_media(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     tg_id = str(update.effective_user.id)
+    note_user(update)
     s = st(tg_id)
     f = flow(tg_id)
     msg = update.message
@@ -1760,6 +1793,7 @@ async def on_media(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # --------------------------------------------------------------------- commands
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     tg_id = str(update.effective_user.id)
+    note_user(update)
     st(tg_id)["stack"] = []
     text, markup, _ = await render_home(tg_id)
     await update.message.reply_text(text, reply_markup=markup, parse_mode=ParseMode.HTML)
@@ -1792,6 +1826,7 @@ async def cmd_link(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_me(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     tg_id = str(update.effective_user.id)
+    note_user(update)
     _, s = await _req("GET", f"/api/telegram/session/{tg_id}")
     if s and s.get("linked"):
         u = s["user"]
