@@ -169,6 +169,9 @@ class AuditLog(Base):
     tg_id = Column(String); user_id = Column(String)
     action = Column(String); entity = Column(String); ref = Column(String)
     detail = Column(Text); result = Column(String, default="ok")
+    # --- richer Telegram audit context (additive) ---
+    tg_username = Column(String); branch = Column(String)
+    role = Column(String); ip = Column(String)
 
 class TelegramLink(Base):
     __tablename__ = "telegram_links"
@@ -178,6 +181,12 @@ class TelegramLink(Base):
     last_activity = Column(DateTime(timezone=True), server_default=func.now())
     expires_at = Column(DateTime(timezone=True))
     prefs = Column(Text)   # JSON string: notification toggles, quiet hours, language, default branch, timezone
+    # --- enterprise multi-user fields (additive; existing rows default to active) ---
+    status = Column(String, default="active")   # active | disabled
+    employee_id = Column(String)                # the Employee this account represents
+    linked_by = Column(String)                  # who issued the link code
+    disabled_at = Column(DateTime(timezone=True))
+    disabled_by = Column(String)
 
 class LinkCode(Base):
     __tablename__ = "link_codes"
