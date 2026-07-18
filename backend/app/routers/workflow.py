@@ -16,6 +16,16 @@ def transfers(db: Session = Depends(get_db), user: models.User = Depends(S.requi
 @router.post("/transfers", status_code=201)
 def create_transfer(body: TransferIn, db: Session = Depends(get_db), user: models.User = Depends(S.require("transfer_stock"))):
     S.assert_branch(user, db, body.from_branch)
+    if int(body.qty) <= 0:
+        raise HTTPException(422, "Transfer quantity must be greater than zero.")
+    if body.from_branch == body.to_branch:
+        raise HTTPException(422, "Source and destination branches must differ.")
+    if not db.get(models.Product, body.sku):
+        raise HTTPException(404, "Product not found")
+    src = db.query(models.Stock).filter_by(sku=body.sku, branch=body.from_branch).first()
+    have = int(src.qty or 0) if src else 0
+    if have < int(body.qty):
+        raise HTTPException(422, f"Insufficient stock: {body.from_branch} holds {have} × {body.sku}.")
     tid = f"TR-{int(datetime.utcnow().timestamp())}"
     db.add(models.Transfer(id=tid, sku=body.sku, from_branch=body.from_branch, to_branch=body.to_branch, qty=body.qty, status="pending"))
     db.add(models.Approval(id=f"AP-{tid}", kind="transfer", ref=tid, branch=body.from_branch, amount=0,
@@ -35,7 +45,28 @@ def _decide(db, user, aid, status, comment):
     a = db.get(models.Approval, aid)
     if not a:
         raise HTTPException(404, "Not found")
+    if a.status != "pending":
+        raise HTTPException(409, f"This request was already {a.status}.")
     S.assert_branch(user, db, a.branch)
+    # Approving must actually complete the underlying work. Previously the
+    # approval row flipped to "approved" but the transfer never moved stock and
+    # the purchase stayed pending forever.
+    if a.kind == "transfer":
+        t = db.get(models.Transfer, a.ref)
+        if t:
+            if status == "approved":
+                if t.status != "pending":
+                    raise HTTPException(409, f"Transfer already {t.status}.")
+                from .inventory import _write_movement
+                _write_movement(db, user, t.sku, t.from_branch, "transfer_out", -int(t.qty),
+                                notes=f"Transfer {t.id} -> {t.to_branch}")
+                _write_movement(db, user, t.sku, t.to_branch, "transfer_in", int(t.qty),
+                                notes=f"Transfer {t.id} <- {t.from_branch}")
+            t.status = status
+    elif a.kind == "purchase":
+        p = db.get(models.Purchase, a.ref)
+        if p:
+            p.status = status
     a.status = status; a.decided_by = user.name; a.comment = comment
     db.commit()
     S.audit(db, user, status, "approval", aid, comment or "")

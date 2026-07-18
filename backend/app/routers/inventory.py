@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, update as sa_update
 from datetime import datetime, timedelta
 from ..database import get_db
 from .. import models, security as S, permissions as P
@@ -89,10 +89,33 @@ def reactivate_product(sku: str, db: Session = Depends(get_db), user: models.Use
     return {"ok": True, "status": "active"}
 
 def _write_movement(db, user, sku, branch, mtype, change, notes="", unit_cost=None):
+    change = int(change)
     st = db.query(models.Stock).filter_by(sku=sku, branch=branch).first()
     if not st:
-        st = models.Stock(sku=sku, branch=branch, qty=0); db.add(st); db.flush()
-    before = int(st.qty or 0); after = max(0, before + int(change)); st.qty = after
+        st = models.Stock(sku=sku, branch=branch, qty=0)
+        db.add(st)
+        db.flush()
+    # Race-safe, atomic stock mutation. Reading qty into Python and writing it
+    # back lost concurrent updates (two simultaneous decrements both read the
+    # same "before" and one overwrote the other), leaving the stock table and
+    # the movement ledger disagreeing. The arithmetic and the non-negative
+    # guard are both evaluated by the database in a single statement.
+    res = db.execute(
+        sa_update(models.Stock)
+        .where(models.Stock.sku == sku,
+               models.Stock.branch == branch,
+               models.Stock.qty + change >= 0)
+        .values(qty=models.Stock.qty + change)
+    )
+    if res.rowcount == 0:
+        db.rollback()
+        cur = db.query(models.Stock).filter_by(sku=sku, branch=branch).first()
+        have = int(cur.qty or 0) if cur else 0
+        raise HTTPException(422, f"Insufficient stock: {branch} holds {have} × {sku}, "
+                                 f"cannot remove {abs(change)}.")
+    db.refresh(st)
+    after = int(st.qty or 0)
+    before = after - change   # derived, so qty_before + qty_change == qty_after always holds
     p = db.get(models.Product, sku)
     uc = unit_cost if unit_cost is not None else (p.cost if p else 0)
     db.add(models.Movement(ref=f"MV-{int(datetime.utcnow().timestamp())}", sku=sku, branch=branch,

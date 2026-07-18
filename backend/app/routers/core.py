@@ -34,12 +34,25 @@ def _sum(db, brs, typ, d0, d1, col="amount"):
         models.Ledger.entry_date >= d0, models.Ledger.entry_date <= d1).scalar() or 0)
 
 
+def _purchases_sum(db, brs, d0, d1):
+    """Cost of goods = purchases, which live in the purchases table (not the
+    ledger). Reading the ledger for type='purchase' always returned 0, which
+    silently understated costs and overstated profit."""
+    return float(db.query(func.coalesce(func.sum(models.Purchase.amount), 0)).filter(
+        models.Purchase.branch.in_(brs),
+        models.Purchase.status != "rejected",
+        models.Purchase.purchase_date >= d0,
+        models.Purchase.purchase_date <= d1).scalar() or 0)
+
+
 def _costs_profit(db, brs, d0, d1):
     """Costs = COGS (purchases) + operating expenses + payroll.
-    Profit = revenue - sales tax - costs."""
+    Profit = revenue - sales tax - costs.
+    This is the single canonical definition used by the dashboard, the KPI bar,
+    analytics, comparisons and the daily report so they can never disagree."""
     revenue = _sum(db, brs, "sale", d0, d1)
     tax = _sum(db, brs, "sale", d0, d1, "tax")
-    cogs = _sum(db, brs, "purchase", d0, d1)
+    cogs = _purchases_sum(db, brs, d0, d1) + _sum(db, brs, "purchase", d0, d1)
     opex = _sum(db, brs, "expense", d0, d1)
     payroll = _sum(db, brs, "payroll", d0, d1)
     costs = cogs + opex + payroll
@@ -58,8 +71,10 @@ def dashboard(branch: str = "all", db: Session = Depends(get_db), user: models.U
         return float(db.query(func.coalesce(func.sum(models.Ledger.amount), 0)).filter(
             models.Ledger.type == t, models.Ledger.branch.in_(brs), models.Ledger.entry_date == today).scalar() or 0)
     sales, exp = s("sale"), s("expense")
-    tax = float(db.query(func.coalesce(func.sum(models.Ledger.tax), 0)).filter(
-        models.Ledger.type == "sale", models.Ledger.branch.in_(brs), models.Ledger.entry_date == today).scalar() or 0)
+    # Canonical figures for today (same definition as /reports/kpi) so the
+    # dashboard, the KPI bar and the daily report can never disagree.
+    cp = _costs_profit(db, brs, today, today)
+    tax = cp["tax"]
     inv = db.query(func.coalesce(func.sum(models.Stock.qty), 0),
                    func.coalesce(func.sum(models.Stock.qty * models.Product.cost), 0),
                    func.coalesce(func.sum(models.Stock.qty * models.Product.price), 0)) \
@@ -80,7 +95,8 @@ def dashboard(branch: str = "all", db: Session = Depends(get_db), user: models.U
     pend_appr = db.query(models.Approval).filter(models.Approval.status == "pending", models.Approval.branch.in_(brs)).count()
     out_data = {
         "branch": "All branches" if branch == "all" else branch,
-        "sales_today": sales, "expenses_today": exp, "profit_today": sales - tax - exp,
+        "sales_today": sales, "expenses_today": exp, "profit_today": cp["profit"],
+        "cogs_today": cp["cogs"], "payroll_today": cp["payroll"], "costs_today": cp["costs"],
         "inventory_units": units, "low": low, "out": out,
         "pending_approvals": pend_appr,
         "pending_purchases": db.query(models.Purchase).filter(models.Purchase.status.like("pending%"), models.Purchase.branch.in_(brs)).count(),

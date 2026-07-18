@@ -22,9 +22,22 @@ def sales(branch: str = "all", db: Session = Depends(get_db), user: models.User 
     q = db.query(models.Ledger).filter(models.Ledger.type == "sale", models.Ledger.branch.in_(brs))
     return [_row(x) for x in q.order_by(models.Ledger.id.desc()).limit(200).all()]
 
+def _check_amount(amount, tax=None):
+    """Money guards: no negative/zero postings, and sales tax can never exceed
+    the gross amount it was collected on."""
+    if amount is None or float(amount) <= 0:
+        raise HTTPException(422, "Amount must be greater than zero.")
+    if tax is not None:
+        if float(tax) < 0:
+            raise HTTPException(422, "Tax cannot be negative.")
+        if float(tax) > float(amount):
+            raise HTTPException(422, "Sales tax cannot exceed the sale amount.")
+
+
 @router.post("/sales", status_code=201)
 def add_sale(body: SaleIn, db: Session = Depends(get_db), user: models.User = Depends(S.require("create"))):
     S.assert_branch(user, db, body.branch)
+    _check_amount(body.amount, body.tax)
     r = models.Ledger(branch=body.branch, type="sale", amount=body.amount, tax=body.tax,
                       account=body.account, product=body.product, employee=body.employee, created_by=user.id)
     db.add(r); db.commit()
@@ -40,6 +53,7 @@ def expenses(branch: str = "all", db: Session = Depends(get_db), user: models.Us
 @router.post("/expenses", status_code=201)
 def add_expense(body: ExpenseIn, db: Session = Depends(get_db), user: models.User = Depends(S.require("create"))):
     S.assert_branch(user, db, body.branch)
+    _check_amount(body.amount)
     # "Other" requires a specific free-text description — never store only "Other".
     desc = (body.custom_description or "").strip()
     if (body.category or "").strip().lower() == "other" and not desc:
@@ -62,6 +76,7 @@ def purchases(branch: str = "all", db: Session = Depends(get_db), user: models.U
 @router.post("/purchases", status_code=201)
 def add_purchase(body: PurchaseIn, db: Session = Depends(get_db), user: models.User = Depends(S.require("create"))):
     S.assert_branch(user, db, body.branch)
+    _check_amount(body.amount)
     pid = f"PO-{int(datetime.utcnow().timestamp())}"
     p = models.Purchase(id=pid, vendor=body.vendor, branch=body.branch, amount=body.amount, status="pending_approval")
     db.add(p)
