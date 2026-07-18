@@ -703,6 +703,24 @@
   .kpi .delta.up{color:var(--ok,#1a7f37)} .kpi .delta.down{color:var(--bad,#c0392b)}
   .kpi .bd{font-size:11.5px;color:var(--muted);margin-top:6px}
   @media(max-width:560px){ .kpiperiod{display:flex;width:100%} .kpiperiod button{flex:1;padding:8px 4px} }
+  /* Financial Control Center (scoped .cc-*) */
+  .cc-hero{display:flex;gap:26px;align-items:center;flex-wrap:wrap}
+  .cc-score{font-size:52px;font-weight:800;line-height:1}
+  .cc-ring{width:104px;height:104px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex:none}
+  .cc-ring b{font-size:23px;font-weight:800}
+  .cc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:12px}
+  .cc-sec{border:1px solid var(--line);border-radius:12px;padding:13px 14px;background:var(--panel)}
+  .cc-sec h4{font-size:13px;margin:0 0 3px;display:flex;align-items:center;gap:7px}
+  .cc-sec .m{font-size:11.5px;color:var(--muted)}
+  .cc-dot{width:9px;height:9px;border-radius:50%;flex:none;display:inline-block}
+  .cc-chk{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px;align-items:flex-start}
+  .cc-chk:last-child{border-bottom:0}
+  .cc-badge{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:20px;text-transform:uppercase;letter-spacing:.03em;flex:none}
+  .cc-meta{font-size:11.5px;color:var(--muted);margin-top:3px;line-height:1.55}
+  .cc-tot{display:flex;gap:9px;flex-wrap:wrap}
+  .cc-tot div{border:1px solid var(--line);border-radius:10px;padding:8px 14px;font-size:12.5px}
+  .cc-tot b{display:block;font-size:19px;font-weight:800}
+  @media(max-width:700px){ .cc-grid{grid-template-columns:1fr} .cc-score{font-size:40px} }
   /* Professional icon system (replaces every emoji) — one unified monoline family.
      Quote-free <span class=ico-NAME> elements masked by inline SVG, tinted to text color. */
   .ico,[class^=ico-],[class*=" ico-"]{display:inline-block;width:1em;height:1em;vertical-align:-0.14em;background:currentColor;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;-webkit-mask-position:center;mask-position:center;-webkit-mask-size:contain;mask-size:contain;flex:none}
@@ -805,6 +823,8 @@
       <a data-v="workhours"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4M8 14h4"/></svg></span>Work Hours</a>
       <a data-v="licenses"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></span>Licenses</a>
       <a data-v="telegram"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 3L2.5 10.3l6.2 2.4L11.5 20 15 13.7 21 3z"/><path d="M8.7 12.7L21 3"/></svg></span>Telegram</a>
+      <div class="grp">Financial Control Center</div>
+      <a data-v="control"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3.5v5c0 4.6-3.2 8.4-8 9.5-4.8-1.1-8-4.9-8-9.5v-5L12 3z"/><path d="M9 12l2 2 4-4"/></svg></span>Control Center</a>
       <a data-v="settings"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v2.6M12 18.9v2.6M4.6 4.6l1.9 1.9M17.5 17.5l1.9 1.9M2.5 12h2.6M18.9 12h2.6M4.6 19.4l1.9-1.9M17.5 6.5l1.9-1.9"/></svg></span>Settings</a>
     </nav>
     <div class="foot">Accounting-first · AI-driven<br>Not legal or tax advice.</div>
@@ -997,6 +1017,14 @@
       <div class="top"><div><h1>Licenses &amp; Documents</h1><div class="sub">Official documents with expiration tracking &amp; alerts.</div></div>
         <span class="pill" id="licPill">—</span></div>
       <div id="licBody"><div class="card"><div class="sub" style="color:var(--muted)">Sign in to view licenses.</div></div></div>
+    </section>
+
+    <!-- FINANCIAL CONTROL CENTER (isolated, read-only auditing module) -->
+    <section class="view" id="v-control">
+      <div class="top"><div><h1>Financial Control Center</h1><div class="sub">Read-only auditing &amp; validation. This module never modifies data.</div></div>
+        <div style="display:flex;gap:8px;align-items:center"><span class="pill" id="ccPill">Not run</span>
+          <button class="btn p" id="ccRun" style="padding:9px 18px">Run Full ERP Validation</button></div></div>
+      <div id="ccBody"><div class="card"><div class="sub" style="color:var(--muted)">Sign in as an owner, admin or accountant to run validation.</div></div></div>
     </section>
 
     <!-- SETTINGS -->
@@ -4024,7 +4052,7 @@ const MTABS=[
   ['sales',_mi('<circle cx="12" cy="12" r="9"/><path d="M12 7v10"/><path d="M14.5 9.3c0-1.1-1.1-1.9-2.6-1.9s-2.5.8-2.5 1.9c0 2.6 5.1 1.4 5.1 4 0 1.1-1.1 1.9-2.6 1.9s-2.6-.8-2.6-1.9"/>'), 'Sales'],
   ['reports',_mi('<path d="M3 21h18"/><rect x="5" y="11" width="3.2" height="7" rx="1"/><rect x="10.4" y="6" width="3.2" height="12" rx="1"/><rect x="15.8" y="9" width="3.2" height="9" rx="1"/>'), 'Reports'],
   ['__more',_mi('<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>'), 'More']];
-const MTITLES={dash:'Dashboard',ai:'Business Assistant',sales:'Daily Sales',expenses:'Expenses',purchases:'Purchases',tax:'Sales Tax',payroll:'Payroll',reports:'Report Center',inventory:'Inventory',attendance:'Attendance',workhours:'Work Hours',licenses:'Licenses & Documents',telegram:'Telegram',settings:'Settings'};
+const MTITLES={dash:'Dashboard',ai:'Business Assistant',sales:'Daily Sales',expenses:'Expenses',purchases:'Purchases',tax:'Sales Tax',payroll:'Payroll',reports:'Report Center',inventory:'Inventory',attendance:'Attendance',workhours:'Work Hours',licenses:'Licenses & Documents',telegram:'Telegram',control:'Financial Control Center',settings:'Settings'};
 function mDrawer(open){document.body.classList.toggle('drawer-open',open);}
 function mSync(v){
   const t=document.getElementById('mTitle');if(t)t.textContent=MTITLES[v]||'SmokeStack';
@@ -4868,7 +4896,11 @@ try{ empMigrate(); payRestore(); invDateRestore();
     licenseAlerts:function(){return call('/api/licenses/alerts');},
     licenseCreate:function(b){return call('/api/licenses',{method:'POST',body:b});},
     licenseUpdate:function(id,b){return call('/api/licenses/'+id,{method:'PUT',body:b});},
-    licenseDelete:function(id){return call('/api/licenses/'+id,{method:'DELETE'});}
+    licenseDelete:function(id){return call('/api/licenses/'+id,{method:'DELETE'});},
+    ccValidate:function(){return call('/api/control/validate');},
+    ccRunAndStore:function(){return call('/api/control/validate',{method:'POST'});},
+    ccHistory:function(q){return call('/api/control/history'+(q?('?'+q):''));},
+    ccHistoryDetail:function(id){return call('/api/control/history/'+id);}
   };
   window.SS_API_LIVE=API;
   function apiErr(e){ if(e&&e.status===403)return 'Not permitted (server rejected this action).'; if(e&&e.status===422)return 'Invalid data: '+(e.data&&e.data.detail?JSON.stringify(e.data.detail):e.message); return (e&&e.message)||'Request failed'; }
@@ -5539,6 +5571,205 @@ try{ empMigrate(); payRestore(); invDateRestore();
   var _boot=window.apiRehydrate;
   if(typeof _boot==='function'){ window.apiRehydrate=async function(){ var r=await _boot.apply(this,arguments); try{renderLicMini();renderDashAnalytics();}catch(e){} return r; }; }
   document.addEventListener('DOMContentLoaded',function(){ setTimeout(function(){ try{ if(window.API_MODE){renderLicMini();renderDashAnalytics();} }catch(e){} },1200); });
+})();
+
+/* ==========================================================================
+   FINANCIAL CONTROL CENTER — isolated, read-only auditing module.
+   Additive only: it renders into its own #v-control section, calls only the
+   /api/control/* endpoints, and touches no other page, state or workflow.
+   ========================================================================== */
+(function(){
+  var API=window.SS_API_LIVE;
+  function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+  var SEV={pass:['PASS','var(--ok,#1a7f37)'],warning:['WARN','var(--warn,#b26a00)'],
+           error:['ERROR','var(--bad,#c0392b)'],critical:['CRITICAL','var(--bad,#c0392b)']};
+  var CC={report:null,history:[],f:{days:90,severity:'all',module:'all'}};
+  // the ten sections required of the module, mapped to the auditor's modules
+  var SECTIONS=[['ERP Health Score','_score'],['Accounting Integrity','Accounting'],
+    ['Database Integrity','Database'],['Inventory Integrity','Inventory'],
+    ['Security Status','Security'],['Performance','Performance'],
+    ['Reports Consistency','Reports'],['Dashboard Consistency','Dashboard'],
+    ['Financial Validation','_financial'],['Audit History','_history']];
+
+  function ringColor(score){ return score>=95?'var(--ok,#1a7f37)':score>=80?'var(--warn,#b26a00)':'var(--bad,#c0392b)'; }
+  function sevOf(list){ var w='pass';
+    list.forEach(function(c){ var r={pass:0,warning:1,error:2,critical:3};
+      if(r[c.status]>r[w]) w=c.status; }); return w; }
+
+  function secCard(title,checks){
+    var w=sevOf(checks), col=SEV[w]?SEV[w][1]:'var(--muted)';
+    var bad=checks.filter(function(c){return c.status!=='pass';}).length;
+    return '<div class="cc-sec"><h4><span class="cc-dot" style="background:'+col+'"></span>'+esc(title)+'</h4>'
+      +'<div class="m">'+(checks.length-bad)+' of '+checks.length+' checks passing'
+      +(bad?' · <span style="color:'+col+'">'+bad+' to review</span>':' · all clear')+'</div></div>';
+  }
+
+  function checkRow(c){
+    var s=SEV[c.status]||SEV.error;
+    var bg=c.status==='pass'?'var(--ok-bg,#e8f6ee)':c.status==='warning'?'var(--warn-bg,#fdf3e2)':'var(--bad-bg,#fdecea)';
+    var h='<div class="cc-chk"><span class="cc-badge" style="background:'+bg+';color:'+s[1]+'">'+s[0]+'</span>'
+      +'<div style="min-width:0"><b>'+esc(c.check)+'</b>'
+      +(c.detail?'<div class="cc-meta">'+esc(c.detail)+'</div>':'');
+    if(c.status!=='pass'){
+      if(c.cause) h+='<div class="cc-meta"><b>Possible cause:</b> '+esc(c.cause)+'</div>';
+      if(c.fix)   h+='<div class="cc-meta"><b>Suggested fix:</b> '+esc(c.fix)+'</div>';
+    }
+    return h+'</div></div>';
+  }
+
+  function renderReport(rep){
+    var t=rep.totals, col=ringColor(rep.score);
+    var h='<div class="card"><div class="cc-hero">'
+      +'<div class="cc-ring" style="border:6px solid '+col+'"><b style="color:'+col+'">'+rep.score+'%</b></div>'
+      +'<div><div class="cc-score" style="color:'+col+'">'+esc(rep.label)+'</div>'
+      +'<div class="sub" style="color:var(--muted);margin-top:4px">ERP Health Score · '+t.checks+' checks in '+rep.duration_ms+'ms · '
+      +new Date(rep.generated_at).toLocaleString()+'</div></div>'
+      +'<div class="cc-tot" style="margin-left:auto">'
+      +'<div style="color:var(--ok,#1a7f37)">Passed<b>'+t.passed+'</b></div>'
+      +'<div style="color:var(--warn,#b26a00)">Warnings<b>'+t.warnings+'</b></div>'
+      +'<div style="color:var(--bad,#c0392b)">Errors<b>'+t.errors+'</b></div>'
+      +'<div style="color:var(--bad,#c0392b)">Critical<b>'+t.critical+'</b></div></div>'
+      +'</div><div class="cc-meta" style="margin-top:10px">Read-only validation — no record was created, updated or deleted.</div></div>';
+
+    // section summary grid
+    var by={}; (rep.sections||[]).forEach(function(s){ by[s.module]=s.checks; });
+    h+='<div class="card" style="margin-top:13px"><h3 style="margin:0 0 10px">Validation sections</h3><div class="cc-grid">';
+    SECTIONS.forEach(function(sec){
+      if(sec[1]==='_score'){ h+=secCard('ERP Health Score',[{status:rep.totals.critical?'critical':'pass'}]); return; }
+      if(sec[1]==='_financial'){ var all=[]; ['Accounting','Reports','Dashboard'].forEach(function(m){ all=all.concat(by[m]||[]); });
+        h+=secCard('Financial Validation',all); return; }
+      if(sec[1]==='_history'){ h+='<div class="cc-sec"><h4><span class="cc-dot" style="background:var(--brand,#6c5ce7)"></span>Audit History</h4>'
+        +'<div class="m">'+CC.history.length+' stored report'+(CC.history.length===1?'':'s')+'</div></div>'; return; }
+      h+=secCard(sec[0],by[sec[1]]||[]);
+    });
+    h+='</div></div>';
+
+    // performance detail
+    var perf=rep.performance||{};
+    if(perf.timings&&perf.timings.length){
+      var slow=perf.timings.slice().sort(function(a,b){return b.ms-a.ms;})[0];
+      var avg=(perf.timings.reduce(function(a,t){return a+t.ms;},0)/perf.timings.length).toFixed(1);
+      h+='<div class="card" style="margin-top:13px"><h3 style="margin:0 0 8px">Performance</h3>'
+        +'<div class="cc-meta">Average probe <b>'+avg+'ms</b> · slowest <b>'+esc(slow.endpoint)+'</b> at <b>'+slow.ms+'ms</b></div>'
+        +'<div style="overflow-x:auto;margin-top:8px"><table style="width:100%"><thead><tr><th>Probe</th><th style="text-align:end">Time</th></tr></thead><tbody>'
+        +perf.timings.map(function(t){return '<tr><td>'+esc(t.endpoint)+'</td><td style="text-align:end">'+t.ms+' ms</td></tr>';}).join('')
+        +'</tbody></table></div>';
+      if(perf.tables&&perf.tables.length){
+        h+='<h3 style="margin:14px 0 8px">Largest tables</h3><div style="overflow-x:auto"><table style="width:100%"><thead><tr><th>Table</th><th style="text-align:end">Rows</th></tr></thead><tbody>'
+          +perf.tables.map(function(t){return '<tr><td>'+esc(t.table)+'</td><td style="text-align:end">'+t.rows.toLocaleString()+'</td></tr>';}).join('')
+          +'</tbody></table></div>';
+      }
+      h+='</div>';
+    }
+
+    // full findings, issues first
+    h+='<div class="card" style="margin-top:13px"><h3 style="margin:0 0 4px">Validation report</h3>'
+      +'<div class="cc-meta" style="margin-bottom:8px">Every finding lists its module, description, severity, possible cause and suggested fix.</div>';
+    (rep.sections||[]).forEach(function(s){
+      var issues=s.checks.filter(function(c){return c.status!=='pass';});
+      var okc=s.checks.filter(function(c){return c.status==='pass';});
+      h+='<div style="margin-top:12px"><h4 style="margin:0 0 4px;font-size:13.5px">'+esc(s.module)
+        +' <span style="color:var(--muted);font-weight:500;font-size:11.5px">('+okc.length+'/'+s.checks.length+' passing)</span></h4>'
+        +issues.map(checkRow).join('')+okc.map(checkRow).join('')+'</div>';
+    });
+    h+='</div>';
+    return h;
+  }
+
+  function renderHistory(){
+    var h='<div class="card" style="margin-top:13px"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">'
+      +'<h3 style="margin:0">Audit history</h3><div style="display:flex;gap:6px;flex-wrap:wrap">'
+      +'<select id="ccDays" style="max-width:140px">'+[[7,'Last 7 days'],[30,'Last 30 days'],[90,'Last 90 days'],[365,'Last year']].map(function(o){return '<option value="'+o[0]+'"'+(CC.f.days==o[0]?' selected':'')+'>'+o[1]+'</option>';}).join('')+'</select>'
+      +'<select id="ccSev" style="max-width:140px">'+[['all','All severities'],['ok','Healthy'],['warning','Warning'],['error','Error'],['critical','Critical']].map(function(o){return '<option value="'+o[0]+'"'+(CC.f.severity===o[0]?' selected':'')+'>'+o[1]+'</option>';}).join('')+'</select>'
+      +'<select id="ccMod" style="max-width:160px">'+[['all','All modules'],['Accounting','Accounting'],['Database','Database'],['Inventory','Inventory'],['Security','Security'],['Performance','Performance'],['Reports','Reports']].map(function(o){return '<option value="'+o[0]+'"'+(CC.f.module===o[0]?' selected':'')+'>'+o[1]+'</option>';}).join('')+'</select>'
+      +'</div></div>';
+    if(!CC.history.length){ h+='<div class="sub" style="color:var(--muted)">No stored reports for this filter. Run a full validation to create one.</div>'; }
+    else{
+      h+='<div style="overflow-x:auto"><table style="width:100%;min-width:680px"><thead><tr><th>When</th><th>By</th><th style="text-align:end">Score</th><th style="text-align:end">Passed</th><th style="text-align:end">Warn</th><th style="text-align:end">Errors</th><th style="text-align:end">Critical</th><th>Modules</th><th></th></tr></thead><tbody>';
+      CC.history.forEach(function(r){
+        var col=ringColor(r.score);
+        h+='<tr><td>'+new Date(r.ts).toLocaleString()+'</td><td>'+esc(r.user||'—')+'</td>'
+          +'<td style="text-align:end;color:'+col+'"><b>'+r.score+'%</b></td>'
+          +'<td style="text-align:end">'+r.passed+'</td><td style="text-align:end">'+r.warnings+'</td>'
+          +'<td style="text-align:end">'+r.errors+'</td><td style="text-align:end">'+r.critical+'</td>'
+          +'<td style="font-size:11.5px;color:var(--muted)">'+esc((r.modules||[]).join(', ')||'—')+'</td>'
+          +'<td style="text-align:right"><button class="btn g" data-cc-view="'+r.id+'" style="padding:3px 9px;font-size:11px">View</button></td></tr>';
+      });
+      h+='</tbody></table></div>';
+    }
+    return h+'</div>';
+  }
+
+  function wire(){
+    var host=document.getElementById('ccBody'); if(!host) return;
+    ['ccDays','ccSev','ccMod'].forEach(function(id){
+      var el=document.getElementById(id); if(!el) return;
+      el.onchange=function(){
+        CC.f.days=+(document.getElementById('ccDays')||{value:90}).value;
+        CC.f.severity=(document.getElementById('ccSev')||{value:'all'}).value;
+        CC.f.module=(document.getElementById('ccMod')||{value:'all'}).value;
+        loadHistory(true);
+      };
+    });
+    host.querySelectorAll('[data-cc-view]').forEach(function(b){
+      b.onclick=async function(){
+        try{ var rep=await API.ccHistoryDetail(+b.getAttribute('data-cc-view'));
+          CC.report=rep; paint(); if(typeof toast==='function')toast('Loaded stored report');
+        }catch(e){ if(typeof toast==='function')toast('Could not load that report'); }
+      };
+    });
+  }
+
+  function paint(){
+    var host=document.getElementById('ccBody'); if(!host) return;
+    host.innerHTML=(CC.report?renderReport(CC.report):
+      '<div class="card"><h3 style="margin:0 0 6px">Financial Control Center</h3>'
+      +'<div class="sub" style="color:var(--muted);line-height:1.7">This is an isolated, read-only auditing module. It validates accounting integrity, '
+      +'database integrity, inventory integrity, security posture, performance and report consistency against the live database — '
+      +'without creating, updating or deleting a single business record.<br><br>Press <b>Run Full ERP Validation</b> to generate a report.</div></div>')
+      +renderHistory();
+    wire();
+    var pill=document.getElementById('ccPill');
+    if(pill&&CC.report){ pill.textContent=CC.report.score+'% · '+CC.report.label; }
+  }
+
+  async function loadHistory(repaint){
+    if(!window.API_MODE||!API||!API.ccHistory) return;
+    try{ CC.history=await API.ccHistory('days='+CC.f.days+'&severity='+encodeURIComponent(CC.f.severity)+'&module='+encodeURIComponent(CC.f.module)); }
+    catch(e){ CC.history=[]; }
+    if(repaint) paint();
+  }
+
+  async function runValidation(){
+    var btn=document.getElementById('ccRun'), host=document.getElementById('ccBody');
+    if(!window.API_MODE||!API||!API.ccRunAndStore){
+      if(host) host.innerHTML='<div class="card"><div class="sub" style="color:var(--muted)">Validation requires a connection to the backend.</div></div>';
+      return;
+    }
+    if(btn){ btn.disabled=true; btn.textContent='Running validation…'; }
+    if(host) host.innerHTML='<div class="card"><div class="sub" style="color:var(--muted)">Running read-only validation across accounting, database, inventory, security, performance and reports…</div></div>';
+    try{
+      CC.report=await API.ccRunAndStore();
+      await loadHistory(false);
+      paint();
+      if(typeof toast==='function')toast('Validation complete — health score '+CC.report.score+'%');
+    }catch(e){
+      var msg=(e&&e.status===403)?'Your role cannot run ERP validation (owner, admin or accountant only).':((e&&e.message)||'Validation failed');
+      if(host) host.innerHTML='<div class="card"><div class="sub" style="color:var(--muted)">'+esc(msg)+'</div></div>'+renderHistory();
+      wire();
+    } finally { if(btn){ btn.disabled=false; btn.textContent='Run Full ERP Validation'; } }
+  }
+
+  function open(){ loadHistory(true); }
+
+  document.addEventListener('click',function(e){
+    var b=e.target.closest&&e.target.closest('#ccRun'); if(b){ runValidation(); }
+  });
+  var _go=window.go;
+  window.go=function(v,opts){ var r=_go.apply(this,arguments);
+    try{ if(v==='control') open(); }catch(err){}
+    return r; };
+  window.__ccRun=runValidation;   // exposed for automated regression tests
 })();
 
 /* ==========================================================================
