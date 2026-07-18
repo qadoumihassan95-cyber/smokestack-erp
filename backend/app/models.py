@@ -183,3 +183,21 @@ class LinkCode(Base):
     __tablename__ = "link_codes"
     code = Column(String, primary_key=True); user_id = Column(String)
     expires_at = Column(DateTime(timezone=True)); used = Column(Boolean, default=False)
+
+
+class ValidationRun(Base):
+    """Financial Control Center audit history. This is the ONLY table the
+    control module writes to — every validation check itself is read-only."""
+    __tablename__ = "validation_runs"
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    ts = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    user_id = Column(String)
+    score = Column(Numeric(5, 2))
+    passed = Column(Integer, default=0)
+    warnings = Column(Integer, default=0)
+    errors = Column(Integer, default=0)
+    critical = Column(Integer, default=0)
+    duration_ms = Column(Integer)
+    modules = Column(String)     # comma-separated modules that reported an issue
+    severity = Column(String)    # worst severity in the run: ok|warning|error|critical
+    report = Column(Text)        # full JSON report
