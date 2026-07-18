@@ -4882,6 +4882,13 @@ try{ empMigrate(); payRestore(); invDateRestore();
     tgLinkCode:function(){return call('/api/telegram/link-code',{method:'POST'});},
     tgStatus:function(){return call('/api/telegram/status');},
     tgUnlink:function(){return call('/api/telegram/unlink',{method:'POST'});},
+    // --- Telegram Management Center (multi-account administration) ---
+    tgAccounts:function(q){return call('/api/telegram/accounts'+(q?('?'+q):''));},
+    tgStats:function(){return call('/api/telegram/stats');},
+    tgDisable:function(id){return call('/api/telegram/accounts/'+encodeURIComponent(id)+'/disable',{method:'POST'});},
+    tgEnable:function(id){return call('/api/telegram/accounts/'+encodeURIComponent(id)+'/enable',{method:'POST'});},
+    tgRemove:function(id){return call('/api/telegram/accounts/'+encodeURIComponent(id),{method:'DELETE'});},
+    tgActivity:function(id){return call('/api/telegram/accounts/'+encodeURIComponent(id)+'/activity');},
     attList:function(q){return call('/api/attendance'+(q?('?'+q):''));},
     attPending:function(){return call('/api/attendance/pending');},
     attApprove:function(id){return call('/api/attendance/'+id+'/approve',{method:'POST'});},
@@ -5903,6 +5910,259 @@ try{ empMigrate(); payRestore(); invDateRestore();
     var o=window[fn]; if(typeof o==='function'){ window[fn]=function(){ var r=o.apply(this,arguments); try{sweep(document.body);}catch(e){} return r; }; }
   });
 })();
+
+/* ==========================================================================
+   TELEGRAM MANAGEMENT CENTER — enterprise multi-account administration.
+   ADDITIVE: the existing personal "Telegram Account Linking" card, all bot
+   commands and every other page are untouched. This block only appends a
+   management panel for users who may administer accounts; everyone else
+   never sees it (the API answers 403 and we hide the card).
+   ========================================================================== */
+(function(){
+  var MC = { rows:[], all:[], activity:{}, stats:null, poll:null, allowed:null, busy:false, viewing:null };
+  var A = function(){ return window.SS_API_LIVE; };
+
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+  function fmt(iso){ if(!iso) return '—';
+    try{ return new Date(iso).toLocaleString(undefined,{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}); }
+    catch(e){ return '—'; } }
+  function ago(iso){ if(!iso) return 'never';
+    var ms=Date.now()-new Date(iso).getTime(); if(isNaN(ms)) return '—';
+    var m=Math.floor(ms/60000); if(m<1) return 'just now';
+    if(m<60) return m+' min ago'; var h=Math.floor(m/60);
+    if(h<24) return h+' hr ago'; return Math.floor(h/24)+' d ago'; }
+  function roleLabel(r){ return String(r||'—').replace(/_/g,' ').replace(/\b\w/g,function(c){return c.toUpperCase();}); }
+  function sec(){ return document.getElementById('v-telegram'); }
+  function say(m){ if(typeof toast==='function') toast(m); }
+  function err(e){ try{ return (typeof apiErr==='function')?apiErr(e):(e&&e.message)||'Request failed'; }
+                   catch(x){ return 'Request failed'; } }
+
+  /* ---- panel skeleton, appended below the personal linking card ---- */
+  function ensure(){
+    var s=sec(); if(!s || document.getElementById('tgMcCard')) return !!s;
+    var card=document.createElement('div');
+    card.className='card'; card.id='tgMcCard'; card.style.marginBottom='16px';
+    card.innerHTML =
+      '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">'
+      +'<div><h3 style="margin:0">Telegram Management Center</h3>'
+      +'<div class="sub" style="color:var(--muted)">Every Telegram account linked to this company. '
+      +'Linking a new account never disconnects an existing one.</div></div>'
+      +'<div style="display:flex;gap:8px"><button class="btn g" id="tgMcRefresh">Refresh</button>'
+      +'<button class="btn p" id="tgMcLinkNew">Link New Telegram Account</button></div></div>'
+      +'<div id="tgMcStats" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px"></div>'
+      +'<div id="tgMcFilters" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:14px">'
+        +'<input id="tgMcQ" placeholder="Search employee, username, Telegram ID…" '
+        +'style="flex:1;min-width:220px;padding:8px 10px;border:1px solid var(--line,#e2e6ea);border-radius:8px;font-size:13px">'
+        +'<select id="tgMcBranch" style="padding:8px 10px;border:1px solid var(--line,#e2e6ea);border-radius:8px;font-size:13px"></select>'
+        +'<select id="tgMcRole" style="padding:8px 10px;border:1px solid var(--line,#e2e6ea);border-radius:8px;font-size:13px"></select>'
+        +'<select id="tgMcEmp" style="padding:8px 10px;border:1px solid var(--line,#e2e6ea);border-radius:8px;font-size:13px"></select>'
+        +'<select id="tgMcStatus" style="padding:8px 10px;border:1px solid var(--line,#e2e6ea);border-radius:8px;font-size:13px">'
+          +'<option value="all">All statuses</option><option value="active">Active</option>'
+          +'<option value="disabled">Disabled</option></select></div>'
+      +'<div id="tgMcBody" style="margin-top:14px"></div>';
+    var anchor=document.getElementById('tgLinkCard');
+    if(anchor && anchor.parentNode) anchor.parentNode.insertBefore(card, anchor.nextSibling);
+    else { var top=s.querySelector('.top');
+           if(top && top.nextSibling) s.insertBefore(card, top.nextSibling); else s.appendChild(card); }
+
+    document.getElementById('tgMcRefresh').onclick=function(){ load(); };
+    document.getElementById('tgMcLinkNew').onclick=linkNew;
+    var q=document.getElementById('tgMcQ'), t=null;
+    q.oninput=function(){ clearTimeout(t); t=setTimeout(load,250); };
+    ['tgMcBranch','tgMcRole','tgMcEmp','tgMcStatus'].forEach(function(id){
+      document.getElementById(id).onchange=function(){ load(); };
+    });
+    return true;
+  }
+
+  function linkNew(){
+    // reuse the existing, unchanged link-code flow
+    var gen=document.getElementById('tgGenBtn')||document.getElementById('tgRegenBtn');
+    if(gen){ gen.click(); var c=document.getElementById('tgLinkCard'); if(c&&c.scrollIntoView) c.scrollIntoView({behavior:'smooth',block:'start'}); }
+    else if(typeof window.apiIssueTelegramCode==='function') window.apiIssueTelegramCode();
+    else say('Open the linking card above to generate a code.');
+  }
+
+  function query(){
+    var v=function(id){ var e=document.getElementById(id); return e?e.value:''; };
+    var p=[];
+    if(v('tgMcQ')) p.push('q='+encodeURIComponent(v('tgMcQ')));
+    if(v('tgMcBranch')&&v('tgMcBranch')!=='all') p.push('branch='+encodeURIComponent(v('tgMcBranch')));
+    if(v('tgMcRole')&&v('tgMcRole')!=='all') p.push('role='+encodeURIComponent(v('tgMcRole')));
+    if(v('tgMcEmp')&&v('tgMcEmp')!=='all') p.push('employee='+encodeURIComponent(v('tgMcEmp')));
+    if(v('tgMcStatus')&&v('tgMcStatus')!=='all') p.push('status='+encodeURIComponent(v('tgMcStatus')));
+    return p.join('&');
+  }
+
+  function fillFilters(){
+    // options come from the unfiltered account list so a filter never hides itself
+    var br=document.getElementById('tgMcBranch'), rl=document.getElementById('tgMcRole'),
+        em=document.getElementById('tgMcEmp'); if(!br) return;
+    var branches=[], roles=[], emps=[];
+    MC.all.forEach(function(r){
+      (r.branches||[]).forEach(function(b){ if(branches.indexOf(b)<0) branches.push(b); });
+      if(r.role && roles.indexOf(r.role)<0) roles.push(r.role);
+      if(r.employee && emps.indexOf(r.employee)<0) emps.push(r.employee);
+    });
+    var keep=function(el,label,vals,fmtv){
+      var cur=el.value;
+      el.innerHTML='<option value="all">'+label+'</option>'
+        +vals.sort().map(function(v){ return '<option value="'+esc(v)+'">'+esc(fmtv?fmtv(v):v)+'</option>'; }).join('');
+      if(cur && [].some.call(el.options,function(o){return o.value===cur;})) el.value=cur;
+    };
+    keep(br,'All branches',branches); keep(rl,'All roles',roles,roleLabel); keep(em,'All employees',emps);
+  }
+
+  function statChip(label,value,tone){
+    var c={ok:'var(--good,#1a7f37)',bad:'var(--bad,#c0392b)',mute:'var(--muted)'}[tone||'mute'];
+    return '<div style="flex:1;min-width:150px;border:1px solid var(--line,#e2e6ea);border-radius:10px;padding:10px 12px">'
+      +'<div style="font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">'+esc(label)+'</div>'
+      +'<div style="font-size:18px;font-weight:700;margin-top:3px;color:'+c+'">'+esc(value)+'</div></div>';
+  }
+
+  function renderStats(){
+    var el=document.getElementById('tgMcStats'); if(!el) return;
+    var s=MC.stats||{total:0,active:0,disabled:0};
+    el.innerHTML = statChip('Total linked accounts', s.total==null?'—':s.total)
+      + statChip('Active', s.active==null?'—':s.active, 'ok')
+      + statChip('Disabled', s.disabled==null?'—':s.disabled, s.disabled?'bad':'mute')
+      + statChip('Last synchronization', ago(s.last_sync))
+      + statChip('Last bot activity', ago(s.last_bot_activity)
+          + (s.last_bot_action?(' · '+s.last_bot_action):''));
+  }
+
+  function badge(status){
+    var on = status!=='disabled';
+    return '<span class="pill" style="background:'+(on?'var(--good-bg,#e8f6ee)':'var(--chip,#eef1f4)')
+      +';color:'+(on?'var(--good,#1a7f37)':'var(--muted)')+'">'+(on?'Active':'Disabled')+'</span>';
+  }
+
+  function render(){
+    var b=document.getElementById('tgMcBody'); if(!b) return;
+    if(!MC.rows.length){
+      b.innerHTML='<div style="padding:22px;text-align:center;color:var(--muted);font-size:13px">'
+        +(MC.all && MC.all.length ? 'No accounts match these filters.'
+          : 'No Telegram accounts linked yet. Use <b>Link New Telegram Account</b> to add the first one.')+'</div>';
+      return;
+    }
+    var h='<div style="overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">'
+      +'<thead><tr style="text-align:left;color:var(--muted);font-size:11.5px;text-transform:uppercase;letter-spacing:.4px">'
+      +['Employee','Telegram Username','Telegram ID','Role','Branch','Linked Date','Last Activity','Status','Actions']
+        .map(function(x){ return '<th style="padding:8px 10px;border-bottom:1px solid var(--line,#e2e6ea);white-space:nowrap">'+x+'</th>'; }).join('')
+      +'</tr></thead><tbody>';
+    MC.rows.forEach(function(r){
+      var on=(r.status!=='disabled');
+      h+='<tr data-tg="'+esc(r.tg_id)+'" style="border-bottom:1px solid var(--line,#eef1f4)">'
+        +'<td style="padding:9px 10px;font-weight:600">'+esc(r.employee||'—')+'</td>'
+        +'<td style="padding:9px 10px">'+(r.username?('@'+esc(r.username)):'—')+'</td>'
+        +'<td style="padding:9px 10px;font-family:ui-monospace,Menlo,monospace">'+esc(r.tg_id)+'</td>'
+        +'<td style="padding:9px 10px">'+esc(roleLabel(r.role))+'</td>'
+        +'<td style="padding:9px 10px">'+esc(r.branch||'—')+'</td>'
+        +'<td style="padding:9px 10px;white-space:nowrap">'+esc(fmt(r.linked_at))+'</td>'
+        +'<td style="padding:9px 10px;white-space:nowrap">'+esc(ago(r.last_activity))+'</td>'
+        +'<td style="padding:9px 10px">'+badge(r.status)+'</td>'
+        +'<td style="padding:9px 10px;white-space:nowrap">'
+          +'<button class="btn g tgmc-act" data-a="activity" data-id="'+esc(r.tg_id)+'" style="padding:4px 9px;font-size:12px">View Activity</button> '
+          +'<button class="btn g tgmc-act" data-a="'+(on?'disable':'enable')+'" data-id="'+esc(r.tg_id)+'" style="padding:4px 9px;font-size:12px">'+(on?'Disable':'Enable')+'</button> '
+          +'<button class="btn g tgmc-act" data-a="remove" data-id="'+esc(r.tg_id)+'" style="padding:4px 9px;font-size:12px;color:var(--bad,#c0392b);border-color:var(--bad,#c0392b)">Remove</button>'
+        +'</td></tr>';
+      if(MC.viewing===r.tg_id) h+='<tr><td colspan="9" style="padding:0 10px 12px">'+activityHtml(r)+'</td></tr>';
+    });
+    h+='</tbody></table></div>';
+    b.innerHTML=h;
+    [].forEach.call(b.querySelectorAll('.tgmc-act'),function(btn){
+      btn.onclick=function(){ act(btn.getAttribute('data-a'), btn.getAttribute('data-id')); };
+    });
+  }
+
+  function activityHtml(r){
+    var e=MC.activity&&MC.activity[r.tg_id];
+    if(!e) return '<div style="color:var(--muted);font-size:12.5px;padding:8px">Loading activity…</div>';
+    if(!e.length) return '<div style="color:var(--muted);font-size:12.5px;padding:8px">No commands recorded for this account yet.</div>';
+    var h='<div style="border:1px solid var(--line,#e2e6ea);border-radius:10px;overflow:auto;max-height:280px">'
+      +'<table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr style="text-align:left;color:var(--muted)">'
+      +['Timestamp','Employee','Username','Telegram ID','Branch','Role','Command','Result','IP']
+        .map(function(x){return '<th style="padding:6px 9px;border-bottom:1px solid var(--line,#e2e6ea);white-space:nowrap">'+x+'</th>';}).join('')
+      +'</tr></thead><tbody>';
+    e.forEach(function(a){
+      var okr=(a.result||'ok')==='ok';
+      h+='<tr><td style="padding:5px 9px;white-space:nowrap">'+esc(fmt(a.ts))+'</td>'
+        +'<td style="padding:5px 9px">'+esc(r.employee||'—')+'</td>'
+        +'<td style="padding:5px 9px">'+(a.tg_username?('@'+esc(a.tg_username)):'—')+'</td>'
+        +'<td style="padding:5px 9px;font-family:ui-monospace,Menlo,monospace">'+esc(r.tg_id)+'</td>'
+        +'<td style="padding:5px 9px">'+esc(a.branch||'—')+'</td>'
+        +'<td style="padding:5px 9px">'+esc(roleLabel(a.role))+'</td>'
+        +'<td style="padding:5px 9px">'+esc([a.action,a.entity,a.ref].filter(Boolean).join(' · '))+'</td>'
+        +'<td style="padding:5px 9px;color:'+(okr?'var(--good,#1a7f37)':'var(--bad,#c0392b)')+'">'+(okr?'Success':'Failure')+'</td>'
+        +'<td style="padding:5px 9px">'+esc(a.ip||'—')+'</td></tr>';
+    });
+    return h+'</tbody></table></div>';
+  }
+
+  async function act(a,id){
+    if(MC.busy) return;
+    var row=MC.rows.filter(function(r){return r.tg_id===id;})[0]||{};
+    var who=(row.employee||'this employee')+' (@'+(row.username||id)+')';
+    try{
+      MC.busy=true;
+      if(a==='activity'){
+        if(MC.viewing===id){ MC.viewing=null; render(); return; }
+        MC.viewing=id; render();
+        var r=await A().tgActivity(id);
+        MC.activity=MC.activity||{}; MC.activity[id]=r.entries||[]; render(); return;
+      }
+      if(a==='disable'){
+        if(!window.confirm('Disable Telegram access for '+who+'? Every other linked account keeps working.')) return;
+        await A().tgDisable(id); say('Account disabled');
+      } else if(a==='enable'){
+        await A().tgEnable(id); say('Account enabled');
+      } else if(a==='remove'){
+        if(!window.confirm('Remove '+who+' from Telegram? Only this account is removed; all other accounts stay linked.')) return;
+        await A().tgRemove(id); say('Account removed');
+        if(MC.viewing===id) MC.viewing=null;
+      }
+      await load();
+    }catch(e){ say(err(e)); }
+    finally{ MC.busy=false; }
+  }
+
+  async function load(){
+    if(!ensure()) return;
+    try{
+      var all = await A().tgAccounts('');
+      MC.allowed=true; MC.all=all||[];
+      var q=query();
+      MC.rows = q ? await A().tgAccounts(q) : MC.all;
+      try{ MC.stats = await A().tgStats(); }catch(e){ MC.stats=null; }
+      fillFilters(); renderStats(); render();
+    }catch(e){
+      // 403/401 → this user may not administer accounts; remove the panel entirely
+      MC.allowed=false;
+      var c=document.getElementById('tgMcCard'); if(c&&c.parentNode) c.parentNode.removeChild(c);
+      if(MC.poll){ clearInterval(MC.poll); MC.poll=null; }
+    }
+  }
+
+  function visible(){ var s=sec(); return s && s.offsetParent!==null; }
+  function start(){
+    if(MC.allowed===false) return;
+    load();
+    if(MC.poll) clearInterval(MC.poll);
+    MC.poll=setInterval(function(){ if(window.API_MODE && visible() && !MC.busy && MC.viewing===null) load(); }, 15000);
+  }
+
+  // hook into the existing telegram page start-up without replacing it
+  var prior = window.__tgStartPolling;
+  window.__tgStartPolling = function(){
+    var r = (typeof prior==='function') ? prior.apply(this,arguments) : undefined;
+    try{ start(); }catch(e){}
+    return r;
+  };
+  window.__tgMcLoad = load;              // test/debug hook
+  window.__tgMcState = MC;
+})();
+
 </script>
 </body>
 </html>
