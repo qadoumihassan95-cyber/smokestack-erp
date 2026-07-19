@@ -110,16 +110,28 @@ def kb(rows):
     return InlineKeyboardMarkup([[InlineKeyboardButton(t, callback_data=c) for (t, c) in row] for row in rows])
 
 
-def home_kb():
-    # Operations-first main menu (Phase 2). Reporting lives under "Reports & Insights".
-    return kb([
-        [("💸 Add Expense", "op:exp"), ("📦 Inventory", "nav:inv")],
-        [("📥 Receive Stock", "op:recv"), ("🔄 Transfer Stock", "op:xfer")],
-        [("🧮 Adjust Stock", "op:adj"), ("🛒 Purchases", "op:pur")],
-        [("🔍 Search Product", "inv:search"), ("📸 Scan Barcode", "op:scan")],
-        [("🕒 Attendance", "att:menu"), ("📊 Reports & Insights", "reports_home")],
-        [("⚙️ Settings", "nav:set"), ("🔄 Refresh", "home")],
-    ])
+def home_kb(caps=None):
+    """Main menu, filtered to what this employee may actually do.
+
+    Hiding a button is convenience only — dispatch() still authorises every
+    command server-side, so a stale menu can never be used to bypass RBAC.
+    """
+    rows = [
+        [("\U0001f4b8 Add Expense", "op:exp"), ("\U0001f4e6 Inventory", "nav:inv")],
+        [("\U0001f4e5 Receive Stock", "op:recv"), ("\U0001f504 Transfer Stock", "op:xfer")],
+        [("\U0001f9ee Adjust Stock", "op:adj"), ("\U0001f6d2 Purchases", "op:pur")],
+        [("\U0001f50d Search Product", "inv:search"), ("\U0001f4f8 Scan Barcode", "op:scan")],
+        [("\U0001f552 Attendance", "att:menu"), ("\U0001f4ca Reports & Insights", "reports_home")],
+        [("\u2699\ufe0f Settings", "nav:set"), ("\U0001f504 Refresh", "home")],
+    ]
+    if caps:
+        out = []
+        for row in rows:
+            keep = [b for b in row if (cap_for(b[1]) is None or caps.get(cap_for(b[1])))]
+            if keep:
+                out.append(keep)
+        rows = out or [[("\u2699\ufe0f Settings", "nav:set")]]
+    return kb(rows)
 
 
 def reports_home_kb():
@@ -241,7 +253,8 @@ async def render_home(tg_id):
                     "Settings \u2192 Telegram \u2192 Telegram Management Center.", kb([]), None)
         return ("<b>Welcome to SmokeStack ERP</b>\n\nLink your account to run the shop from chat.",
                 unlinked_kb(), None)
-    return (HOME_TEXT, home_kb(), None)
+    caps = await capabilities_of(tg_id)
+    return (HOME_TEXT, home_kb(caps), None)
 
 
 async def render_sales_menu():
@@ -1541,9 +1554,84 @@ async def on_location(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                                parse_mode=ParseMode.HTML)
 
 
+
+# ------------------------------------------------------------------ RBAC gate
+# Every button and slash command maps to a capability. The BACKEND decides
+# whether the employee may use it — the bot never evaluates permissions itself
+# and never carries a copy of the role map. Longest prefix wins.
+CAP_ROUTES = [
+    ("nav:sales", "daily_sales"), ("sales:", "daily_sales"), ("op:sale", "daily_sales"),
+    ("nav:exp", "expenses"), ("exp:", "expenses"), ("op:exp", "expenses"),
+    ("op:pur", "purchases"), ("pur", "purchases"),
+    ("nav:inv", "inventory"), ("inv:", "inventory"), ("op:recv", "inventory"),
+    ("op:adj", "inventory"), ("op:scan", "inventory"), ("prod:", "inventory"),
+    ("hist:", "inventory"), ("receive", "inventory"), ("adjust", "inventory"),
+    ("op:xfer", "transfer"), ("inv:xfer", "transfer"), ("transfer", "transfer"),
+    ("nav:reports", "reports"), ("rep:", "reports"), ("reports_home", "reports"),
+    ("nav:profit", "reports"), ("profit:", "reports"),
+    ("att:", "attendance"), ("nav:lic", "reports"),
+    ("opf:", "approvals"),
+    ("pdf", "export"), ("csv", "export"),
+    ("nav:branches", "dashboard"), ("br:", "dashboard"),
+]
+# navigation and account screens are always reachable: they expose nothing
+CAP_EXEMPT = ("home", "help", "link", "nav:set", "set:", "nav:ntf", "ntf:", "back", "noop")
+
+
+def cap_for(data: str):
+    d = (data or "").strip()
+    if d.startswith(CAP_EXEMPT):
+        return None
+    best = None
+    for prefix, cap in CAP_ROUTES:
+        if d.startswith(prefix) and (best is None or len(prefix) > len(best[0])):
+            best = (prefix, cap)
+    return best[1] if best else None
+
+
+async def authorize(tg_id, capability, branch=None, command=None):
+    """Ask the backend. Fail CLOSED: if we cannot reach the permission engine we
+    refuse the action rather than assume it is allowed."""
+    if not capability:
+        return True, None
+    status, data = await _req("POST", "/api/telegram/authorize",
+                              headers={"X-Bot-Token": TOKEN},
+                              body={"tg_id": str(tg_id), "capability": capability,
+                                    "branch": branch, "command": command or capability})
+    if status == 200 and isinstance(data, dict):
+        if data.get("allowed"):
+            return True, None
+        return False, data.get("message") or DENIED
+    return False, DENIED
+
+
+DENIED = "\u274c You don't have permission to perform this action."
+
+
+async def capabilities_of(tg_id):
+    """Effective capabilities, cached briefly so menus reflect the owner's
+    toggles without a round trip per button."""
+    s = st(tg_id)
+    now = time.time()
+    if s.get("caps") and s.get("caps_exp", 0) > now:
+        return s["caps"]
+    status, data = await _req("GET", f"/api/telegram/capabilities/{tg_id}",
+                              headers={"X-Bot-Token": TOKEN})
+    caps = (data or {}).get("capabilities") if status == 200 else {}
+    s["caps"] = caps or {}
+    s["caps_exp"] = now + 60
+    return s["caps"]
+
+
 # -------------------------------------------------------------------- callback router
 async def dispatch(tg_id, data):
     """Return (text, keyboard, document-tuple|None). document-tuple = (bytes, filename, caption)."""
+    # ---- permission gate: checked BEFORE the command runs, on every command
+    cap = cap_for(data)
+    if cap:
+        ok, msg = await authorize(tg_id, cap, branch=st(tg_id).get("branch"), command=data)
+        if not ok:
+            return (msg or DENIED, kb(footer()), None)
     if data == "home":
         st(tg_id).pop("flow", None)
         st(tg_id)["stack"] = []
