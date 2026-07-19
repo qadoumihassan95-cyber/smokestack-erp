@@ -5143,11 +5143,17 @@ try{ empMigrate(); payRestore(); invDateRestore();
     cd.textContent='Expires in '+m+':'+(s<10?'0':'')+s;
   }
   async function tgGenerate(){
+    // one linking flow for the whole app: open the persistent panel, which keeps
+    // the code on screen until the account connects or the code expires. The
+    // inline fallback below only runs if the panel is unavailable.
+    if(window.__tgLinkModal && typeof window.__tgLinkModal.open==='function'){
+      window.__tgLinkModal.open(); return;
+    }
     var gb=document.getElementById('tgGenBtn'), rb=document.getElementById('tgRegenBtn');
     if(gb){gb.disabled=true;} if(rb){rb.disabled=true;}
     try{ var r=await SS_API_LIVE.tgLinkCode();
       TG.code=r.code; TG.expiresAt=Date.now()+((r.expires_in||300)*1000);
-      tgShowCode(); toast('Link code generated — send /link '+r.code+' to the bot');
+      tgShowCode();
     }catch(e){ toast(apiErr(e)); }
     finally{ if(gb){gb.disabled=false;} if(rb){rb.disabled=false;} }
   }
@@ -5976,13 +5982,204 @@ try{ empMigrate(); payRestore(); invDateRestore();
     return true;
   }
 
-  function linkNew(){
-    // reuse the existing, unchanged link-code flow
-    var gen=document.getElementById('tgGenBtn')||document.getElementById('tgRegenBtn');
-    if(gen){ gen.click(); var c=document.getElementById('tgLinkCard'); if(c&&c.scrollIntoView) c.scrollIntoView({behavior:'smooth',block:'start'}); }
-    else if(typeof window.apiIssueTelegramCode==='function') window.apiIssueTelegramCode();
-    else say('Open the linking card above to generate a code.');
+  /* ---- persistent linking panel (replaces the disappearing toast) ---------
+     Stays on screen until the operator closes it, the employee links, or the
+     code expires. Nobody has to memorise or re-open a code. */
+  var BOT = 'SmokkestakERP_bot';
+  var LM = { code:null, exp:0, tick:null, poll:null, user:null,
+             baseTg:null, baseAt:null, state:'idle', result:null, busy:false };
+
+  function deepLink(code){ return 'https://t.me/'+BOT+'?start='+encodeURIComponent(code); }
+  function cmdFor(code){ return '/link '+code; }
+
+  function lmEl(){ return document.getElementById('tgLinkModal'); }
+
+  function lmClose(){
+    if(LM.tick){ clearInterval(LM.tick); LM.tick=null; }
+    if(LM.poll){ clearInterval(LM.poll); LM.poll=null; }
+    var el=lmEl(); if(el&&el.parentNode) el.parentNode.removeChild(el);
+    LM.state='idle'; LM.code=null; LM.result=null;
+    document.removeEventListener('keydown', lmKey);
   }
+  function lmKey(e){ if(e.key==='Escape') lmClose(); }
+
+  function lmShell(){
+    var el=lmEl(); if(el) return el;
+    el=document.createElement('div'); el.id='tgLinkModal';
+    el.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(15,23,32,.55);'
+      +'display:flex;align-items:center;justify-content:center;padding:20px';
+    el.innerHTML='<div id="tgLinkPanel" role="dialog" aria-modal="true" aria-label="Link Telegram account" '
+      +'style="background:var(--card,#fff);border-radius:14px;max-width:520px;width:100%;'
+      +'max-height:92vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.28)"></div>';
+    document.body.appendChild(el);
+    document.addEventListener('keydown', lmKey);
+    return el;
+  }
+
+  function lmRender(){
+    var p=lmShell().querySelector('#tgLinkPanel');
+    var emp=(LM.user&&(LM.user.name||LM.user.id))||'—';
+    var head='<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;'
+      +'padding:18px 20px;border-bottom:1px solid var(--line,#e2e6ea)">'
+      +'<div><div style="font-size:16.5px;font-weight:700">Link Telegram Account</div>'
+      +'<div style="font-size:12.5px;color:var(--muted);margin-top:2px">Employee: <b>'+esc(emp)+'</b></div></div>'
+      +'<button class="btn g" id="lmX" style="padding:4px 10px;font-size:12px">Close</button></div>';
+
+    var body='';
+    if(LM.state==='loading'){
+      body='<div style="padding:34px;text-align:center;color:var(--muted);font-size:13.5px">Generating link code…</div>';
+    } else if(LM.state==='error'){
+      body='<div style="padding:26px 20px"><div style="color:var(--bad,#c0392b);font-weight:600;margin-bottom:12px">'
+        +esc(LM.result||'Could not generate a link code.')+'</div>'
+        +'<button class="btn p" id="lmGen">Generate New Code</button></div>';
+    } else if(LM.state==='expired'){
+      body='<div style="padding:26px 20px">'
+        +'<div style="font-weight:700;color:var(--bad,#c0392b);font-size:15px;margin-bottom:6px">Link code expired</div>'
+        +'<div style="font-size:13px;color:var(--muted);margin-bottom:16px">'
+        +'The code is no longer valid. Generate a new one to continue.</div>'
+        +'<button class="btn p" id="lmGen">Generate New Code</button></div>';
+    } else if(LM.state==='linked'){
+      var r=LM.result||{};
+      body='<div style="padding:24px 20px">'
+        +'<div style="display:flex;align-items:center;gap:9px;font-weight:700;font-size:15px;'
+        +'color:var(--good,#1a7f37);margin-bottom:16px"><span class=ico-check></span>'
+        +'Telegram account linked successfully</div>'
+        +'<div style="display:grid;grid-template-columns:auto 1fr;gap:9px 18px;font-size:13.5px">'
+        +'<div style="color:var(--muted)">Employee</div><div style="font-weight:600">'+esc(emp)+'</div>'
+        +'<div style="color:var(--muted)">Telegram username</div><div style="font-weight:600">'
+          +(r.username?('@'+esc(r.username)):'—')+'</div>'
+        +'<div style="color:var(--muted)">Telegram ID</div>'
+        +'<div style="font-weight:600;font-family:ui-monospace,Menlo,monospace">'+esc(r.tg_id||'—')+'</div>'
+        +'<div style="color:var(--muted)">Linked</div><div style="font-weight:600">'+esc(fmt(r.linked_at))+'</div>'
+        +'</div><div style="margin-top:20px"><button class="btn p" id="lmDone">Done</button></div></div>';
+    } else {
+      // active code: command, copy, QR, deep link, countdown, waiting notice
+      body='<div style="padding:22px 20px">'
+        +'<div style="font-size:13px;color:var(--muted);line-height:1.65;margin-bottom:16px">'
+        +'Send this command to <b>@'+BOT+'</b> from the Telegram account you want to link, '
+        +'or scan the code. This panel stays open until the account connects.</div>'
+        +'<div style="border:1px solid var(--line,#e2e6ea);border-radius:12px;padding:16px;text-align:center">'
+          +'<div style="font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Link code</div>'
+          +'<div id="lmCode" style="font-family:ui-monospace,Menlo,monospace;font-size:32px;font-weight:700;'
+          +'letter-spacing:6px;margin:6px 0 10px">'+esc(LM.code||'------')+'</div>'
+          +'<div style="font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Full command</div>'
+          +'<div id="lmCmd" style="font-family:ui-monospace,Menlo,monospace;font-size:16px;font-weight:600;margin-top:4px">'
+          +esc(cmdFor(LM.code||''))+'</div>'
+          +'<div id="lmQr" style="margin-top:14px;display:flex;justify-content:center"></div>'
+        +'</div>'
+        +'<div id="lmCount" style="text-align:center;font-size:12.5px;color:var(--muted);margin-top:12px"></div>'
+        +'<div id="lmWait" style="display:flex;align-items:center;justify-content:center;gap:8px;'
+        +'margin-top:14px;font-size:13px;font-weight:600">'
+          +'<span class="lmspin" style="width:13px;height:13px;border:2px solid var(--line,#dfe4e9);'
+          +'border-top-color:var(--brand,#2f6fed);border-radius:50%;display:inline-block"></span>'
+          +'Waiting for Telegram account to connect…</div>'
+        +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:20px">'
+          +'<button class="btn p" id="lmOpen">Open Telegram</button>'
+          +'<button class="btn g" id="lmCopy">Copy Command</button>'
+          +'<button class="btn g" id="lmRegen">Regenerate</button>'
+        +'</div></div>';
+    }
+    p.innerHTML=head+body;
+    if(!document.getElementById('lmSpinCss')){
+      var s=document.createElement('style'); s.id='lmSpinCss';
+      s.textContent='@keyframes lmspin{to{transform:rotate(360deg)}}.lmspin{animation:lmspin .9s linear infinite}';
+      document.head.appendChild(s);
+    }
+    var on=function(id,fn){ var b=document.getElementById(id); if(b) b.onclick=fn; };
+    on('lmX', lmClose); on('lmDone', lmClose);
+    on('lmGen', lmGenerate); on('lmRegen', lmGenerate);
+    on('lmCopy', function(){ lmCopy(cmdFor(LM.code)); });
+    on('lmOpen', function(){ window.open(deepLink(LM.code),'_blank','noopener'); });
+    if(LM.state==='code'){ lmTick(); lmQr(); }
+  }
+
+  function lmCopy(text){
+    var done=function(){ say('Command copied'); };
+    if(navigator.clipboard && navigator.clipboard.writeText)
+      navigator.clipboard.writeText(text).then(done, function(){ lmCopyFallback(text, done); });
+    else lmCopyFallback(text, done);
+  }
+  function lmCopyFallback(text, done){
+    try{ var t=document.createElement('textarea'); t.value=text; document.body.appendChild(t);
+      t.select(); document.execCommand('copy'); document.body.removeChild(t); done(); }
+    catch(e){ say('Copy failed — the code is shown above.'); }
+  }
+
+  // QR is a nice-to-have: if the library will not load we simply omit it.
+  function lmQr(){
+    var host=document.getElementById('lmQr'); if(!host||!LM.code) return;
+    var draw=function(){
+      try{
+        host.innerHTML='';
+        var c=document.createElement('canvas');
+        new window.QRious({element:c, value:deepLink(LM.code), size:132, level:'M',
+                           background:'#ffffff', foreground:'#111827'});
+        host.appendChild(c);
+        var cap=document.createElement('div');
+        cap.style.cssText='font-size:11px;color:var(--muted);margin-top:6px';
+        cap.textContent='Scan to open the bot';
+        host.appendChild(cap);
+      }catch(e){ host.innerHTML=''; }
+    };
+    if(window.QRious) return draw();
+    if(window.__qrLoading){ window.__qrLoading.then(draw, function(){}); return; }
+    window.__qrLoading=new Promise(function(res,rej){
+      var s=document.createElement('script');
+      s.src='https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js';
+      s.onload=res; s.onerror=rej; document.head.appendChild(s);
+    });
+    window.__qrLoading.then(draw, function(){});
+  }
+
+  function lmTick(){
+    if(LM.tick) clearInterval(LM.tick);
+    var paint=function(){
+      var el=document.getElementById('lmCount');
+      if(!el){ clearInterval(LM.tick); LM.tick=null; return; }
+      var ms=LM.exp-Date.now();
+      if(ms<=0){ clearInterval(LM.tick); LM.tick=null;
+        if(LM.poll){ clearInterval(LM.poll); LM.poll=null; }
+        LM.state='expired'; lmRender(); return; }
+      var s=Math.floor(ms/1000), m=Math.floor(s/60); s=s%60;
+      el.textContent='Code expires in '+m+':'+(s<10?'0':'')+s;
+    };
+    paint(); LM.tick=setInterval(paint,1000);
+  }
+
+  async function lmCheck(){
+    try{
+      var s=await A().tgStatus();
+      if(s && s.connected && (String(s.tg_id)!==String(LM.baseTg) || String(s.linked_at)!==String(LM.baseAt))){
+        if(LM.tick){ clearInterval(LM.tick); LM.tick=null; }
+        if(LM.poll){ clearInterval(LM.poll); LM.poll=null; }
+        LM.state='linked'; LM.result=s; lmRender();
+        load();                                   // refresh the Linked Accounts table
+      }
+    }catch(e){ /* transient — keep waiting */ }
+  }
+
+  async function lmGenerate(){
+    if(LM.busy) return;
+    LM.busy=true; LM.state='loading'; lmRender();
+    try{
+      if(!LM.user){ try{ LM.user=await A().me(); }catch(e){ LM.user=null; } }
+      // remember the current link so we can tell when a NEW one arrives
+      try{ var cur=await A().tgStatus();
+           LM.baseTg=cur&&cur.connected?cur.tg_id:null;
+           LM.baseAt=cur&&cur.connected?cur.linked_at:null; }
+      catch(e){ LM.baseTg=null; LM.baseAt=null; }
+      var r=await A().tgLinkCode();
+      LM.code=r.code; LM.exp=Date.now()+((r.expires_in||300)*1000);
+      LM.state='code'; lmRender();
+      if(LM.poll) clearInterval(LM.poll);
+      LM.poll=setInterval(lmCheck, 3000);         // auto-detect the connection
+    }catch(e){
+      LM.state='error'; LM.result=err(e); lmRender();
+    }finally{ LM.busy=false; }
+  }
+
+  function linkNew(){ lmShell(); lmGenerate(); }
+  window.__tgLinkModal = { open:linkNew, close:lmClose, state:function(){return LM;} };
 
   function query(){
     var v=function(id){ var e=document.getElementById(id); return e?e.value:''; };
