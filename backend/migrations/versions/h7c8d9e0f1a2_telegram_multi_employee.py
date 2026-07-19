@@ -53,7 +53,10 @@ def upgrade():
     ])
 
     # backward compatibility: everything that exists today keeps its behaviour
-    op.execute("UPDATE users SET can_login = 1 WHERE can_login IS NULL")
+    # bind a real boolean: Postgres rejects the integer literal 1 for a boolean
+    # column, even though SQLite silently accepts it.
+    op.execute(sa.text("UPDATE users SET can_login = :v WHERE can_login IS NULL")
+               .bindparams(v=True))
     op.execute("UPDATE employees SET role = 'employee' WHERE role IS NULL")
 
     # map any pre-existing Telegram link to its employee by matching the user's
