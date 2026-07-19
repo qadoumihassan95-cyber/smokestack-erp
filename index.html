@@ -4892,7 +4892,9 @@ try{ empMigrate(); payRestore(); invDateRestore();
     finalizePayroll:function(s,e,b){return call('/api/payroll/finalize?start='+s+'&end='+e+'&branch='+encodeURIComponent(b||'all'),{method:'POST'});},
     transfers:function(){return call('/api/transfers');}, createTransfer:function(b){return call('/api/transfers',{method:'POST',body:b});},
     issueTgCode:function(){return call('/api/telegram/link/issue',{method:'POST'});},
-    tgLinkCode:function(){return call('/api/telegram/link-code',{method:'POST'});},
+    tgLinkCode:function(empId){return call('/api/telegram/link-code',{method:'POST',
+      body:JSON.stringify({employee_id:empId||null})});},
+    tgCodeStatus:function(code){return call('/api/telegram/link-code/'+encodeURIComponent(code)+'/status');},
     tgStatus:function(){return call('/api/telegram/status');},
     tgUnlink:function(){return call('/api/telegram/unlink',{method:'POST'});},
     // --- Telegram Management Center (multi-account administration) ---
@@ -5083,6 +5085,15 @@ try{ empMigrate(); payRestore(); invDateRestore();
   function tgVisible(){ var s=tgSection(); return s && s.offsetParent!==null; }
 
   function tgEnsurePanel(){
+    /* LEGACY REMOVED — the "Telegram Account Linking" card showed only the
+       signed-in user's single account and was the last remnant of the
+       one-account-per-company model. TelegramLink (the Management Center table)
+       is now the only source of truth. This function is intentionally inert;
+       the status poll below still runs so the header pill stays accurate. */
+    return;
+  }
+
+  function tgEnsurePanelLegacy(){
     var sec = tgSection(); if(!sec || document.getElementById('tgLinkCard')) return;
     var card = document.createElement('div');
     card.className='card'; card.id='tgLinkCard'; card.style.marginBottom='16px';
@@ -5100,7 +5111,12 @@ try{ empMigrate(); payRestore(); invDateRestore();
 
   function tgRender(st){
     tgEnsurePanel();
-    var body=document.getElementById('tgBody'); if(!body) return;
+    var body=document.getElementById('tgBody');
+    // header pill only: the account list lives in the Management Center table
+    var hp=document.querySelector('#v-telegram .top .pill');
+    if(hp){ hp.textContent = (st && st.connected)
+      ? ('@'+(st.username||'telegram')+' \u00b7 connected') : '@SmokkestakERP_bot'; }
+    if(!body) return;
     var pill=document.getElementById('tgStatusPill'), line=document.getElementById('tgStatusLine');
     var headPill=document.querySelector('#v-telegram .top .pill');
     TG.connected = !!(st && st.connected);
@@ -6000,7 +6016,8 @@ try{ empMigrate(); payRestore(); invDateRestore();
      code expires. Nobody has to memorise or re-open a code. */
   var BOT = 'SmokkestakERP_bot';
   var LM = { code:null, exp:0, tick:null, poll:null, user:null,
-             baseTg:null, baseAt:null, state:'idle', result:null, busy:false };
+             baseTg:null, baseAt:null, state:'idle', result:null, busy:false,
+             emp:null, roster:[] };   // emp = the employee being linked
 
   function deepLink(code){ return 'https://t.me/'+BOT+'?start='+encodeURIComponent(code); }
   function cmdFor(code){ return '/link '+code; }
@@ -6031,7 +6048,7 @@ try{ empMigrate(); payRestore(); invDateRestore();
 
   function lmRender(){
     var p=lmShell().querySelector('#tgLinkPanel');
-    var emp=(LM.user&&(LM.user.name||LM.user.id))||'—';
+    var emp=(LM.emp&&LM.emp.name)||(LM.user&&(LM.user.name||LM.user.id))||'—';
     var head='<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;'
       +'padding:18px 20px;border-bottom:1px solid var(--line,#e2e6ea)">'
       +'<div><div style="font-size:16.5px;font-weight:700">Link Telegram Account</div>'
@@ -6039,7 +6056,30 @@ try{ empMigrate(); payRestore(); invDateRestore();
       +'<button class="btn g" id="lmX" style="padding:4px 10px;font-size:12px">Close</button></div>';
 
     var body='';
-    if(LM.state==='loading'){
+    if(LM.state==='pick'){
+      var free=LM.roster.filter(function(e){return !e.linked;});
+      var taken=LM.roster.filter(function(e){return e.linked;});
+      body='<div style="padding:22px 20px">'
+        +'<div style="font-size:13px;color:var(--muted);line-height:1.65;margin-bottom:14px">'
+        +'Choose the employee this Telegram account belongs to. Each employee gets '
+        +'their own account, their own role and their own branch access \u2014 linking '
+        +'one never affects anybody else.</div>'
+        +'<label style="display:block;font-size:11.5px;color:var(--muted);text-transform:uppercase;'
+        +'letter-spacing:.5px;margin-bottom:6px">Employee</label>'
+        +'<select id="lmEmp" style="width:100%;padding:10px;border:1px solid var(--line,#e2e6ea);'
+        +'border-radius:10px;font-size:14px">'
+        +(free.length?free.map(function(e){
+            return '<option value="'+esc(e.id)+'">'+esc(e.name)+' \u00b7 '+esc(roleLabel(e.role))
+                  +' \u00b7 '+esc(e.branch||'\u2014')+'</option>';}).join('')
+          :'<option value="">No employee is available to link</option>')
+        +'</select>'
+        +(taken.length?('<div style="font-size:12px;color:var(--muted);margin-top:10px;line-height:1.6">'
+          +'Already linked: '+taken.map(function(e){return esc(e.name);}).join(', ')
+          +'. Disable or remove an account to re-link that person.</div>'):'')
+        +'<div style="display:flex;gap:8px;margin-top:20px">'
+        +'<button class="btn p" id="lmPickGo"'+(free.length?'':' disabled')+'>Generate Link Code</button>'
+        +'<button class="btn g" id="lmPickCancel">Cancel</button></div></div>';
+    } else if(LM.state==='loading'){
       body='<div style="padding:34px;text-align:center;color:var(--muted);font-size:13.5px">Generating link code…</div>';
     } else if(LM.state==='error'){
       body='<div style="padding:26px 20px"><div style="color:var(--bad,#c0392b);font-weight:600;margin-bottom:12px">'
@@ -6099,7 +6139,14 @@ try{ empMigrate(); payRestore(); invDateRestore();
       document.head.appendChild(s);
     }
     var on=function(id,fn){ var b=document.getElementById(id); if(b) b.onclick=fn; };
-    on('lmX', lmClose); on('lmDone', lmClose);
+    on('lmX', lmClose); on('lmDone', lmClose); on('lmPickCancel', lmClose);
+    on('lmPickGo', function(){
+      var sel=document.getElementById('lmEmp');
+      var id=sel?sel.value:'';
+      LM.emp=LM.roster.filter(function(e){return e.id===id;})[0]||null;
+      if(!LM.emp){ say('Pick an employee first'); return; }
+      lmGenerate();
+    });
     on('lmGen', lmGenerate); on('lmRegen', lmGenerate);
     on('lmCopy', function(){ lmCopy(cmdFor(LM.code)); });
     on('lmOpen', function(){ window.open(deepLink(LM.code),'_blank','noopener'); });
@@ -6160,12 +6207,17 @@ try{ empMigrate(); payRestore(); invDateRestore();
   }
 
   async function lmCheck(){
+    // watch the INVITATION, not the signed-in user: an owner normally links
+    // somebody else, so his own status would never change.
     try{
-      var s=await A().tgStatus();
-      if(s && s.connected && (String(s.tg_id)!==String(LM.baseTg) || String(s.linked_at)!==String(LM.baseAt))){
+      var r=await A().tgCodeStatus(LM.code);
+      if(r && r.linked && r.account){
         if(LM.tick){ clearInterval(LM.tick); LM.tick=null; }
         if(LM.poll){ clearInterval(LM.poll); LM.poll=null; }
-        LM.state='linked'; LM.result=s; lmRender();
+        LM.state='linked';
+        LM.result={username:r.account.username, tg_id:r.account.tg_id,
+                   linked_at:r.account.linked_at, employee:r.account.employee};
+        lmRender();
         load();                                   // refresh the Linked Accounts table
       }
     }catch(e){ /* transient — keep waiting */ }
@@ -6176,12 +6228,8 @@ try{ empMigrate(); payRestore(); invDateRestore();
     LM.busy=true; LM.state='loading'; lmRender();
     try{
       if(!LM.user){ try{ LM.user=await A().me(); }catch(e){ LM.user=null; } }
-      // remember the current link so we can tell when a NEW one arrives
-      try{ var cur=await A().tgStatus();
-           LM.baseTg=cur&&cur.connected?cur.tg_id:null;
-           LM.baseAt=cur&&cur.connected?cur.linked_at:null; }
-      catch(e){ LM.baseTg=null; LM.baseAt=null; }
-      var r=await A().tgLinkCode();
+      var r=await A().tgLinkCode(LM.emp?LM.emp.id:null);
+      if(r.employee && LM.emp) LM.emp.name=r.employee;
       LM.code=r.code; LM.exp=Date.now()+((r.expires_in||300)*1000);
       LM.state='code'; lmRender();
       if(LM.poll) clearInterval(LM.poll);
@@ -6191,7 +6239,22 @@ try{ empMigrate(); payRestore(); invDateRestore();
     }finally{ LM.busy=false; }
   }
 
-  function linkNew(){ lmShell(); lmGenerate(); }
+  async function lmRoster(){
+    // who can still be linked? employees minus anyone holding an ACTIVE account
+    var emps=[], accts=[];
+    try{ emps=await A().employees(); }catch(e){ emps=[]; }
+    try{ accts=await A().tgAccounts('status=active'); }catch(e){ accts=[]; }
+    var busy={}; accts.forEach(function(a){ if(a.employee_id) busy[a.employee_id]=true; });
+    return emps.filter(function(e){return e.active!==false;})
+               .map(function(e){ return {id:e.id,name:e.name,branch:e.branch,
+                                         role:e.role||'employee',linked:!!busy[e.id]}; });
+  }
+
+  async function linkNew(){
+    lmShell(); LM.emp=null; LM.code=null; LM.state='loading'; lmRender();
+    LM.roster=await lmRoster();
+    LM.state='pick'; lmRender();
+  }
   window.__tgLinkModal = { open:linkNew, close:lmClose, state:function(){return LM;} };
 
   function query(){
