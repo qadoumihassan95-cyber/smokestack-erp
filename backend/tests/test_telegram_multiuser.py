@@ -37,8 +37,30 @@ def _tok(uid="U-owner"):
     return {"Authorization": "Bearer " + r.json()["access_token"]}
 
 
-def _link(uid, tg_id, username):
+def _free_slot(user_id=None, tg_id=None):
+    """Linking is INSERT-only and rejects a second active account, so tests that
+    re-link the same person must first release the slot — exactly what an admin
+    does with Remove in the Telegram Management Center."""
+    from app.database import SessionLocal
+    from app import models as _m
+    db = SessionLocal()
+    try:
+        q = db.query(_m.TelegramLink)
+        rows = list(q.filter(_m.TelegramLink.tg_id == str(tg_id)).all()) if tg_id else []
+        if user_id:
+            rows += list(q.filter(_m.TelegramLink.user_id == user_id,
+                                  _m.TelegramLink.status == "active").all())
+        for r in rows:
+            db.delete(r)
+        db.commit()
+    finally:
+        db.close()
+
+
+def _link(uid, tg_id, username, free=True):
     """Issue a code as the user, then redeem it as the bot would."""
+    if free:
+        _free_slot(user_id=uid, tg_id=tg_id)
     code = client.post("/api/telegram/link-code", headers=_tok(uid)).json()["code"]
     return client.post("/api/telegram/link/verify",
                        json={"tg_id": str(tg_id), "code": code, "username": username})
@@ -55,8 +77,11 @@ def test_many_accounts_link_without_disconnecting_each_other():
                 s = client.get(f"/api/telegram/session/{90000 + j}").json()
                 assert s["linked"] is True, f"{prev} was disconnected when linking {uid}"
         accts = client.get("/api/telegram/accounts", headers=_tok("U-owner")).json()
-        assert len(accts) == len(USERS), accts
-        assert len({a["tg_id"] for a in accts}) == len(USERS), "duplicate tg ids"
+        # scoped to this module's ids: the suite shares one database, so other
+        # modules legitimately contribute rows of their own
+        mine = [a for a in accts if a["tg_id"] in {str(90000 + i) for i in range(len(USERS))}]
+        assert len(mine) == len(USERS), mine
+        assert len({a["tg_id"] for a in mine}) == len(USERS), "duplicate tg ids"
 
 
 def test_each_account_maps_to_one_employee_role_and_branch():
@@ -71,23 +96,21 @@ def test_each_account_maps_to_one_employee_role_and_branch():
         assert set(bm["branches"]) == {"Store A", "Store B"}
 
 
-def test_one_employee_only_one_active_account_and_relink_keeps_history():
-    """Re-linking a device replaces only that employee's own account."""
+def test_second_device_is_rejected_never_silently_replaces():
+    """An employee may hold one ACTIVE account. Linking a second device is
+    REJECTED (409) rather than silently replacing the first — linking must never
+    modify or delete an existing row."""
     with TestClient(app):
         before = client.get("/api/telegram/accounts", headers=_tok("U-owner")).json()
         n_before = len(before)
-        r = _link("U-cash", 95555, "cashier_newphone")
-        assert r.status_code == 200
+        r = _link("U-cash", 95555, "cashier_newphone", free=False)
+        assert r.status_code == 409, "a second device must not overwrite the first"
         accts = client.get("/api/telegram/accounts", headers=_tok("U-owner")).json()
         mine = [a for a in accts if a["user_id"] == "U-cash"]
         assert len(mine) == 1, "employee ended up with more than one active account"
-        assert mine[0]["tg_id"] == "95555"
-        assert mine[0]["employee"], "employee mapping lost on reconnect"
-        assert len(accts) == n_before, "re-link changed the number of accounts"
+        assert len(accts) == n_before, "a rejected link must not change anything"
         # everyone else still linked
         for j, uid in enumerate(USERS):
-            if uid == "U-cash":
-                continue
             assert client.get(f"/api/telegram/session/{90000 + j}").json()["linked"] is True
 
 

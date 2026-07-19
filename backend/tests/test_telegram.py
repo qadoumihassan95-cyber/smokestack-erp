@@ -21,8 +21,29 @@ def _tok(uid="U-owner"):
     return {"Authorization": "Bearer " + r.json()["access_token"]}
 
 
+def _free_slot(user_id=None, tg_id=None):
+    """Linking is INSERT-only and rejects a second active account, so tests that
+    re-link the same person must first release the slot — exactly what an admin
+    does with Remove in the Telegram Management Center."""
+    from app.database import SessionLocal
+    from app import models as _m
+    db = SessionLocal()
+    try:
+        q = db.query(_m.TelegramLink)
+        rows = list(q.filter(_m.TelegramLink.tg_id == str(tg_id)).all()) if tg_id else []
+        if user_id:
+            rows += list(q.filter(_m.TelegramLink.user_id == user_id,
+                                  _m.TelegramLink.status == "active").all())
+        for r in rows:
+            db.delete(r)
+        db.commit()
+    finally:
+        db.close()
+
+
 def _link(tg_id, username="hassan"):
     h = _tok()
+    _free_slot(user_id="U-owner", tg_id=tg_id)
     code = client.post("/api/telegram/link-code", headers=h).json()["code"]
     r = client.post("/api/telegram/link/verify",
                     json={"tg_id": tg_id, "code": code, "username": username, "device": "Telegram"})
