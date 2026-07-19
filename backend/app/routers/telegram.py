@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
 from ..database import get_db
 from ..config import settings
-from .. import models, security as S, permissions as P
+from .. import models, security as S, permissions as P, tg_caps as C
 from ..schemas import LinkVerifyIn
 
 router = APIRouter(prefix="/api/telegram", tags=["telegram"])
@@ -466,6 +466,109 @@ def remove_account(tg_id: str, db: Session = Depends(get_db),
     S.audit(db, user, "remove", "telegram_account", tg_id,
             detail=f"@{uname or ''}", source="WEB")
     return {"ok": True, "removed": tg_id}
+
+
+def _overrides(emp):
+    if not emp or not emp.tg_perms:
+        return {}
+    try:
+        v = json.loads(emp.tg_perms)
+        return v if isinstance(v, dict) else {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _caps_for_link(db, link):
+    """Effective capabilities for a linked Telegram account, derived from the
+    employee's ERP role via the shared permission engine."""
+    u = db.get(models.User, link.user_id)
+    emp = _emp_for(db, link, u)
+    role = (u.role if u else (emp.role if emp else "employee"))
+    return C.effective(role, _overrides(emp), P), emp, u, role
+
+
+@router.get("/capabilities/{tg_id}")
+def capabilities(tg_id: str, x_bot_token: str = Header(None), db: Session = Depends(get_db)):
+    """What may this Telegram account do? Used by the bot to build its menu."""
+    if not settings.bot_token or x_bot_token != settings.bot_token:
+        raise HTTPException(403, "Forbidden")
+    link = db.get(models.TelegramLink, (tg_id or "").strip())
+    if not link:
+        raise HTTPException(404, "Not linked")
+    if (link.status or "active") != "active":
+        raise HTTPException(403, "This Telegram account is disabled")
+    caps, emp, u, role = _caps_for_link(db, link)
+    return {"tg_id": link.tg_id, "employee": (emp.name if emp else (u.name if u else None)),
+            "employee_id": (emp.id if emp else None), "role": role,
+            "branches": (u.branch_names if u else []) or ([emp.branch] if emp and emp.branch else []),
+            "capabilities": caps,
+            "labels": C.CAP_LABEL}
+
+
+@router.post("/authorize")
+def authorize(body: dict, x_bot_token: str = Header(None), db: Session = Depends(get_db)):
+    """THE permission gate. The bot calls this before executing any command.
+
+    Answers three questions with one shared engine: is the account active, does
+    the employee's ERP role (plus the owner's toggles) allow this capability,
+    and is the requested branch inside the employee's scope. Every call — allowed
+    or denied — is written to the audit log.
+    """
+    if not settings.bot_token or x_bot_token != settings.bot_token:
+        raise HTTPException(403, "Forbidden")
+    tg_id = str(body.get("tg_id") or "").strip()
+    cap = str(body.get("capability") or "").strip()
+    branch = body.get("branch") or None
+    command = body.get("command") or cap
+
+    link = db.get(models.TelegramLink, tg_id)
+    if not link or (link.status or "active") != "active":
+        _deny_audit(db, None, tg_id, command, branch, None,
+                    "account not linked or disabled")
+        return {"allowed": False, "reason": "not_linked", "message": C.DENIED_MESSAGE}
+
+    caps, emp, u, role = _caps_for_link(db, link)
+    scope = (u.branch_names if u else None) or ([emp.branch] if emp and emp.branch else [])
+    if u and P.can_see_all(u.role) and not scope:
+        scope = S.all_branch_names(db)
+
+    if cap not in C.CAP_KEYS:
+        reason = "unknown_capability"
+        allowed = False
+    elif not caps.get(cap):
+        reason = ("disabled_by_owner" if C.role_allows(role, cap, P) else "role_forbids")
+        allowed = False
+    elif branch and scope and branch not in scope and not (u and P.can_see_all(u.role)):
+        reason = "branch_out_of_scope"
+        allowed = False
+    else:
+        reason = ""
+        allowed = True
+
+    link.last_activity = datetime.now(timezone.utc)
+    db.add(models.AuditLog(
+        source="TELEGRAM", tg_id=tg_id, user_id=(u.id if u else None),
+        action=command, entity="telegram_command",
+        ref=cap, detail=(C.CAP_LABEL.get(cap, cap) + (f" @ {branch}" if branch else "")),
+        result=("ok" if allowed else "denied"),
+        tg_username=link.username, branch=(branch or (scope[0] if len(scope) == 1 else None)),
+        role=role, ip="telegram"))
+    db.commit()
+
+    out = {"allowed": allowed, "capability": cap, "employee": (emp.name if emp else None),
+           "role": role, "branches": scope}
+    if not allowed:
+        out["reason"] = reason
+        out["message"] = C.DENIED_MESSAGE
+    return out
+
+
+def _deny_audit(db, u, tg_id, command, branch, role, detail):
+    db.add(models.AuditLog(source="TELEGRAM", tg_id=tg_id,
+                           user_id=(u.id if u else None), action=command,
+                           entity="telegram_command", detail=detail, result="denied",
+                           branch=branch, role=role, ip="telegram"))
+    db.commit()
 
 
 @router.get("/link-code/{code}/status")

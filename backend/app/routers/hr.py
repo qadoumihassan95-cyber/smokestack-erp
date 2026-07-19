@@ -2,8 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import date, datetime
 from ..database import get_db
-from .. import models, security as S, permissions as P
+from .. import models, security as S, permissions as P, tg_caps as C
 from ..schemas import EmployeeIn, EmployeeUpdate
+import json
 
 router = APIRouter(prefix="/api", tags=["hr"])
 
@@ -83,3 +84,81 @@ def finalize(start: str, end: str, branch: str = "all", db: Session = Depends(ge
     db.commit()
     S.audit(db, user, "finalize", "payroll", f"{start}_{end}", f"gross {s['gross']}")
     return {"ok": True, **s}
+
+
+# ---------------------------------------------------------------------------
+# Telegram Permissions — the admin interface for capability toggles.
+# No code edit is needed to change what an employee may do from Telegram.
+# ---------------------------------------------------------------------------
+
+def _tg_overrides(e):
+    if not e.tg_perms:
+        return {}
+    try:
+        v = json.loads(e.tg_perms)
+        return v if isinstance(v, dict) else {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+@router.get("/employees/{eid}/telegram-permissions")
+def get_tg_perms(eid: str, db: Session = Depends(get_db),
+                 user: models.User = Depends(S.require("view"))):
+    e = db.get(models.Employee, eid)
+    if not e:
+        raise HTTPException(404, "Not found")
+    S.assert_branch(user, db, e.branch)
+    role = e.role or "employee"
+    link = (db.query(models.TelegramLink)
+            .filter(models.TelegramLink.employee_id == eid,
+                    models.TelegramLink.status == "active").first())
+    return {"employee_id": e.id, "employee": e.name, "role": role, "branch": e.branch,
+            "linked": bool(link), "tg_id": (link.tg_id if link else None),
+            "tg_username": (link.username if link else None),
+            "capabilities": C.describe(role, _tg_overrides(e), P),
+            "editable": P.can(user.role, "manage_permissions")}
+
+
+@router.put("/employees/{eid}/telegram-permissions")
+def set_tg_perms(eid: str, body: dict, db: Session = Depends(get_db),
+                 user: models.User = Depends(S.require("manage_permissions"))):
+    """Owner switches individual Telegram capabilities on or off.
+
+    A capability the employee's ROLE does not grant can never be switched on —
+    the ERP permission map stays the ceiling.
+    """
+    e = db.get(models.Employee, eid)
+    if not e:
+        raise HTTPException(404, "Not found")
+    S.assert_branch(user, db, e.branch)
+    role = e.role or "employee"
+    incoming = body.get("capabilities") or {}
+    if not isinstance(incoming, dict):
+        raise HTTPException(422, "capabilities must be an object of {key: bool}")
+
+    cleaned, rejected = {}, []
+    for k, v in incoming.items():
+        if k not in C.CAP_KEYS:
+            raise HTTPException(422, f"Unknown capability: {k}")
+        if bool(v) and not C.role_allows(role, k, P):
+            rejected.append(k)          # cannot exceed the role
+            cleaned[k] = False
+        else:
+            cleaned[k] = bool(v)
+    e.tg_perms = json.dumps(cleaned)
+    db.commit()
+    S.audit(db, user, "set_telegram_permissions", "employee", eid,
+            detail=", ".join(f"{k}={'on' if v else 'off'}" for k, v in sorted(cleaned.items())))
+    out = {"employee_id": e.id, "role": role,
+           "capabilities": C.describe(role, cleaned, P)}
+    if rejected:
+        out["rejected"] = rejected
+        out["note"] = ("These capabilities are not granted by the employee's role "
+                       "and were left off: " + ", ".join(C.CAP_LABEL[k] for k in rejected))
+    return out
+
+
+@router.get("/telegram-capabilities")
+def capability_catalogue(user: models.User = Depends(S.require("view"))):
+    """The catalogue itself, so the UI never hard-codes the list."""
+    return [{"key": k, "label": C.CAP_LABEL[k], "requires": C.CAP_PERMS[k]} for k in C.CAP_KEYS]
