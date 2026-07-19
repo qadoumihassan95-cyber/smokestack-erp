@@ -52,29 +52,106 @@ def _iso(dt):
     return dt.isoformat() if dt else None
 
 
-def _issue_code(db: Session, user: models.User):
-    """Invalidate any previous unused codes for this user, then mint a new one.
-    Guarantees only one active code per user at a time (edge case: multiple browsers)."""
-    for old in db.query(models.LinkCode).filter(models.LinkCode.user_id == user.id,
-                                                models.LinkCode.used == False).all():  # noqa: E712
+def _identity_for_employee(db: Session, emp: models.Employee) -> models.User:
+    """Return the login identity an employee's Telegram session acts as,
+    provisioning one on first link.
+
+    Employees are not users: only seven seeded logins exist and there is no user
+    management UI. Without this, an owner could only ever link accounts that map
+    back to his OWN user — which is precisely why every new link replaced the
+    previous one. The provisioned identity carries the employee's role and
+    branch, and cannot sign in to the web app.
+    """
+    if emp.user_id:
+        u = db.get(models.User, emp.user_id)
+        if u:
+            return u
+    # back-compat: an employee whose name matches a real login keeps that login
+    u = db.query(models.User).filter(models.User.name == emp.name).first()
+    if not u:
+        uid = f"EMP-{emp.id}"
+        u = db.get(models.User, uid)
+    if not u:
+        u = models.User(
+            id=f"EMP-{emp.id}", name=emp.name,
+            role=(emp.role or "employee"),
+            email=None,
+            # deliberately unusable: this identity exists only for Telegram RBAC
+            password_hash=S.hash_pw(secrets.token_urlsafe(24)),
+            status="active", can_login=False, employee_id=emp.id)
+        db.add(u); db.flush()
+        if emp.branch:
+            db.add(models.UserBranch(user_id=u.id, branch=emp.branch))
+    if u.employee_id != emp.id:
+        u.employee_id = emp.id
+    emp.user_id = u.id
+    db.flush()
+    return u
+
+
+def _issue_code(db: Session, user: models.User, employee: models.Employee = None):
+    """Mint a one-time invitation.
+
+    Scoped to the TARGET EMPLOYEE, not to the signed-in operator: only that
+    employee's own outstanding codes are invalidated, so an owner can prepare
+    invitations for several people without cancelling each other.
+    """
+    if employee is not None:
+        identity = _identity_for_employee(db, employee)
+        emp_id = employee.id
+        stale = db.query(models.LinkCode).filter(
+            models.LinkCode.employee_id == emp_id,
+            models.LinkCode.used == False).all()  # noqa: E712
+    else:
+        identity = user
+        emp = db.query(models.Employee).filter(models.Employee.name == user.name).first()
+        emp_id = emp.id if emp else None
+        stale = db.query(models.LinkCode).filter(
+            models.LinkCode.user_id == user.id,
+            models.LinkCode.employee_id == None,          # noqa: E711
+            models.LinkCode.used == False).all()           # noqa: E712
+    for old in stale:
         old.used = True
     code = f"{secrets.randbelow(1000000):06d}"
     expires = datetime.now(timezone.utc) + timedelta(seconds=CODE_TTL_SECONDS)
-    db.add(models.LinkCode(code=code, user_id=user.id, expires_at=expires, used=False))
+    db.add(models.LinkCode(code=code, user_id=identity.id, expires_at=expires,
+                           used=False, employee_id=emp_id, created_by=user.id))
     db.commit()
-    S.audit(db, user, "issue_link_code", "telegram", code)
-    return {"code": code, "expires_at": _iso(expires), "expires_in": CODE_TTL_SECONDS}
+    S.audit(db, user, "issue_link_code", "telegram", code,
+            detail=f"for {employee.name}" if employee is not None else "self")
+    return {"code": code, "expires_at": _iso(expires), "expires_in": CODE_TTL_SECONDS,
+            "employee_id": emp_id,
+            "employee": (employee.name if employee is not None else user.name)}
+
+
+def _resolve_target(db: Session, actor: models.User, employee_id: str):
+    """Owners/managers may mint an invitation for any employee they administer."""
+    if not employee_id:
+        return None
+    if "manage_users" not in P.PERMS.get(actor.role, []):
+        raise HTTPException(403, "You may not link Telegram accounts for other employees.")
+    emp = db.get(models.Employee, employee_id)
+    if not emp:
+        raise HTTPException(404, "Employee not found")
+    if not emp.active:
+        raise HTTPException(422, "That employee is not active.")
+    S.assert_branch(actor, db, emp.branch)
+    return emp
 
 
 @router.post("/link-code")
-def link_code(db: Session = Depends(get_db), user: models.User = Depends(S.get_current_user)):
-    return _issue_code(db, user)
+def link_code(body: dict = None, db: Session = Depends(get_db),
+              user: models.User = Depends(S.get_current_user)):
+    emp = _resolve_target(db, user, (body or {}).get("employee_id"))
+    return _issue_code(db, user, emp)
 
 
 @router.post("/link/issue")
-def issue(db: Session = Depends(get_db), user: models.User = Depends(S.get_current_user)):
+def issue(body: dict = None, db: Session = Depends(get_db),
+          user: models.User = Depends(S.get_current_user)):
     # Legacy shape kept working; also returns ttl_minutes for old callers.
-    r = _issue_code(db, user)
+    emp = _resolve_target(db, user, (body or {}).get("employee_id"))
+    r = _issue_code(db, user, emp)
     return {**r, "code": r["code"], "ttl_minutes": CODE_TTL_SECONDS // 60}
 
 
@@ -126,38 +203,52 @@ def verify(body: LinkVerifyIn, db: Session = Depends(get_db)):
         raise HTTPException(400, "This code has expired. Generate a new one.")
     rec.used = True  # one-time: burn immediately
 
-    # A Telegram id may only ever represent one employee.
+    # ---- INSERT-ONLY LINKING -------------------------------------------------
+    # Linking must never modify or delete another row. The previous
+    # implementation deleted every prior link belonging to the code's user, and
+    # because every code carried the SIGNED-IN OWNER, each new link wiped the
+    # one before it. Now we validate and insert; nothing else is touched.
+
+    # (a) a Telegram account is globally unique — it may represent one employee
     taken = db.get(models.TelegramLink, body.tg_id)
-    if taken and taken.user_id != rec.user_id:
-        raise HTTPException(409, "This Telegram account is already linked to another employee.")
+    if taken:
+        raise HTTPException(409, "This Telegram account is already linked. "
+                                 "Remove it from the Telegram Management Center first.")
 
-    # One active Telegram account per employee: replace only THIS employee's own
-    # previous account. Accounts belonging to every other employee are untouched,
-    # so linking a new person never disconnects anyone else.
-    prior_rows = db.query(models.TelegramLink).filter(
-        models.TelegramLink.user_id == rec.user_id).all()
-    keep_prefs, keep_emp = None, None
-    for prior in prior_rows:
-        if prior.tg_id != body.tg_id:
-            # carry the employee mapping + preferences across a device change
-            keep_prefs = keep_prefs or prior.prefs
-            keep_emp = keep_emp or prior.employee_id
-            db.delete(prior)
+    # (b) resolve the employee this invitation was minted for
+    emp = db.get(models.Employee, rec.employee_id) if rec.employee_id else None
+    identity = db.get(models.User, rec.user_id)
+    if emp is None and identity is not None:
+        emp = db.query(models.Employee).filter(models.Employee.name == identity.name).first()
+    if identity is None and emp is not None:
+        identity = _identity_for_employee(db, emp)
+    if identity is None:
+        raise HTTPException(400, "This code is no longer valid.")
 
-    u0 = db.get(models.User, rec.user_id)
-    emp = None
-    if u0:
-        emp = db.query(models.Employee).filter(models.Employee.name == u0.name).first()
-    existing = db.get(models.TelegramLink, body.tg_id)
-    db.merge(models.TelegramLink(
-        tg_id=body.tg_id, user_id=rec.user_id, username=body.username,
-        device=body.device,
-        linked_at=(existing.linked_at if existing and existing.linked_at else now),
-        last_activity=now, expires_at=now + timedelta(days=7),
-        status="active",
-        employee_id=(keep_emp or (existing.employee_id if existing else None) or (emp.id if emp else None)),
-        linked_by=rec.user_id,
-        prefs=(existing.prefs if existing and existing.prefs else keep_prefs)))
+    # (c) one ACTIVE Telegram account per employee — and, when a link has no
+    #     employee mapping, per session identity, so nobody silently accumulates
+    #     devices. We reject rather than replace: existing rows are never touched.
+    if emp is not None:
+        clash = (db.query(models.TelegramLink)
+                 .filter(models.TelegramLink.employee_id == emp.id,
+                         models.TelegramLink.status == "active").first())
+        who = emp.name
+    else:
+        clash = (db.query(models.TelegramLink)
+                 .filter(models.TelegramLink.user_id == identity.id,
+                         models.TelegramLink.status == "active").first())
+        who = identity.name
+    if clash:
+        raise HTTPException(409, f"{who} already has an active Telegram account "
+                                 f"(@{clash.username or clash.tg_id}). Disable or remove "
+                                 f"it before linking a new one.")
+
+    db.add(models.TelegramLink(
+        tg_id=body.tg_id, user_id=identity.id, username=body.username,
+        device=body.device, linked_at=now, last_activity=now,
+        expires_at=now + timedelta(days=7), status="active",
+        employee_id=(emp.id if emp is not None else None),
+        linked_by=rec.created_by or rec.user_id))
     db.commit()
     u = db.get(models.User, rec.user_id)
     S.audit(db, u, "link", "telegram", body.tg_id, detail=f"@{body.username}" if body.username else "",
@@ -375,6 +466,38 @@ def remove_account(tg_id: str, db: Session = Depends(get_db),
     S.audit(db, user, "remove", "telegram_account", tg_id,
             detail=f"@{uname or ''}", source="WEB")
     return {"ok": True, "removed": tg_id}
+
+
+@router.get("/link-code/{code}/status")
+def link_code_status(code: str, db: Session = Depends(get_db),
+                     user: models.User = Depends(S.get_current_user)):
+    """Has this invitation been redeemed yet?
+
+    The linking panel polls this instead of the signed-in user's own status,
+    because an owner normally links SOMEBODY ELSE — watching his own account
+    would never report the employee's connection.
+    """
+    rec = db.get(models.LinkCode, (code or "").strip())
+    if not rec:
+        raise HTTPException(404, "Unknown code")
+    emp = db.get(models.Employee, rec.employee_id) if rec.employee_id else None
+    out = {"code": rec.code, "used": bool(rec.used), "linked": False,
+           "employee": (emp.name if emp else None),
+           "employee_id": rec.employee_id,
+           "expires_at": _iso(rec.expires_at),
+           "expired": bool(rec.expires_at and _aware(rec.expires_at) < datetime.now(timezone.utc))}
+    if rec.used:
+        q = db.query(models.TelegramLink)
+        link = (q.filter(models.TelegramLink.employee_id == rec.employee_id,
+                         models.TelegramLink.status == "active").first()
+                if rec.employee_id else
+                q.filter(models.TelegramLink.user_id == rec.user_id,
+                         models.TelegramLink.status == "active")
+                 .order_by(models.TelegramLink.linked_at.desc()).first())
+        if link:
+            out["linked"] = True
+            out["account"] = _account_row(db, link)
+    return out
 
 
 @router.get("/accounts/{tg_id}/activity")

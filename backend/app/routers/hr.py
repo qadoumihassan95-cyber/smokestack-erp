@@ -11,7 +11,8 @@ def _emp(e):
     return {"id": e.id, "name": e.name, "branch": e.branch, "title": e.title,
             "pay_type": e.pay_type, "salary": float(e.salary or 0), "active": e.active,
             "sched_start": e.sched_start or "09:00", "sched_end": e.sched_end or "17:00",
-            "sched_days": e.sched_days or "Mon-Sat"}
+            "sched_days": e.sched_days or "Mon-Sat",
+            "role": e.role or "employee", "user_id": e.user_id}
 
 @router.get("/employees")
 def employees(branch: str = "all", db: Session = Depends(get_db), user: models.User = Depends(S.require("view"))):
@@ -26,7 +27,8 @@ def add_employee(body: EmployeeIn, db: Session = Depends(get_db), user: models.U
     e = models.Employee(id=body.id, name=body.name, branch=body.branch, title=body.title,
                         pay_type=body.pay_type, salary=body.salary, hourly_rate=body.hourly_rate,
                         sched_start=body.sched_start or "09:00", sched_end=body.sched_end or "17:00",
-                        sched_days=body.sched_days or "Mon-Sat", active=True, created_by=user.id)
+                        sched_days=body.sched_days or "Mon-Sat", active=True,
+                        role=(getattr(body, "role", None) or "employee"), created_by=user.id)
     db.add(e); db.commit()
     S.audit(db, user, "create", "employee", e.id, f"{e.name} @ {e.branch}")
     return _emp(e)
@@ -39,7 +41,7 @@ def update_employee(eid: str, body: EmployeeUpdate, db: Session = Depends(get_db
     # Branch permission checked against the target branch (new if changing, else current).
     S.assert_branch(user, db, body.branch or e.branch)
     for f in ("name", "branch", "title", "pay_type", "salary", "hourly_rate",
-              "sched_start", "sched_end", "sched_days"):
+              "sched_start", "sched_end", "sched_days", "role"):
         v = getattr(body, f, None)
         if v is not None:
             setattr(e, f, v)
