@@ -115,6 +115,7 @@ class Employee(Base):
     # --- Telegram / session identity (additive) ---
     role = Column(String, default="employee")   # RBAC role this employee acts with
     user_id = Column(String)                    # login identity provisioned for this employee
+    tg_perms = Column(Text)                     # JSON {capability: bool} — owner overrides
     created_by = Column(String); created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 

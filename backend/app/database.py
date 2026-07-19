@@ -5,7 +5,11 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 from .config import settings
 
 url = settings.database_url
-connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
+_is_sqlite = url.startswith("sqlite")
+# SQLite serialises writers with a file lock. Without an explicit busy timeout a
+# writer that collides with another connection can wait indefinitely, which is
+# how the dev/test suite could hang. Production runs PostgreSQL and is unaffected.
+connect_args = ({"check_same_thread": False, "timeout": 15} if _is_sqlite else {})
 # pool tuned for many concurrent branches/records
 engine = create_engine(
     url, connect_args=connect_args,
