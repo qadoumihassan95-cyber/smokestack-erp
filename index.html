@@ -4892,12 +4892,14 @@ try{ empMigrate(); payRestore(); invDateRestore();
     finalizePayroll:function(s,e,b){return call('/api/payroll/finalize?start='+s+'&end='+e+'&branch='+encodeURIComponent(b||'all'),{method:'POST'});},
     transfers:function(){return call('/api/transfers');}, createTransfer:function(b){return call('/api/transfers',{method:'POST',body:b});},
     issueTgCode:function(){return call('/api/telegram/link/issue',{method:'POST'});},
-    tgLinkCode:function(empId){return call('/api/telegram/link-code',{method:'POST',
-      body:JSON.stringify({employee_id:empId||null})});},
+    // NOTE: call() serialises opts.body itself — never JSON.stringify here, or
+    // the request is double-encoded and the API rejects it with a 422.
+    tgLinkCode:function(empId){return call('/api/telegram/link-code',
+      {method:'POST',body:{employee_id:empId||null}});},
     tgCodeStatus:function(code){return call('/api/telegram/link-code/'+encodeURIComponent(code)+'/status');},
     tgPerms:function(eid){return call('/api/employees/'+encodeURIComponent(eid)+'/telegram-permissions');},
     tgSetPerms:function(eid,caps){return call('/api/employees/'+encodeURIComponent(eid)+'/telegram-permissions',
-      {method:'PUT',body:JSON.stringify({capabilities:caps})});},
+      {method:'PUT',body:{capabilities:caps}});},
     tgStatus:function(){return call('/api/telegram/status');},
     tgUnlink:function(){return call('/api/telegram/unlink',{method:'POST'});},
     // --- Telegram Management Center (multi-account administration) ---
@@ -4928,7 +4930,28 @@ try{ empMigrate(); payRestore(); invDateRestore();
     ccHistoryDetail:function(id){return call('/api/control/history/'+id);}
   };
   window.SS_API_LIVE=API;
-  function apiErr(e){ if(e&&e.status===403)return 'Not permitted (server rejected this action).'; if(e&&e.status===422)return 'Invalid data: '+(e.data&&e.data.detail?JSON.stringify(e.data.detail):e.message); return (e&&e.message)||'Request failed'; }
+  function apiErr(e){
+    if(e&&e.status===403) return 'Not permitted (server rejected this action).';
+    if(e&&e.status===422) return 'Invalid data: '+detailText(e.data&&e.data.detail);
+    var m=(e&&e.message);
+    // Error(...) built from a non-string (e.g. FastAPI's 422 detail array) turns
+    // into "[object Object]". Never surface that to a user.
+    if(!m || m==='[object Object]') m=detailText(e&&e.data&&e.data.detail);
+    return m||'Request failed';
+  }
+  /* Flatten any API error payload into readable text, whatever its shape. */
+  function detailText(d){
+    if(d==null) return '';
+    if(typeof d==='string') return d;
+    if(Array.isArray(d)) return d.map(detailText).filter(Boolean).join('; ');
+    if(typeof d==='object'){
+      if(d.msg||d.detail||d.message) return String(d.msg||d.detail||d.message);
+      try{ return JSON.stringify(d); }catch(x){ return ''; }
+    }
+    return String(d);
+  }
+  window.__detailText = detailText;
+  window.__apiErr = apiErr;   // other modules live in separate IIFEs
 
   /* ---- login gate ---- */
   function overlay(html){ var d=document.getElementById('ssAuth'); if(!d){d=document.createElement('div');d.id='ssAuth';
@@ -5973,8 +5996,16 @@ try{ empMigrate(); payRestore(); invDateRestore();
   function roleLabel(r){ return String(r||'—').replace(/_/g,' ').replace(/\b\w/g,function(c){return c.toUpperCase();}); }
   function sec(){ return document.getElementById('v-telegram'); }
   function say(m){ if(typeof toast==='function') toast(m); }
-  function err(e){ try{ return (typeof apiErr==='function')?apiErr(e):(e&&e.message)||'Request failed'; }
-                   catch(x){ return 'Request failed'; } }
+  function err(e){
+    try{
+      var f=(typeof apiErr==='function')?apiErr:window.__apiErr;
+      if(typeof f==='function') return String(f(e)||'Request failed');
+      var m=(e&&e.message);
+      if(!m || m==='[object Object]')
+        m=(window.__detailText?window.__detailText(e&&e.data&&e.data.detail):'');
+      return String(m||'Request failed');
+    }catch(x){ return 'Request failed'; }
+  }
 
   /* ---- panel skeleton, appended below the personal linking card ---- */
   function ensure(){
@@ -6018,9 +6049,65 @@ try{ empMigrate(); payRestore(); invDateRestore();
      Stays on screen until the operator closes it, the employee links, or the
      code expires. Nobody has to memorise or re-open a code. */
   var BOT = 'SmokkestakERP_bot';
-  var LM = { code:null, exp:0, tick:null, poll:null, user:null,
+  var LM = { code:null, cmd:null, deep:null, exp:0, tick:null, poll:null, user:null,
              baseTg:null, baseAt:null, state:'idle', result:null, busy:false,
              emp:null, roster:[] };   // emp = the employee being linked
+
+  /**
+   * The API's generate-link payload. This project is plain ES5-era JavaScript in
+   * a single file with no build step, so the contract is documented as a JSDoc
+   * typedef — editors type-check it exactly like a TS interface via checkJS.
+   *
+   * @typedef  {Object} LinkCodeResponse
+   * @property {string}  code         six-digit invitation code
+   * @property {string}  [expires_at] ISO timestamp
+   * @property {number}  [expires_in] seconds until expiry
+   * @property {string}  [employee]   employee display name
+   * @property {string}  [employee_id]
+   * @property {string}  [command]    server-provided command (currently derived client-side)
+   * @property {string}  [deepLink]   server-provided t.me link (currently derived client-side)
+   *
+   * @typedef  {Object} LinkCodeView
+   * @property {string} code
+   * @property {string} command
+   * @property {string} deepLink
+   * @property {number} expiresAt   epoch ms
+   * @property {string} employee
+   */
+
+  /**
+   * Map the API response to PRIMITIVES the view renders. Never hand the raw
+   * response to the DOM: that is how an object ends up printed as
+   * "[object Object]". Tolerates nesting ({data:{...}}) and missing fields.
+   * @param {*} raw
+   * @returns {LinkCodeView|null} null when there is no usable code
+   */
+  function toLinkView(raw){
+    var r = raw;
+    // some gateways wrap the payload — unwrap one or two levels if present
+    for (var i=0; i<2 && r && typeof r==='object' && r.code===undefined; i++){
+      r = (r.data!==undefined ? r.data : (r.result!==undefined ? r.result : null));
+    }
+    if(!r || typeof r!=='object') return null;
+    var code = r.code;
+    if(code==null) return null;
+    if(typeof code!=='string' && typeof code!=='number') return null;   // never an object
+    code = String(code).trim();
+    if(!code) return null;
+    var ms = (typeof r.expires_in==='number' && isFinite(r.expires_in))
+      ? Date.now()+r.expires_in*1000
+      : (r.expires_at ? Date.parse(r.expires_at) : NaN);
+    if(!isFinite(ms)) ms = Date.now()+300000;
+    return {
+      code: code,
+      command: (typeof r.command==='string' && r.command) ? r.command : ('/link '+code),
+      deepLink: (typeof r.deepLink==='string' && r.deepLink) ? r.deepLink
+                : ('https://t.me/'+BOT+'?start='+encodeURIComponent(code)),
+      expiresAt: ms,
+      employee: (typeof r.employee==='string' && r.employee) ? r.employee : ''
+    };
+  }
+  window.__toLinkView = toLinkView;
 
   function deepLink(code){ return 'https://t.me/'+BOT+'?start='+encodeURIComponent(code); }
   function cmdFor(code){ return '/link '+code; }
@@ -6086,7 +6173,7 @@ try{ empMigrate(); payRestore(); invDateRestore();
       body='<div style="padding:34px;text-align:center;color:var(--muted);font-size:13.5px">Generating link code…</div>';
     } else if(LM.state==='error'){
       body='<div style="padding:26px 20px"><div style="color:var(--bad,#c0392b);font-weight:600;margin-bottom:12px">'
-        +esc(LM.result||'Could not generate a link code.')+'</div>'
+        +esc(typeof LM.result==='string'?LM.result:'Could not generate a link code.')+'</div>'
         +'<button class="btn p" id="lmGen">Generate New Code</button></div>';
     } else if(LM.state==='expired'){
       body='<div style="padding:26px 20px">'
@@ -6108,6 +6195,14 @@ try{ empMigrate(); payRestore(); invDateRestore();
         +'<div style="font-weight:600;font-family:ui-monospace,Menlo,monospace">'+esc(r.tg_id||'—')+'</div>'
         +'<div style="color:var(--muted)">Linked</div><div style="font-weight:600">'+esc(fmt(r.linked_at))+'</div>'
         +'</div><div style="margin-top:20px"><button class="btn p" id="lmDone">Done</button></div></div>';
+    } else if(!LM.code || typeof LM.code!=='string'){
+      // defensive: never print an object or an empty box
+      body='<div style="padding:26px 20px">'
+        +'<div style="font-weight:700;color:var(--bad,#c0392b);font-size:15px;margin-bottom:6px">'
+        +'No link code was returned</div>'
+        +'<div style="font-size:13px;color:var(--muted);margin-bottom:16px">'
+        +'The server response did not contain a code. Nothing was changed — try again.</div>'
+        +'<button class="btn p" id="lmGen">Generate New Code</button></div>';
     } else {
       // active code: command, copy, QR, deep link, countdown, waiting notice
       body='<div style="padding:22px 20px">'
@@ -6120,7 +6215,7 @@ try{ empMigrate(); payRestore(); invDateRestore();
           +'letter-spacing:6px;margin:6px 0 10px">'+esc(LM.code||'------')+'</div>'
           +'<div style="font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Full command</div>'
           +'<div id="lmCmd" style="font-family:ui-monospace,Menlo,monospace;font-size:16px;font-weight:600;margin-top:4px">'
-          +esc(cmdFor(LM.code||''))+'</div>'
+          +esc(LM.cmd||cmdFor(LM.code))+'</div>'
           +'<div id="lmQr" style="margin-top:14px;display:flex;justify-content:center"></div>'
         +'</div>'
         +'<div id="lmCount" style="text-align:center;font-size:12.5px;color:var(--muted);margin-top:12px"></div>'
@@ -6151,8 +6246,8 @@ try{ empMigrate(); payRestore(); invDateRestore();
       lmGenerate();
     });
     on('lmGen', lmGenerate); on('lmRegen', lmGenerate);
-    on('lmCopy', function(){ lmCopy(cmdFor(LM.code)); });
-    on('lmOpen', function(){ window.open(deepLink(LM.code),'_blank','noopener'); });
+    on('lmCopy', function(){ lmCopy(LM.cmd||cmdFor(LM.code)); });
+    on('lmOpen', function(){ window.open(LM.deep||deepLink(LM.code),'_blank','noopener'); });
     if(LM.state==='code'){ lmTick(); lmQr(); }
   }
 
@@ -6175,7 +6270,7 @@ try{ empMigrate(); payRestore(); invDateRestore();
       try{
         host.innerHTML='';
         var c=document.createElement('canvas');
-        new window.QRious({element:c, value:deepLink(LM.code), size:132, level:'M',
+        new window.QRious({element:c, value:(LM.deep||deepLink(LM.code)), size:132, level:'M',
                            background:'#ffffff', foreground:'#111827'});
         host.appendChild(c);
         var cap=document.createElement('div');
@@ -6231,14 +6326,24 @@ try{ empMigrate(); payRestore(); invDateRestore();
     LM.busy=true; LM.state='loading'; lmRender();
     try{
       if(!LM.user){ try{ LM.user=await A().me(); }catch(e){ LM.user=null; } }
-      var r=await A().tgLinkCode(LM.emp?LM.emp.id:null);
-      if(r.employee && LM.emp) LM.emp.name=r.employee;
-      LM.code=r.code; LM.exp=Date.now()+((r.expires_in||300)*1000);
+      var raw=await A().tgLinkCode(LM.emp?LM.emp.id:null);
+      var view=toLinkView(raw);
+      if(!view){
+        LM.state='error';
+        LM.result='The server did not return a link code. Please try again.';
+        lmRender(); return;
+      }
+      if(view.employee && LM.emp) LM.emp.name=view.employee;
+      var r={code:view.code, expires_in:0};   // primitives only from here on
+      LM.cmd=view.command; LM.deep=view.deepLink; LM.exp=view.expiresAt;
+      LM.code=view.code;              // a string, always
       LM.state='code'; lmRender();
       if(LM.poll) clearInterval(LM.poll);
       LM.poll=setInterval(lmCheck, 3000);         // auto-detect the connection
     }catch(e){
-      LM.state='error'; LM.result=err(e); lmRender();
+      LM.state='error';
+      LM.result=String(err(e)||'Could not generate a link code.');
+      lmRender();
     }finally{ LM.busy=false; }
   }
 
