@@ -1791,10 +1791,43 @@ async def on_media(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 # --------------------------------------------------------------------- commands
+async def _do_link(update, code):
+    """Redeem a link code. Shared by /link CODE and the t.me deep link so both
+    routes behave identically."""
+    u = update.effective_user
+    status, data = await _req("POST", "/api/telegram/link/verify",
+                              body={"tg_id": str(u.id), "code": code.strip(), "device": "Telegram",
+                                    "username": u.username or u.full_name})
+    st(str(u.id)).pop("token", None)          # force a fresh token next call
+    st(str(u.id))["disabled"] = False
+    if status == 200 and data and data.get("ok"):
+        text, markup, _ = await render_home(str(u.id))
+        await update.message.reply_text("\u2705 Linked!", parse_mode=ParseMode.HTML)
+        await update.message.reply_text(text, reply_markup=markup, parse_mode=ParseMode.HTML)
+        return True
+    if status == 409:
+        await update.message.reply_text(
+            "This Telegram account is already linked to another employee. "
+            "Ask an administrator to remove it first.")
+        return False
+    await update.message.reply_text(
+        "\u274c That code is invalid or expired. Generate a new one in the web app.")
+    return False
+
+
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     tg_id = str(update.effective_user.id)
     note_user(update)
     st(tg_id)["stack"] = []
+    # deep link: https://t.me/<bot>?start=CODE lets the web app hand the code
+    # straight to Telegram, so nobody has to retype /link CODE.
+    if ctx.args:
+        payload = (ctx.args[0] or "").strip()
+        if payload.lower().startswith("link_"):
+            payload = payload[5:]
+        if payload:
+            await _do_link(update, payload)
+            return
     text, markup, _ = await render_home(tg_id)
     await update.message.reply_text(text, reply_markup=markup, parse_mode=ParseMode.HTML)
 
@@ -1810,18 +1843,8 @@ async def cmd_link(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not ctx.args:
         await update.message.reply_text("Usage: /link CODE  (get the code in the web app → Settings → Telegram).")
         return
-    code = ctx.args[0].strip()
-    u = update.effective_user
-    status, data = await _req("POST", "/api/telegram/link/verify",
-                              body={"tg_id": str(u.id), "code": code, "device": "Telegram",
-                                    "username": u.username or u.full_name})
-    st(str(u.id)).pop("token", None)  # force fresh token next call
-    if status == 200 and data and data.get("ok"):
-        text, markup, _ = await render_home(str(u.id))
-        await update.message.reply_text("✅ Linked!", parse_mode=ParseMode.HTML)
-        await update.message.reply_text(text, reply_markup=markup, parse_mode=ParseMode.HTML)
-    else:
-        await update.message.reply_text("❌ That code is invalid or expired. Generate a new one in the web app.")
+    note_user(update)
+    await _do_link(update, ctx.args[0])
 
 
 async def cmd_me(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
