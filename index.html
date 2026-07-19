@@ -4895,6 +4895,9 @@ try{ empMigrate(); payRestore(); invDateRestore();
     tgLinkCode:function(empId){return call('/api/telegram/link-code',{method:'POST',
       body:JSON.stringify({employee_id:empId||null})});},
     tgCodeStatus:function(code){return call('/api/telegram/link-code/'+encodeURIComponent(code)+'/status');},
+    tgPerms:function(eid){return call('/api/employees/'+encodeURIComponent(eid)+'/telegram-permissions');},
+    tgSetPerms:function(eid,caps){return call('/api/employees/'+encodeURIComponent(eid)+'/telegram-permissions',
+      {method:'PUT',body:JSON.stringify({capabilities:caps})});},
     tgStatus:function(){return call('/api/telegram/status');},
     tgUnlink:function(){return call('/api/telegram/unlink',{method:'POST'});},
     // --- Telegram Management Center (multi-account administration) ---
@@ -6239,6 +6242,87 @@ try{ empMigrate(); payRestore(); invDateRestore();
     }finally{ LM.busy=false; }
   }
 
+  /* ---- Telegram Permissions: the owner's admin interface ------------------
+     Every capability the bot exposes, toggled per employee. Capabilities the
+     employee's ERP ROLE does not grant are shown locked with the reason — the
+     role map stays the ceiling, so this can only ever remove access. */
+  var PM = { eid:null, data:null, dirty:{} };
+
+  function pmShell(){
+    var el=document.getElementById('tgPermModal'); if(el) return el;
+    el=document.createElement('div'); el.id='tgPermModal';
+    el.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(15,23,32,.55);'
+      +'display:flex;align-items:center;justify-content:center;padding:20px';
+    el.innerHTML='<div id="tgPermPanel" role="dialog" aria-modal="true" aria-label="Telegram permissions" '
+      +'style="background:var(--card,#fff);border-radius:14px;max-width:620px;width:100%;'
+      +'max-height:92vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.28)"></div>';
+    document.body.appendChild(el);
+    el.addEventListener('keydown',function(e){ if(e.key==='Escape') pmClose(); });
+    return el;
+  }
+  function pmClose(){ var el=document.getElementById('tgPermModal'); if(el&&el.parentNode) el.parentNode.removeChild(el); PM.dirty={}; }
+
+  function pmRender(){
+    var p=pmShell().querySelector('#tgPermPanel'), d=PM.data;
+    if(!d){ p.innerHTML='<div style="padding:34px;text-align:center;color:var(--muted)">Loading permissions…</div>'; return; }
+    var rows=d.capabilities.map(function(c){
+      var on=(PM.dirty[c.key]!==undefined)?PM.dirty[c.key]:c.enabled;
+      return '<label style="display:flex;align-items:flex-start;gap:10px;padding:9px 4px;'
+        +'border-bottom:1px solid var(--line,#eef1f4);'+(c.locked?'opacity:.55':'')+'">'
+        +'<input type="checkbox" data-cap="'+esc(c.key)+'"'+(on?' checked':'')+(c.locked?' disabled':'')
+        +' style="margin-top:2px">'
+        +'<span style="flex:1"><span style="font-weight:600;font-size:13.5px">'+esc(c.label)+'</span>'
+        +'<span style="display:block;font-size:11.5px;color:var(--muted);margin-top:2px">'
+        +(c.locked? esc(c.reason) : 'Requires: '+c.requires.join(', '))+'</span></span>'
+        +(c.locked?'<span class="pill" style="background:var(--chip,#eef1f4);color:var(--muted)">Locked</span>':'')
+        +'</label>';
+    }).join('');
+    p.innerHTML='<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;'
+      +'padding:18px 20px;border-bottom:1px solid var(--line,#e2e6ea)">'
+      +'<div><div style="font-size:16.5px;font-weight:700">Telegram Permissions</div>'
+      +'<div style="font-size:12.5px;color:var(--muted);margin-top:2px">'+esc(d.employee)
+      +' \u00b7 '+esc(roleLabel(d.role))+' \u00b7 '+esc(d.branch||'—')
+      +(d.linked?(' \u00b7 @'+esc(d.tg_username||d.tg_id)):' \u00b7 not linked')+'</div></div>'
+      +'<button class="btn g" id="pmX" style="padding:4px 10px;font-size:12px">Close</button></div>'
+      +'<div style="padding:8px 20px 4px;font-size:12.5px;color:var(--muted);line-height:1.6">'
+      +'Switch off anything this employee should not reach from Telegram. Locked rows are '
+      +'blocked by their ERP role and cannot be granted here.</div>'
+      +'<div style="padding:4px 20px">'+rows+'</div>'
+      +'<div style="display:flex;gap:8px;padding:16px 20px;border-top:1px solid var(--line,#e2e6ea)">'
+      +'<button class="btn p" id="pmSave"'+(d.editable?'':' disabled')+'>Save Permissions</button>'
+      +'<button class="btn g" id="pmCancel">Cancel</button>'
+      +(d.editable?'':'<span style="font-size:12px;color:var(--muted);align-self:center">Read-only — you may not manage permissions.</span>')
+      +'</div>';
+    p.querySelector('#pmX').onclick=pmClose;
+    p.querySelector('#pmCancel').onclick=pmClose;
+    [].forEach.call(p.querySelectorAll('input[type=checkbox][data-cap]'),function(cb){
+      cb.onchange=function(){ PM.dirty[cb.getAttribute('data-cap')]=cb.checked; };
+    });
+    var sv=p.querySelector('#pmSave'); if(sv) sv.onclick=pmSave;
+  }
+
+  async function openPerms(eid){
+    PM.eid=eid; PM.data=null; PM.dirty={}; pmShell(); pmRender();
+    try{ PM.data=await A().tgPerms(eid); pmRender(); }
+    catch(e){ say(err(e)); pmClose(); }
+  }
+
+  async function pmSave(){
+    var caps={};
+    (PM.data.capabilities||[]).forEach(function(c){
+      if(c.locked) return;
+      caps[c.key]=(PM.dirty[c.key]!==undefined)?PM.dirty[c.key]:c.enabled;
+    });
+    var b=document.getElementById('pmSave'); if(b){b.disabled=true;b.textContent='Saving…';}
+    try{
+      var r=await A().tgSetPerms(PM.eid,caps);
+      say(r.note ? r.note : 'Telegram permissions updated');
+      PM.data.capabilities=r.capabilities; PM.dirty={}; pmRender();
+      load();
+    }catch(e){ say(err(e)); if(b){b.disabled=false;b.textContent='Save Permissions';} }
+  }
+  window.__tgPerms={ open:openPerms, close:pmClose, state:function(){return PM;} };
+
   async function lmRoster(){
     // who can still be linked? employees minus anyone holding an ACTIVE account
     var emps=[], accts=[];
@@ -6336,6 +6420,7 @@ try{ empMigrate(); payRestore(); invDateRestore();
         +'<td style="padding:9px 10px;white-space:nowrap">'+esc(ago(r.last_activity))+'</td>'
         +'<td style="padding:9px 10px">'+badge(r.status)+'</td>'
         +'<td style="padding:9px 10px;white-space:nowrap">'
+          +'<button class="btn g tgmc-act" data-a="perms" data-id="'+esc(r.tg_id)+'" data-emp="'+esc(r.employee_id||'')+'" style="padding:4px 9px;font-size:12px">Permissions</button> '
           +'<button class="btn g tgmc-act" data-a="activity" data-id="'+esc(r.tg_id)+'" style="padding:4px 9px;font-size:12px">View Activity</button> '
           +'<button class="btn g tgmc-act" data-a="'+(on?'disable':'enable')+'" data-id="'+esc(r.tg_id)+'" style="padding:4px 9px;font-size:12px">'+(on?'Disable':'Enable')+'</button> '
           +'<button class="btn g tgmc-act" data-a="remove" data-id="'+esc(r.tg_id)+'" style="padding:4px 9px;font-size:12px;color:var(--bad,#c0392b);border-color:var(--bad,#c0392b)">Remove</button>'
@@ -6379,6 +6464,11 @@ try{ empMigrate(); payRestore(); invDateRestore();
     var who=(row.employee||'this employee')+' (@'+(row.username||id)+')';
     try{
       MC.busy=true;
+      if(a==='perms'){
+        var eid=(MC.rows.filter(function(x){return x.tg_id===id;})[0]||{}).employee_id;
+        if(!eid){ say('This account is not mapped to an employee yet.'); return; }
+        await openPerms(eid); return;
+      }
       if(a==='activity'){
         if(MC.viewing===id){ MC.viewing=null; render(); return; }
         MC.viewing=id; render();
