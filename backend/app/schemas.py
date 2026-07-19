@@ -83,6 +83,7 @@ class EmployeeIn(BaseModel):
     sched_start: Optional[str] = "09:00"
     sched_end: Optional[str] = "17:00"
     sched_days: Optional[str] = "Mon-Sat"
+    role: Optional[str] = None
 
 class EmployeeUpdate(BaseModel):
     """Partial update — id comes from the URL path, all body fields optional."""
@@ -95,6 +96,7 @@ class EmployeeUpdate(BaseModel):
     sched_start: Optional[str] = None
     sched_end: Optional[str] = None
     sched_days: Optional[str] = None
+    role: Optional[str] = None
 
 class LicenseIn(BaseModel):
     name: str

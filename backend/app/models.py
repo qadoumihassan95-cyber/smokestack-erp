@@ -45,6 +45,10 @@ class User(Base):
     email = Column(String)
     password_hash = Column(String, nullable=False)
     status = Column(String, default="active")
+    # Identities provisioned for an employee's Telegram session cannot sign in
+    # to the web app — they exist purely to carry that employee's RBAC.
+    can_login = Column(Boolean, default=True)
+    employee_id = Column(String)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     branches = relationship("UserBranch", cascade="all, delete-orphan", backref="user")
 
@@ -108,6 +112,9 @@ class Employee(Base):
     sched_start = Column(String, default="09:00")   # scheduled shift start HH:MM (branch tz)
     sched_end = Column(String, default="17:00")     # scheduled shift end HH:MM
     sched_days = Column(String, default="Mon-Sat")  # working days label
+    # --- Telegram / session identity (additive) ---
+    role = Column(String, default="employee")   # RBAC role this employee acts with
+    user_id = Column(String)                    # login identity provisioned for this employee
     created_by = Column(String); created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -189,9 +196,17 @@ class TelegramLink(Base):
     disabled_by = Column(String)
 
 class LinkCode(Base):
+    """An invitation to link ONE employee's Telegram account.
+
+    user_id is the session identity the redeeming Telegram account will act as.
+    employee_id is who the invitation was minted for — this is what makes the
+    system multi-employee: previously the code carried only the signed-in user,
+    so every code an owner generated pointed back at the owner."""
     __tablename__ = "link_codes"
     code = Column(String, primary_key=True); user_id = Column(String)
     expires_at = Column(DateTime(timezone=True)); used = Column(Boolean, default=False)
+    employee_id = Column(String)     # the employee this invitation is for
+    created_by = Column(String)      # who minted it
 
 
 class ValidationRun(Base):
