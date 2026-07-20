@@ -1,0 +1,334 @@
+"""Scheduled Telegram business reports — data assembly and formatting.
+
+DATA INTEGRITY: every financial figure comes from the SAME helpers the web
+dashboard, Reports page and Financial Control Center use (core._costs_profit,
+core._sum, core._purchases_sum). No formula is re-implemented here, so a report
+cannot drift from the ERP.
+
+MISSING DATA: a value that cannot be computed is returned as None and rendered
+as "Not available" — never silently zero, never invented.
+"""
+from datetime import datetime, timedelta, date, timezone as _tz
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:  # pragma: no cover
+    ZoneInfo = None
+
+from sqlalchemy import func
+from . import models
+from .routers import core as C
+
+NA = "Not available"
+MORNING = "morning"
+EVENING = "evening"
+TG_LIMIT = 3900          # Telegram hard limit is 4096; leave room for the part header
+
+
+# --------------------------------------------------------------------------- tz
+def company_tz(db) -> str:
+    """The configured business timezone. Read from the branch configuration —
+    never assume the Render server's UTC clock is the business clock."""
+    b = db.query(models.Branch).filter(models.Branch.timezone.isnot(None)).first()
+    tzname = (b.timezone if b and b.timezone else "UTC") or "UTC"
+    if ZoneInfo is not None:
+        try:
+            ZoneInfo(tzname)
+        except Exception:  # noqa: BLE001
+            return "UTC"
+    return tzname
+
+
+def now_local(db):
+    """Current time in the business timezone. ZoneInfo applies DST rules, so
+    06:00 stays 06:00 across a daylight-saving change."""
+    tzname = company_tz(db)
+    if ZoneInfo is None:
+        return datetime.now(_tz.utc), "UTC"
+    return datetime.now(ZoneInfo(tzname)), tzname
+
+
+def business_date(db) -> date:
+    return now_local(db)[0].date()
+
+
+# ------------------------------------------------------------------ money utils
+def money(v):
+    if v is None:
+        return NA
+    try:
+        return "$" + format(float(v), ",.2f")
+    except Exception:  # noqa: BLE001
+        return NA
+
+
+def _num(v):
+    return None if v is None else float(v)
+
+
+# ------------------------------------------------------------- data collection
+def _sales_split(db, brs, d0, d1):
+    """Cash vs card/bank, taken from the ledger the dashboard reads."""
+    q = (db.query(models.Ledger.account, func.coalesce(func.sum(models.Ledger.amount), 0))
+         .filter(models.Ledger.type == "sale", models.Ledger.branch.in_(brs),
+                 models.Ledger.entry_date >= d0, models.Ledger.entry_date <= d1)
+         .group_by(models.Ledger.account).all())
+    cash = card = 0.0
+    for acct, amt in q:
+        a = (acct or "").lower()
+        if "cash" in a:
+            cash += float(amt or 0)
+        else:
+            card += float(amt or 0)
+    return cash, card
+
+
+def _inventory(db, brs):
+    rows = (db.query(models.Stock, models.Product)
+            .join(models.Product, models.Product.sku == models.Stock.sku)
+            .filter(models.Stock.branch.in_(brs)).all())
+    value = 0.0
+    low = out = 0
+    negative = []
+    for st, p in rows:
+        qty = int(st.qty or 0)
+        value += qty * float(p.cost or 0)
+        if qty < 0:
+            negative.append(f"{p.name} ({st.branch}) {qty}")
+        elif qty == 0:
+            out += 1
+        elif qty <= int(p.min_level or 0):
+            low += 1
+    return {"value": value, "low": low, "out": out, "negative": negative}
+
+
+def _attendance(db, brs, d):
+    rows = (db.query(models.Attendance)
+            .filter(models.Attendance.branch.in_(brs),
+                    func.date(models.Attendance.clock_in_at) == d).all())
+    clocked_in = [r for r in rows if not r.clock_out_at]
+    late = [r for r in rows if r.late]
+    active_emps = (db.query(models.Employee)
+                   .filter(models.Employee.branch.in_(brs),
+                           models.Employee.active == True).count())  # noqa: E712
+    present = len({r.employee_name or r.employee_id for r in rows})
+    return {"clocked_in": len(clocked_in), "missing_out": len(clocked_in),
+            "late": len(late), "absent": max(active_emps - present, 0),
+            "scheduled": active_emps,
+            "missing_out_names": [r.employee_name or r.employee_id for r in clocked_in][:8]}
+
+
+def _licenses(db, brs, today):
+    out = {"expired": [], "today": [], "week": [], "month": []}
+    rows = (db.query(models.License)
+            .filter(models.License.branch.in_(brs),
+                    models.License.status != "archived").all())
+    for l in rows:
+        if not l.expiry_date:
+            continue
+        days = (l.expiry_date - today).days
+        item = {"name": l.name, "branch": l.branch, "expiry": str(l.expiry_date), "days": days}
+        if days < 0:
+            out["expired"].append(item)
+        elif days == 0:
+            out["today"].append(item)
+        elif days <= 7:
+            out["week"].append(item)
+        elif days <= 30:
+            out["month"].append(item)
+    return out
+
+
+def _approvals(db, brs):
+    return (db.query(models.Approval)
+            .filter(models.Approval.branch.in_(brs),
+                    models.Approval.status == "pending").count())
+
+
+def _top_products(db, brs, d0, d1, n=3):
+    rows = (db.query(models.Ledger.product,
+                     func.coalesce(func.sum(models.Ledger.amount), 0).label("amt"))
+            .filter(models.Ledger.type == "sale", models.Ledger.branch.in_(brs),
+                    models.Ledger.product.isnot(None),
+                    models.Ledger.entry_date >= d0, models.Ledger.entry_date <= d1)
+            .group_by(models.Ledger.product).order_by(func.sum(models.Ledger.amount).desc())
+            .limit(n).all())
+    return [(p, float(a or 0)) for p, a in rows if p]
+
+
+def collect(db, branches, d0, d1, today):
+    """One branch scope, one period → every figure the report can show."""
+    brs = list(branches)
+    cp = C._costs_profit(db, brs, d0, d1)          # the shared engine
+    cash, card = _sales_split(db, brs, d0, d1)
+    inv = _inventory(db, brs)
+    att = _attendance(db, brs, today)
+    lic = _licenses(db, brs, today)
+    revenue = cp["revenue"]
+    tax = cp["tax"]
+    gross = revenue - tax - cp["cogs"]
+    return {
+        "branches": brs,
+        "sales": _num(revenue), "cash": _num(cash), "card": _num(card),
+        "cogs": _num(cp["cogs"]), "expenses": _num(cp["opex"]),
+        "payroll": _num(cp["payroll"]), "purchases": _num(cp["cogs"]),
+        "tax": _num(tax), "gross_profit": _num(gross), "net": _num(cp["profit"]),
+        "deposit": _num(cash),
+        "inventory_value": _num(inv["value"]), "low": inv["low"], "out": inv["out"],
+        "negative": inv["negative"],
+        "att": att, "lic": lic, "approvals": _approvals(db, brs),
+        "top": _top_products(db, brs, d0, d1),
+        "reported": revenue > 0 or cp["opex"] > 0,
+    }
+
+
+# --------------------------------------------------------------------- alerts
+def alerts(db, data, kind):
+    """Only meaningful conditions. Normal operation produces no alerts."""
+    out = []
+    lic = data["lic"]
+    for l in lic["expired"]:
+        out.append(("🔴", f"{l['name']} ({l['branch']}) expired {abs(l['days'])}d ago"))
+    for l in lic["today"]:
+        out.append(("🟠", f"{l['name']} ({l['branch']}) expires TODAY"))
+    for l in lic["week"]:
+        out.append(("🟠", f"{l['name']} ({l['branch']}) expires in {l['days']}d"))
+    for n in data["negative"]:
+        out.append(("🔴", f"Negative inventory: {n}"))
+    if data["out"]:
+        out.append(("🟡", f"{data['out']} product(s) out of stock"))
+    if not data["reported"]:
+        out.append(("🔴", "No sales or expenses posted for this period"))
+    if data["att"]["missing_out"]:
+        names = ", ".join(data["att"]["missing_out_names"])
+        out.append(("🟠", f"{data['att']['missing_out']} missing clock-out(s): {names}"))
+    if data["att"]["late"]:
+        out.append(("🟡", f"{data['att']['late']} late arrival(s)"))
+    if data["approvals"]:
+        out.append(("🟡", f"{data['approvals']} approval(s) pending"))
+    if data["deposit"] and data["deposit"] > 0:
+        out.append(("🟡", f"Cash deposit pending: {money(data['deposit'])}"))
+    return out
+
+
+# ------------------------------------------------------------------ formatting
+def _line(label, value):
+    return f"{label}: <b>{value}</b>"
+
+
+def _fin_block(d):
+    return "\n".join([
+        _line("Sales", money(d["sales"])),
+        _line("  Cash", money(d["cash"])),
+        _line("  Card/Bank", money(d["card"])),
+        _line("COGS", money(d["cogs"])),
+        _line("Expenses", money(d["expenses"])),
+        _line("Payroll", money(d["payroll"])),
+        _line("Sales tax collected", money(d["tax"])),
+        _line("Gross profit", money(d["gross_profit"])),
+        _line("Net operating result", money(d["net"])),
+        _line("Cash ready to deposit", money(d["deposit"])),
+    ])
+
+
+def _ops_block(d):
+    a, l = d["att"], d["lic"]
+    lic_line = (f"🔴 {len(l['expired'])} expired · 🟠 {len(l['today']) + len(l['week'])} urgent · "
+                f"🟡 {len(l['month'])} soon" if (l["expired"] or l["today"] or l["week"] or l["month"])
+                else "🟢 All valid")
+    return "\n".join([
+        _line("Inventory value", money(d["inventory_value"])),
+        _line("Low stock", d["low"]), _line("Out of stock", d["out"]),
+        _line("Clocked in", a["clocked_in"]),
+        _line("Late", a["late"]), _line("Absent", a["absent"]),
+        _line("Missing clock-outs", a["missing_out"]),
+        _line("Licenses", lic_line),
+        _line("Pending approvals", d["approvals"]),
+    ])
+
+
+def _alerts_block(items):
+    if not items:
+        return "✅ No alerts — normal operation."
+    return "\n".join(f"{icon} {text}" for icon, text in items[:12])
+
+
+def build_company(db, scope_branches, kind, test=False):
+    """The combined all-branches report."""
+    local, tzname = now_local(db)
+    today = local.date()
+    if kind == MORNING:
+        d0 = d1 = today - timedelta(days=1)
+        title = "🌅 <b>SmokeStack Morning Report</b>"
+        period = f"Previous day — {d0}"
+        note = "Focus: preparation and risks for today."
+    else:
+        d0 = d1 = today
+        title = "🌆 <b>SmokeStack Evening Report</b>"
+        period = f"Today {d0}, as of {local.strftime('%H:%M')}"
+        note = f"<i>As of {local.strftime('%H:%M')} — not a final full-day report.</i>"
+
+    d = collect(db, scope_branches, d0, d1, today)
+    parts = [
+        ("🧪 <b>TEST REPORT</b>\n" if test else "") + title,
+        "Company Summary — All Branches",
+        f"Generated {local.strftime('%Y-%m-%d %H:%M')} ({tzname})",
+        f"Reporting period: {period}",
+        note, "",
+        "<b>FINANCIAL</b>", _fin_block(d), "",
+        "<b>OPERATIONS</b>", _ops_block(d), "",
+    ]
+    # branch comparison
+    rows = []
+    for b in scope_branches:
+        bd = collect(db, [b], d0, d1, today)
+        rows.append((b, bd["sales"] or 0, bd["net"], bd["reported"]))
+    if len(rows) > 1:
+        rows.sort(key=lambda r: r[1], reverse=True)
+        parts.append("<b>BRANCH COMPARISON</b>")
+        for b, s, n, rep in rows:
+            parts.append(f"{b}: {money(s)}" + ("" if rep else "  ⚠️ no data"))
+        parts.append(f"Best performing: <b>{rows[0][0]}</b>")
+        weak = [r for r in rows if not r[3]] or [rows[-1]]
+        parts.append(f"Needs attention: <b>{weak[0][0]}</b>")
+        missing = [r[0] for r in rows if not r[3]]
+        parts.append(_line("Pending branch reports", ", ".join(missing) if missing else "None"))
+        parts.append("")
+    parts += ["<b>IMPORTANT ALERTS</b>", _alerts_block(alerts(db, d, kind))]
+    return "\n".join(parts), d
+
+
+def build_branch(db, branch, kind, test=False):
+    local, tzname = now_local(db)
+    today = local.date()
+    d0 = d1 = (today - timedelta(days=1)) if kind == MORNING else today
+    d = collect(db, [branch], d0, d1, today)
+    head = ("🧪 <b>TEST REPORT</b>\n" if test else "")
+    head += f"🏬 <b>{branch}</b> — {'Morning' if kind == MORNING else 'Evening'} Report"
+    top = "\n".join(f"  {i+1}. {p} — {money(a)}" for i, (p, a) in enumerate(d["top"])) or "  —"
+    parts = [
+        head,
+        f"Period: {d0}" + ("" if kind == MORNING else f", as of {local.strftime('%H:%M')}"),
+        "", "<b>FINANCIAL</b>", _fin_block(d),
+        "", "<b>OPERATIONS</b>", _ops_block(d),
+        "", "<b>TOP PRODUCTS</b>", top,
+        "", "<b>ALERTS</b>", _alerts_block(alerts(db, d, kind)),
+    ]
+    return "\n".join(parts), d
+
+
+def split_message(text, limit=TG_LIMIT):
+    """Split safely on line boundaries and number the parts."""
+    if len(text) <= limit:
+        return [text]
+    chunks, cur = [], ""
+    for line in text.split("\n"):
+        if len(cur) + len(line) + 1 > limit and cur:
+            chunks.append(cur)
+            cur = line
+        else:
+            cur = (cur + "\n" + line) if cur else line
+    if cur:
+        chunks.append(cur)
+    n = len(chunks)
+    return [f"<b>Part {i+1} of {n}</b>\n{c}" for i, c in enumerate(chunks)]

@@ -226,3 +226,50 @@ class ValidationRun(Base):
     modules = Column(String)     # comma-separated modules that reported an issue
     severity = Column(String)    # worst severity in the run: ok|warning|error|critical
     report = Column(Text)        # full JSON report
+
+
+class ReportRecipient(Base):
+    """Who receives the scheduled Telegram reports, and how.
+
+    Keyed by the Telegram account. Branch scope here can only NARROW the
+    employee's ERP scope — it is intersected with it at send time, so a branch
+    manager can never be configured into another branch's data.
+    """
+    __tablename__ = "report_recipients"
+    tg_id = Column(String, primary_key=True)
+    enabled = Column(Boolean, default=True)
+    morning = Column(Boolean, default=True)
+    evening = Column(Boolean, default=True)
+    all_branches = Column(Boolean, default=True)   # send the combined report
+    per_branch = Column(Boolean, default=True)     # send one report per branch
+    branches = Column(Text)                        # JSON list; null = full ERP scope
+    language = Column(String, default="en")
+    include_pdf = Column(Boolean, default=False)
+    urgent_alerts = Column(Boolean, default=True)
+    updated_by = Column(String)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ReportDelivery(Base):
+    """Delivery log + the idempotency ledger that makes the scheduler safe.
+
+    idem_key is UNIQUE. A worker claims a delivery by INSERTing the key; a second
+    instance (or a restarted one) hits the constraint and skips, so the same
+    report can never be sent twice for the same business date and slot.
+    """
+    __tablename__ = "report_deliveries"
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    idem_key = Column(String, unique=True, index=True)
+    report_type = Column(String)          # morning | evening | manual | test
+    business_date = Column(Date, index=True)
+    scheduled_for = Column(DateTime(timezone=True))
+    sent_at = Column(DateTime(timezone=True))
+    recipient = Column(String)            # employee name
+    tg_id = Column(String, index=True)
+    branch_scope = Column(String)
+    status = Column(String, default="pending")   # pending|processing|sent|partial|failed|skipped
+    retries = Column(Integer, default=0)
+    error = Column(Text)
+    message_ids = Column(String)
+    pdf_status = Column(String)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
