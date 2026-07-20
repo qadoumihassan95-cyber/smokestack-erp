@@ -12,6 +12,7 @@ import re
 import csv
 import io
 import time
+import asyncio
 import html
 import logging
 from urllib.parse import quote
@@ -1962,6 +1963,82 @@ async def post_init(app):
         log.warning("menu button setup: %s", e)
 
 
+
+
+# ==========================================================================
+# SCHEDULED BUSINESS REPORTS
+# The schedule lives in the DATABASE, not in memory: this loop simply wakes up
+# every minute, asks the API for the business-local time, and tries to CLAIM
+# each due delivery. The claim is an INSERT of a unique idempotency key, so a
+# restart, a redeploy or a second Render instance can never double-send.
+# ==========================================================================
+REPORT_SLOTS = {"06:00": "morning", "18:00": "evening"}
+
+
+async def _send_report(tg_id, kind, idem_key, test=False, bot=None):
+    """Render then deliver. One failed branch message does not abort the rest —
+    the delivery is marked 'partial' instead."""
+    status, data = await _req("POST", "/api/telegram/reports/render",
+                              headers={"X-Bot-Token": TOKEN},
+                              body={"tg_id": str(tg_id), "kind": kind, "test": test})
+    if status != 200 or not data:
+        await _req("POST", "/api/telegram/reports/complete", headers={"X-Bot-Token": TOKEN},
+                   body={"idem_key": idem_key, "status": "failed",
+                         "error": f"render failed ({status})"})
+        return False
+    msgs = data.get("messages") or []
+    sent_ids, failures, retries = [], 0, 0
+    for m in msgs:
+        ok = False
+        for attempt in range(3):                      # exponential backoff
+            try:
+                res = await bot.send_message(chat_id=int(tg_id), text=m,
+                                             parse_mode=ParseMode.HTML)
+                sent_ids.append(getattr(res, "message_id", ""))
+                ok = True
+                break
+            except Exception as e:                    # noqa: BLE001
+                retries += 1
+                log.warning("report send attempt %s failed: %s", attempt + 1, e)
+                await asyncio.sleep(2 ** attempt)
+        if not ok:
+            failures += 1
+    if failures == 0:
+        st_ = "sent"
+    elif sent_ids:
+        st_ = "partial"
+    else:
+        st_ = "failed"
+    await _req("POST", "/api/telegram/reports/complete", headers={"X-Bot-Token": TOKEN},
+               body={"idem_key": idem_key, "status": st_, "retries": retries,
+                     "message_ids": sent_ids,
+                     "error": (f"{failures} message(s) failed" if failures else None)})
+    return st_ in ("sent", "partial")
+
+
+async def report_scheduler(bot):
+    """Wake every 60s; fire only inside the matching business-local minute."""
+    await asyncio.sleep(15)
+    while True:
+        try:
+            status, cfg = await _req("GET", "/api/telegram/reports/due",
+                                     headers={"X-Bot-Token": TOKEN})
+            if status == 200 and cfg and cfg.get("due"):
+                for job in cfg["due"]:
+                    st_, claim = await _req("POST", "/api/telegram/reports/claim",
+                                            headers={"X-Bot-Token": TOKEN},
+                                            body={"tg_id": job["tg_id"], "kind": job["kind"],
+                                                  "slot": job["slot"],
+                                                  "business_date": job["business_date"]})
+                    if st_ == 200 and claim and claim.get("claimed"):
+                        log.info("sending %s report to %s", job["kind"], job["tg_id"])
+                        await _send_report(job["tg_id"], job["kind"],
+                                           claim["idem_key"], test=False, bot=bot)
+        except Exception as e:  # noqa: BLE001
+            log.warning("report scheduler tick failed: %s", e)
+        await asyncio.sleep(60)
+
+
 def main():
     if not TOKEN:
         raise SystemExit("TELEGRAM_BOT_TOKEN is not set — configure it on the Render worker.")
@@ -1975,6 +2052,10 @@ def main():
     app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, on_media))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
     log.info("SmokeStack Telegram dashboard starting (long polling); API_BASE=%s", API_BASE)
+    async def _post_init(application):
+        application.create_task(report_scheduler(application.bot))
+
+    app.post_init = _post_init
     app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
 
 
