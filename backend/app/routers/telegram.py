@@ -616,3 +616,271 @@ def account_activity(tg_id: str, limit: int = 100, db: Session = Depends(get_db)
                          "user": a.user_id, "tg_username": a.tg_username,
                          "branch": a.branch, "role": a.role, "ip": a.ip}
                         for a in rows]}
+
+
+# =============================================================================
+# SCHEDULED BUSINESS REPORTS
+# =============================================================================
+from .. import reports_tg as R  # noqa: E402
+
+
+def _recipient_row(db, link, rec):
+    u = db.get(models.User, link.user_id)
+    emp = _emp_for(db, link, u)
+    # an all-branch role (owner/admin/accountant) reaches every branch even when
+    # its identity happens to be pinned to one; everyone else gets exactly their
+    # assigned branches
+    if u and P.can_see_all(u.role):
+        erp_scope = S.all_branch_names(db)
+    else:
+        erp_scope = (u.branch_names if u else None) or ([emp.branch] if emp and emp.branch else [])
+    chosen = None
+    if rec and rec.branches:
+        try:
+            chosen = json.loads(rec.branches)
+        except Exception:  # noqa: BLE001
+            chosen = None
+    # SECURITY: configuration can only narrow the employee's real ERP scope
+    effective = [b for b in (chosen or erp_scope) if b in erp_scope]
+    return {
+        "tg_id": link.tg_id, "username": link.username,
+        "employee": (emp.name if emp else (u.name if u else "—")),
+        "employee_id": (emp.id if emp else None),
+        "role": (u.role if u else None),
+        "account_status": (link.status or "active"),
+        "erp_branches": erp_scope, "branches": effective,
+        "enabled": bool(rec.enabled) if rec else False,
+        "morning": bool(rec.morning) if rec else True,
+        "evening": bool(rec.evening) if rec else True,
+        "all_branches": bool(rec.all_branches) if rec else True,
+        "per_branch": bool(rec.per_branch) if rec else True,
+        "language": (rec.language if rec else "en") or "en",
+        "include_pdf": bool(rec.include_pdf) if rec else False,
+        "urgent_alerts": bool(rec.urgent_alerts) if rec else True,
+        "configured": bool(rec),
+    }
+
+
+@router.get("/reports/recipients")
+def report_recipients(db: Session = Depends(get_db),
+                      user: models.User = Depends(S.require("view_all_branches"))):
+    links = db.query(models.TelegramLink).order_by(models.TelegramLink.linked_at.desc()).all()
+    out = []
+    for l in links:
+        rec = db.get(models.ReportRecipient, l.tg_id)
+        out.append(_recipient_row(db, l, rec))
+    local, tzname = R.now_local(db)
+    return {"timezone": tzname, "local_time": local.strftime("%Y-%m-%d %H:%M"),
+            "slots": ["06:00", "18:00"], "recipients": out}
+
+
+@router.put("/reports/recipients/{tg_id}")
+def set_report_recipient(tg_id: str, body: dict, db: Session = Depends(get_db),
+                         user: models.User = Depends(S.require("manage_users"))):
+    link = db.get(models.TelegramLink, (tg_id or "").strip())
+    if not link:
+        raise HTTPException(404, "Telegram account not found")
+    rec = db.get(models.ReportRecipient, link.tg_id) or models.ReportRecipient(tg_id=link.tg_id)
+    for f in ("enabled", "morning", "evening", "all_branches", "per_branch",
+              "include_pdf", "urgent_alerts"):
+        if f in body:
+            setattr(rec, f, bool(body[f]))
+    if "language" in body:
+        rec.language = str(body["language"] or "en")[:8]
+    if "branches" in body:
+        rec.branches = json.dumps(body["branches"]) if body["branches"] else None
+    rec.updated_by = user.id
+    rec.updated_at = datetime.now(timezone.utc)
+    db.merge(rec)
+    db.commit()
+    S.audit(db, user, "set_report_recipient", "telegram", link.tg_id,
+            detail=f"enabled={rec.enabled} morning={rec.morning} evening={rec.evening}")
+    return _recipient_row(db, link, db.get(models.ReportRecipient, link.tg_id))
+
+
+def _scope_for(db, tg_id):
+    """Effective, security-checked branch scope for a recipient."""
+    link = db.get(models.TelegramLink, tg_id)
+    if not link or (link.status or "active") != "active":
+        return None, None, "account not linked or disabled"
+    rec = db.get(models.ReportRecipient, tg_id)
+    row = _recipient_row(db, link, rec)
+    if not row["branches"]:
+        return link, row, "no branches in scope"
+    return link, row, None
+
+
+@router.get("/reports/preview")
+def preview_report(kind: str = "morning", tg_id: str = "", db: Session = Depends(get_db),
+                   user: models.User = Depends(S.require("view_all_branches"))):
+    """Render exactly what would be sent, without sending or logging a delivery."""
+    kind = kind if kind in (R.MORNING, R.EVENING) else R.MORNING
+    if tg_id:
+        link, row, err = _scope_for(db, tg_id)
+        if err:
+            raise HTTPException(422, err)
+        scope = row["branches"]
+    else:
+        scope = S.scope_branches(user, db)
+    company, _ = R.build_company(db, scope, kind, test=True)
+    parts = [{"title": "Company — All Branches", "text": company}]
+    for b in scope:
+        t, _ = R.build_branch(db, b, kind, test=True)
+        parts.append({"title": b, "text": t})
+    return {"kind": kind, "timezone": R.company_tz(db), "branches": scope,
+            "messages": parts,
+            "chunks": sum(len(R.split_message(p["text"])) for p in parts)}
+
+
+def _claim(db, idem_key, **fields):
+    """Atomically claim a delivery. Returns the row, or None if already claimed —
+    the UNIQUE index on idem_key is the cross-instance lock."""
+    existing = (db.query(models.ReportDelivery)
+                .filter(models.ReportDelivery.idem_key == idem_key).first())
+    if existing:
+        return None
+    row = models.ReportDelivery(idem_key=idem_key, status="processing", **fields)
+    db.add(row)
+    try:
+        db.commit()
+    except Exception:  # noqa: BLE001  (another instance won the race)
+        db.rollback()
+        return None
+    return row
+
+
+@router.post("/reports/claim")
+def claim_delivery(body: dict, x_bot_token: str = Header(None), db: Session = Depends(get_db)):
+    """The worker calls this to take ownership of one scheduled delivery.
+
+    Idempotency key = company + recipient + report type + business date + slot.
+    """
+    if not settings.bot_token or x_bot_token != settings.bot_token:
+        raise HTTPException(403, "Forbidden")
+    tg_id = str(body.get("tg_id") or "")
+    kind = str(body.get("kind") or "")
+    slot = str(body.get("slot") or "")
+    bdate = str(body.get("business_date") or "")
+    link, row, err = _scope_for(db, tg_id)
+    if err:
+        return {"claimed": False, "reason": err}
+    key = f"smokestack|{tg_id}|{kind}|{bdate}|{slot}"
+    claimed = _claim(db, key, report_type=kind, business_date=R.business_date(db),
+                     scheduled_for=datetime.now(timezone.utc), recipient=row["employee"],
+                     tg_id=tg_id, branch_scope=", ".join(row["branches"]))
+    if not claimed:
+        return {"claimed": False, "reason": "already delivered or in progress", "idem_key": key}
+    return {"claimed": True, "idem_key": key, "delivery_id": claimed.id,
+            "recipient": row, "kind": kind}
+
+
+@router.post("/reports/render")
+def render_report(body: dict, x_bot_token: str = Header(None), db: Session = Depends(get_db)):
+    """Messages for a claimed delivery, already split to Telegram's limit."""
+    if not settings.bot_token or x_bot_token != settings.bot_token:
+        raise HTTPException(403, "Forbidden")
+    tg_id = str(body.get("tg_id") or "")
+    kind = str(body.get("kind") or R.MORNING)
+    test = bool(body.get("test"))
+    link, row, err = _scope_for(db, tg_id)
+    if err:
+        raise HTTPException(422, err)
+    msgs = []
+    if row["all_branches"]:
+        company, _ = R.build_company(db, row["branches"], kind, test=test)
+        msgs += R.split_message(company)
+    if row["per_branch"]:
+        for b in row["branches"]:
+            t, _ = R.build_branch(db, b, kind, test=test)
+            msgs += R.split_message(t)
+    return {"messages": msgs, "recipient": row["employee"], "branches": row["branches"]}
+
+
+@router.post("/reports/complete")
+def complete_delivery(body: dict, x_bot_token: str = Header(None), db: Session = Depends(get_db)):
+    """The worker reports the outcome; failures keep the row for a manual resend."""
+    if not settings.bot_token or x_bot_token != settings.bot_token:
+        raise HTTPException(403, "Forbidden")
+    key = str(body.get("idem_key") or "")
+    row = (db.query(models.ReportDelivery)
+           .filter(models.ReportDelivery.idem_key == key).first())
+    if not row:
+        raise HTTPException(404, "Unknown delivery")
+    row.status = str(body.get("status") or "sent")
+    row.sent_at = datetime.now(timezone.utc)
+    row.retries = int(body.get("retries") or 0)
+    row.error = body.get("error")
+    row.message_ids = ",".join(str(m) for m in (body.get("message_ids") or []))[:400]
+    row.pdf_status = body.get("pdf_status")
+    db.commit()
+    db.add(models.AuditLog(source="TELEGRAM", tg_id=row.tg_id, action="scheduled_report",
+                           entity="report", ref=row.report_type, detail=row.branch_scope,
+                           result=("ok" if row.status in ("sent", "partial") else "denied"),
+                           branch=row.branch_scope, ip="telegram"))
+    db.commit()
+    return {"ok": True, "status": row.status}
+
+
+@router.get("/reports/deliveries")
+def deliveries(limit: int = 100, db: Session = Depends(get_db),
+               user: models.User = Depends(S.require("view_all_branches"))):
+    rows = (db.query(models.ReportDelivery)
+            .order_by(models.ReportDelivery.id.desc()).limit(min(limit, 500)).all())
+    return [{"id": r.id, "type": r.report_type, "business_date": str(r.business_date or ""),
+             "scheduled_for": _iso(r.scheduled_for), "sent_at": _iso(r.sent_at),
+             "recipient": r.recipient, "tg_id": r.tg_id, "branch_scope": r.branch_scope,
+             "status": r.status, "retries": r.retries or 0, "error": r.error,
+             "message_ids": r.message_ids, "pdf_status": r.pdf_status,
+             "idem_key": r.idem_key} for r in rows]
+
+
+@router.post("/reports/send-now")
+def send_now(body: dict, db: Session = Depends(get_db),
+             user: models.User = Depends(S.require("manage_users"))):
+    """Manual trigger. Queued as report_type 'manual'/'test' with a unique key, so
+    it can never consume or collide with a scheduled delivery's idempotency slot."""
+    tg_id = str(body.get("tg_id") or "")
+    kind = str(body.get("kind") or R.MORNING)
+    test = bool(body.get("test", True))
+    link, row, err = _scope_for(db, tg_id)
+    if err:
+        raise HTTPException(422, err)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
+    key = f"manual|{tg_id}|{kind}|{stamp}"
+    claimed = _claim(db, key, report_type=("test" if test else "manual"),
+                     business_date=R.business_date(db),
+                     scheduled_for=datetime.now(timezone.utc), recipient=row["employee"],
+                     tg_id=tg_id, branch_scope=", ".join(row["branches"]))
+    S.audit(db, user, "send_report_now", "telegram", tg_id,
+            detail=f"{kind} test={test}")
+    return {"queued": True, "idem_key": key, "delivery_id": (claimed.id if claimed else None),
+            "kind": kind, "test": test, "recipient": row["employee"]}
+
+
+@router.get("/reports/due")
+def due_reports(x_bot_token: str = Header(None), db: Session = Depends(get_db)):
+    """Which deliveries are due right now, in the BUSINESS timezone.
+
+    The worker holds no schedule of its own; the source of truth is the database
+    plus the company timezone, so a restart or redeploy loses nothing.
+    """
+    if not settings.bot_token or x_bot_token != settings.bot_token:
+        raise HTTPException(403, "Forbidden")
+    local, tzname = R.now_local(db)
+    slot = local.strftime("%H:%M")
+    kind = {"06:00": R.MORNING, "18:00": R.EVENING}.get(slot)
+    out = {"timezone": tzname, "local_time": slot, "business_date": str(local.date()), "due": []}
+    if not kind:
+        return out
+    for rec in db.query(models.ReportRecipient).filter(
+            models.ReportRecipient.enabled == True).all():  # noqa: E712
+        if kind == R.MORNING and not rec.morning:
+            continue
+        if kind == R.EVENING and not rec.evening:
+            continue
+        link, row, err = _scope_for(db, rec.tg_id)
+        if err:
+            continue
+        out["due"].append({"tg_id": rec.tg_id, "kind": kind, "slot": slot,
+                           "business_date": str(local.date())})
+    return out
