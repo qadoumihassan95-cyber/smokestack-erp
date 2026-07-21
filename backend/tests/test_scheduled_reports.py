@@ -182,3 +182,104 @@ def test_endpoints_require_authorisation():
                               headers=_tok(uid)).status_code == 403
             assert client.put("/api/telegram/reports/recipients/81001", headers=_tok(uid),
                               json={"enabled":False}).status_code == 403
+
+
+# --------------------------------------------------------------- timezone tests
+def test_company_timezone_setting_overrides_branch_and_server():
+    with TestClient(app):
+        h = _tok()
+        r = client.put("/api/telegram/reports/timezone", headers=h,
+                       json={"timezone": "Asia/Hebron"})
+        assert r.status_code == 200, r.text
+        b = r.json()
+        assert b["timezone"] == "Asia/Hebron"
+        # the business clock must differ from the server's UTC clock
+        assert b["local_time"] != b["server_utc"]
+        assert b["utc_offset"] not in ("+0000", "")
+        db = SessionLocal()
+        try:
+            assert R.company_tz(db) == "Asia/Hebron"
+        finally:
+            db.close()
+
+
+def test_invalid_timezone_is_rejected():
+    with TestClient(app):
+        for bad in ("Mars/Olympus", "", "not a zone", "UTC+3"):
+            r = client.put("/api/telegram/reports/timezone", headers=_tok(),
+                           json={"timezone": bad})
+            assert r.status_code == 422, bad
+        # the previous good value survived the rejections
+        assert client.get("/api/telegram/reports/timezone",
+                          headers=_tok()).json()["timezone"] == "Asia/Hebron"
+
+
+def test_dst_is_applied_not_a_fixed_offset():
+    """The same wall-clock hour maps to different UTC instants across a DST
+    boundary — a fixed offset would get this wrong by an hour."""
+    from datetime import datetime as dt
+    from zoneinfo import ZoneInfo
+    tz = ZoneInfo("Asia/Hebron")
+    winter = dt(2026, 1, 15, 6, 0, tzinfo=tz)
+    summer = dt(2026, 7, 15, 6, 0, tzinfo=tz)
+    assert winter.utcoffset() != summer.utcoffset(), "DST must change the offset"
+    # 06:00 local stays 06:00 local in both, which is the whole point
+    assert winter.hour == summer.hour == 6
+    # and they are genuinely different UTC instants
+    assert winter.astimezone(ZoneInfo("UTC")).hour != summer.astimezone(ZoneInfo("UTC")).hour
+
+
+def test_scheduler_fires_on_business_local_time_not_utc():
+    with TestClient(app):
+        h = _tok()
+        client.put("/api/telegram/reports/timezone", headers=h, json={"timezone": "Asia/Hebron"})
+        due = client.get("/api/telegram/reports/due", headers=_bot()).json()
+        db = SessionLocal()
+        try:
+            local, tzname = R.now_local(db)
+        finally:
+            db.close()
+        assert due["timezone"] == "Asia/Hebron" == tzname
+        assert due["local_time"] == local.strftime("%H:%M")
+        assert due["business_date"] == str(local.date())
+        # only the two configured slots ever produce work
+        if due["local_time"] not in ("06:00", "18:00"):
+            assert due["due"] == []
+
+
+def test_next_runs_are_reported_in_local_and_utc():
+    with TestClient(app):
+        b = client.get("/api/telegram/reports/timezone", headers=_tok()).json()
+        assert len(b["next_runs"]) == 2
+        kinds = {r["kind"] for r in b["next_runs"]}
+        assert kinds == {"morning", "evening"}
+        for run in b["next_runs"]:
+            assert run["local"].endswith(("06:00", "18:00"))
+            assert run["utc"] and run["utc_offset"]
+
+
+def test_timezone_change_requires_privilege_and_is_audited():
+    with TestClient(app):
+        for uid in ("U-emp", "U-cash", "U-inv"):
+            assert client.put("/api/telegram/reports/timezone", headers=_tok(uid),
+                              json={"timezone": "UTC"}).status_code == 403
+        client.put("/api/telegram/reports/timezone", headers=_tok(),
+                   json={"timezone": "Asia/Hebron"})
+        rows = client.get("/api/audit?limit=50", headers=_tok()).json()
+        entry = next((a for a in rows if a.get("action") == "set_business_timezone"), None)
+        assert entry, "the timezone change must be audited"
+        assert "->" in (entry.get("detail") or "")
+
+
+def test_business_date_follows_the_configured_timezone():
+    """Near UTC midnight the business date must be the LOCAL date."""
+    db = SessionLocal()
+    try:
+        R.set_company_tz(db, "Pacific/Kiritimati")     # UTC+14
+        ahead = R.business_date(db)
+        R.set_company_tz(db, "Pacific/Midway")         # UTC-11
+        behind = R.business_date(db)
+        assert (ahead - behind).days in (0, 1)
+        R.set_company_tz(db, "Asia/Hebron")
+    finally:
+        db.close()
