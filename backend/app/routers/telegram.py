@@ -654,9 +654,7 @@ def _recipient_row(db, link, rec):
         "evening": bool(rec.evening) if rec else True,
         "all_branches": bool(rec.all_branches) if rec else True,
         "per_branch": bool(rec.per_branch) if rec else True,
-        "language": (rec.language if rec else "en") or "en",
         "include_pdf": bool(rec.include_pdf) if rec else False,
-        "urgent_alerts": bool(rec.urgent_alerts) if rec else True,
         "configured": bool(rec),
     }
 
@@ -681,12 +679,15 @@ def set_report_recipient(tg_id: str, body: dict, db: Session = Depends(get_db),
     if not link:
         raise HTTPException(404, "Telegram account not found")
     rec = db.get(models.ReportRecipient, link.tg_id) or models.ReportRecipient(tg_id=link.tg_id)
+    # NOTE: report_recipients also carries `language` and `urgent_alerts`
+    # columns. Neither is implemented — reports are English-only and alerts are
+    # delivered inside the scheduled reports, not pushed immediately. They are
+    # deliberately NOT accepted or exposed here so the UI cannot offer a setting
+    # that does nothing. Implement the behaviour before re-exposing them.
     for f in ("enabled", "morning", "evening", "all_branches", "per_branch",
-              "include_pdf", "urgent_alerts"):
+              "include_pdf"):
         if f in body:
             setattr(rec, f, bool(body[f]))
-    if "language" in body:
-        rec.language = str(body["language"] or "en")[:8]
     if "branches" in body:
         rec.branches = json.dumps(body["branches"]) if body["branches"] else None
     rec.updated_by = user.id
