@@ -48,6 +48,9 @@ class User(Base):
     # Identities provisioned for an employee's Telegram session cannot sign in
     # to the web app — they exist purely to carry that employee's RBAC.
     can_login = Column(Boolean, default=True)
+    # A newly provisioned account must set its own password before it can do
+    # anything: the temporary one is known to whoever created the account.
+    must_change_password = Column(Boolean, default=False)
     employee_id = Column(String)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     branches = relationship("UserBranch", cascade="all, delete-orphan", backref="user")
