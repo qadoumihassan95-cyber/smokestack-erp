@@ -4898,6 +4898,14 @@ try{ empMigrate(); payRestore(); invDateRestore();
       {method:'POST',body:{employee_id:empId||null}});},
     tgCodeStatus:function(code){return call('/api/telegram/link-code/'+encodeURIComponent(code)+'/status');},
     tgPerms:function(eid){return call('/api/employees/'+encodeURIComponent(eid)+'/telegram-permissions');},
+    // --- scheduled reports ---
+    rpRecipients:function(){return call('/api/telegram/reports/recipients');},
+    rpSetRecipient:function(id,b){return call('/api/telegram/reports/recipients/'+encodeURIComponent(id),{method:'PUT',body:b});},
+    rpTimezone:function(){return call('/api/telegram/reports/timezone');},
+    rpSetTimezone:function(tz){return call('/api/telegram/reports/timezone',{method:'PUT',body:{timezone:tz}});},
+    rpDeliveries:function(){return call('/api/telegram/reports/deliveries');},
+    rpPreview:function(kind,id){return call('/api/telegram/reports/preview?kind='+encodeURIComponent(kind)+(id?('&tg_id='+encodeURIComponent(id)):''));},
+    rpSendNow:function(b){return call('/api/telegram/reports/send-now',{method:'POST',body:b});},
     tgSetPerms:function(eid,caps){return call('/api/employees/'+encodeURIComponent(eid)+'/telegram-permissions',
       {method:'PUT',body:{capabilities:caps}});},
     tgStatus:function(){return call('/api/telegram/status');},
@@ -6631,6 +6639,213 @@ try{ empMigrate(); payRestore(); invDateRestore();
   window.__tgMcState = MC;
 })();
 
+
+/* ==========================================================================
+   SCHEDULED REPORTS — owner-only configuration, delivery log and manual sends.
+   Additive: mounts inside the existing Telegram page below the Management
+   Centre and touches nothing else.
+   ========================================================================== */
+(function(){
+  var A=function(){return window.SS_API_LIVE;};
+  var RP={tz:null,recips:[],deliveries:[],busy:false,open:null};
+  function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+  function say(m){ if(typeof toast==='function') toast(m); }
+  function er(e){ try{ return (window.__apiErr?window.__apiErr(e):(e&&e.message))||'Request failed'; }
+                  catch(x){ return 'Request failed'; } }
+  function fmt(iso){ if(!iso) return '—';
+    try{ return new Date(iso).toLocaleString(undefined,{month:'short',day:'numeric',
+      hour:'numeric',minute:'2-digit'}); }catch(e){ return '—'; } }
+  function sec(){ return document.getElementById('v-telegram'); }
+
+  function ensure(){
+    var s=sec(); if(!s) return false;
+    if(document.getElementById('rpCard')) return true;
+    var c=document.createElement('div'); c.className='card'; c.id='rpCard';
+    c.style.marginBottom='16px';
+    c.innerHTML='<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">'
+      +'<div><h3 style="margin:0">Scheduled Reports</h3>'
+      +'<div class="sub" style="color:var(--muted)">Automatic business reports at 06:00 and 18:00 '
+      +'in the company timezone.</div></div>'
+      +'<button class="btn g" id="rpRefresh">Refresh</button></div>'
+      +'<div id="rpTz" style="margin-top:14px"></div>'
+      +'<div id="rpBody" style="margin-top:14px"></div>'
+      +'<div id="rpLog" style="margin-top:18px"></div>';
+    var anchor=document.getElementById('tgMcCard');
+    if(anchor&&anchor.parentNode) anchor.parentNode.insertBefore(c,anchor.nextSibling);
+    else s.appendChild(c);
+    document.getElementById('rpRefresh').onclick=load;
+    return true;
+  }
+
+  function renderTz(){
+    var el=document.getElementById('rpTz'); if(!el||!RP.tz) return;
+    var t=RP.tz;
+    var opts=(t.common||[]).slice();
+    if(opts.indexOf(t.timezone)<0) opts.unshift(t.timezone);
+    el.innerHTML='<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;'
+      +'border:1px solid var(--line,#e2e6ea);border-radius:10px;padding:12px">'
+      +'<div><div style="font-size:11.5px;color:var(--muted);text-transform:uppercase;'
+      +'letter-spacing:.4px">Company timezone</div>'
+      +'<select id="rpTzSel" style="margin-top:5px;padding:8px 10px;border:1px solid '
+      +'var(--line,#e2e6ea);border-radius:8px;font-size:13px">'
+      +opts.map(function(o){return '<option'+(o===t.timezone?' selected':'')+'>'+esc(o)+'</option>';}).join('')
+      +'</select></div>'
+      +'<div><div style="font-size:11.5px;color:var(--muted);text-transform:uppercase;'
+      +'letter-spacing:.4px">Business time</div><div style="font-weight:700;margin-top:7px">'
+      +esc(t.local_time)+' <span style="font-weight:400;color:var(--muted)">(UTC'+esc(t.utc_offset)+')</span></div></div>'
+      +'<div><div style="font-size:11.5px;color:var(--muted);text-transform:uppercase;'
+      +'letter-spacing:.4px">Server UTC</div><div style="margin-top:7px;color:var(--muted)">'
+      +esc(t.server_utc)+'</div></div>'
+      +'<div style="flex:1;min-width:220px"><div style="font-size:11.5px;color:var(--muted);'
+      +'text-transform:uppercase;letter-spacing:.4px">Next runs</div>'
+      +'<div style="margin-top:7px;font-size:12.5px">'
+      +(t.next_runs||[]).map(function(r){return esc(r.kind)+' '+esc(r.local)+' local';}).join(' · ')
+      +'</div></div>'
+      +'<button class="btn p" id="rpTzSave">Save timezone</button></div>';
+    document.getElementById('rpTzSave').onclick=async function(){
+      var v=document.getElementById('rpTzSel').value;
+      try{ RP.tz=await A().rpSetTimezone(v); say('Business timezone set to '+v); renderTz(); }
+      catch(e){ say(er(e)); }
+    };
+  }
+
+  function chk(id,on,label){
+    return '<label style="display:inline-flex;align-items:center;gap:5px;font-size:12.5px;'
+      +'margin-right:12px"><input type="checkbox" data-f="'+id+'"'+(on?' checked':'')+'>'
+      +esc(label)+'</label>';
+  }
+
+  function renderRecipients(){
+    var b=document.getElementById('rpBody'); if(!b) return;
+    if(!RP.recips.length){ b.innerHTML='<div style="color:var(--muted);font-size:13px;padding:10px">'
+      +'No linked Telegram accounts yet.</div>'; return; }
+    b.innerHTML='<div style="font-size:11.5px;color:var(--muted);text-transform:uppercase;'
+      +'letter-spacing:.4px;margin-bottom:8px">Recipients</div>'
+      +RP.recips.map(function(r){
+      var dis=(r.account_status!=='active');
+      return '<div data-tg="'+esc(r.tg_id)+'" style="border:1px solid var(--line,#e2e6ea);'
+        +'border-radius:10px;padding:12px;margin-bottom:8px'+(dis?';opacity:.55':'')+'">'
+        +'<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">'
+        +'<div><b>'+esc(r.employee)+'</b> <span style="color:var(--muted);font-size:12.5px">'
+        +(r.username?('@'+esc(r.username)):'')+' · '+esc(r.role||'—')+' · '+esc((r.branches||[]).join(', ')||'—')
+        +'</span>'+(dis?' <span class="pill" style="background:var(--chip,#eef1f4);color:var(--muted)">account disabled</span>':'')+'</div>'
+        +'<div>'+chk('enabled',r.enabled,'Scheduled reports')+'</div></div>'
+        +'<div style="margin-top:9px">'
+        +chk('morning',r.morning,'Morning 06:00')+chk('evening',r.evening,'Evening 18:00')
+        +chk('all_branches',r.all_branches,'All-branches report')+chk('per_branch',r.per_branch,'Per-branch reports')
+        +chk('include_pdf',r.include_pdf,'PDF attachment')+chk('urgent_alerts',r.urgent_alerts,'Urgent alerts')
+        +'</div>'
+        +'<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">'
+        +'<button class="btn p rp-act" data-a="save" style="padding:4px 10px;font-size:12px">Save</button>'
+        +'<button class="btn g rp-act" data-a="morning" style="padding:4px 10px;font-size:12px">Send Morning Now</button>'
+        +'<button class="btn g rp-act" data-a="evening" style="padding:4px 10px;font-size:12px">Send Evening Now</button>'
+        +'<button class="btn g rp-act" data-a="preview" style="padding:4px 10px;font-size:12px">Preview</button>'
+        +'<button class="btn g rp-act" data-a="test" style="padding:4px 10px;font-size:12px">Send Test Report</button>'
+        +'</div></div>';
+    }).join('');
+    [].forEach.call(b.querySelectorAll('.rp-act'),function(btn){
+      btn.onclick=function(){
+        var row=btn.closest('[data-tg]');
+        act(btn.getAttribute('data-a'), row.getAttribute('data-tg'), row);
+      };
+    });
+  }
+
+  function renderLog(){
+    var el=document.getElementById('rpLog'); if(!el) return;
+    var color={sent:'var(--good,#1a7f37)',partial:'var(--warn,#b26a00)',
+               failed:'var(--bad,#c0392b)',skipped:'var(--muted)'};
+    el.innerHTML='<div style="font-size:11.5px;color:var(--muted);text-transform:uppercase;'
+      +'letter-spacing:.4px;margin-bottom:8px">Delivery log</div>'
+      +(RP.deliveries.length? '<div style="overflow:auto;max-height:320px;border:1px solid '
+        +'var(--line,#e2e6ea);border-radius:10px"><table style="width:100%;border-collapse:collapse;font-size:12.5px">'
+        +'<thead><tr style="text-align:left;color:var(--muted)">'
+        +['Type','Business date','Scheduled','Sent','Recipient','Branches','Status','Retries','PDF','Reason']
+          .map(function(h){return '<th style="padding:6px 9px;border-bottom:1px solid var(--line,#e2e6ea);white-space:nowrap">'+h+'</th>';}).join('')
+        +'</tr></thead><tbody>'
+        +RP.deliveries.map(function(d){
+          return '<tr><td style="padding:5px 9px">'+esc(d.type)+'</td>'
+            +'<td style="padding:5px 9px">'+esc(d.business_date)+'</td>'
+            +'<td style="padding:5px 9px;white-space:nowrap">'+esc(fmt(d.scheduled_for))+'</td>'
+            +'<td style="padding:5px 9px;white-space:nowrap">'+esc(fmt(d.sent_at))+'</td>'
+            +'<td style="padding:5px 9px">'+esc(d.recipient||'—')+'</td>'
+            +'<td style="padding:5px 9px">'+esc(d.branch_scope||'—')+'</td>'
+            +'<td style="padding:5px 9px;font-weight:600;color:'+(color[d.status]||'var(--muted)')+'">'+esc(d.status)+'</td>'
+            +'<td style="padding:5px 9px">'+esc(d.retries)+'</td>'
+            +'<td style="padding:5px 9px">'+esc(d.pdf_status||'—')+'</td>'
+            +'<td style="padding:5px 9px;color:var(--muted)">'+esc(d.error||'')+'</td></tr>';
+        }).join('')+'</tbody></table></div>'
+        : '<div style="color:var(--muted);font-size:13px;padding:10px">No deliveries yet.</div>');
+  }
+
+  async function act(a,tg,row){
+    if(RP.busy) return;
+    RP.busy=true;
+    try{
+      if(a==='save'){
+        var body={};
+        [].forEach.call(row.querySelectorAll('input[data-f]'),function(cb){
+          body[cb.getAttribute('data-f')]=cb.checked;
+        });
+        await A().rpSetRecipient(tg,body);
+        say('Recipient settings saved'); await load();
+      } else if(a==='preview'){
+        var p=await A().rpPreview('morning',tg);
+        showPreview(p);
+      } else {
+        var kind=(a==='evening')?'evening':'morning';
+        var r=await A().rpSendNow({tg_id:tg,kind:kind,test:true});
+        say('Queued '+kind+' TEST report for '+r.recipient+' — the bot sends it within a minute');
+        await load();
+      }
+    }catch(e){ say(er(e)); }
+    finally{ RP.busy=false; }
+  }
+
+  function showPreview(p){
+    var el=document.createElement('div'); el.id='rpPrev';
+    el.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(15,23,32,.55);'
+      +'display:flex;align-items:center;justify-content:center;padding:20px';
+    el.innerHTML='<div style="background:var(--card,#fff);border-radius:14px;max-width:640px;'
+      +'width:100%;max-height:90vh;overflow:auto">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;'
+      +'border-bottom:1px solid var(--line,#e2e6ea)"><b>Report preview — '+esc(p.kind)
+      +'</b><button class="btn g" id="rpPrevX" style="padding:4px 10px;font-size:12px">Close</button></div>'
+      +'<div style="padding:16px 20px">'
+      +(p.messages||[]).map(function(m){
+        return '<div style="font-size:11.5px;color:var(--muted);text-transform:uppercase;'
+          +'letter-spacing:.4px;margin:10px 0 4px">'+esc(m.title)+'</div>'
+          +'<pre style="white-space:pre-wrap;font-size:12.5px;line-height:1.5;margin:0;'
+          +'font-family:inherit">'+esc(m.text.replace(/<[^>]+>/g,''))+'</pre>';
+      }).join('')+'</div></div>';
+    document.body.appendChild(el);
+    el.querySelector('#rpPrevX').onclick=function(){ el.parentNode.removeChild(el); };
+  }
+
+  async function load(){
+    if(!ensure()) return;
+    try{
+      var r=await A().rpRecipients();
+      RP.recips=r.recipients||[];
+      try{ RP.tz=await A().rpTimezone(); }catch(e){ RP.tz=null; }
+      try{ RP.deliveries=await A().rpDeliveries(); }catch(e){ RP.deliveries=[]; }
+      renderTz(); renderRecipients(); renderLog();
+    }catch(e){
+      // not an owner/admin — remove the panel entirely
+      var c=document.getElementById('rpCard');
+      if(c&&c.parentNode) c.parentNode.removeChild(c);
+    }
+  }
+
+  var prior=window.__tgStartPolling;
+  window.__tgStartPolling=function(){
+    var r=(typeof prior==='function')?prior.apply(this,arguments):undefined;
+    try{ load(); }catch(e){}
+    return r;
+  };
+  window.__rpLoad=load; window.__rpState=function(){return RP;};
+})();
 </script>
 </body>
 </html>
