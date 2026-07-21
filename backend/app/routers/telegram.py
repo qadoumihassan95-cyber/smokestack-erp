@@ -884,3 +884,79 @@ def due_reports(x_bot_token: str = Header(None), db: Session = Depends(get_db)):
         out["due"].append({"tg_id": rec.tg_id, "kind": kind, "slot": slot,
                            "business_date": str(local.date())})
     return out
+
+
+@router.get("/reports/timezone")
+def get_timezone(db: Session = Depends(get_db),
+                 user: models.User = Depends(S.require("view_all_branches"))):
+    """The business timezone, with the current local time and the next two runs."""
+    tzname = R.company_tz(db)
+    local, _ = R.now_local(db)
+    nxt = []
+    for slot, kind in (("06:00", R.MORNING), ("18:00", R.EVENING)):
+        hh, mm = (int(x) for x in slot.split(":"))
+        cand = local.replace(hour=hh, minute=mm, second=0, microsecond=0)
+        if cand <= local:
+            cand = cand + timedelta(days=1)
+        nxt.append({"slot": slot, "kind": kind, "local": cand.strftime("%Y-%m-%d %H:%M"),
+                    "utc": cand.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M"),
+                    "utc_offset": cand.strftime("%z")})
+    return {"timezone": tzname, "local_time": local.strftime("%Y-%m-%d %H:%M:%S"),
+            "utc_offset": local.strftime("%z"), "server_utc": datetime.now(timezone.utc)
+            .strftime("%Y-%m-%d %H:%M:%S"), "next_runs": sorted(nxt, key=lambda x: x["utc"]),
+            "common": ["UTC", "Asia/Hebron", "Asia/Jerusalem", "Asia/Amman", "Asia/Dubai",
+                       "Europe/London", "Europe/Berlin", "America/New_York", "America/Chicago",
+                       "America/Los_Angeles"]}
+
+
+@router.put("/reports/timezone")
+def set_timezone(body: dict, db: Session = Depends(get_db),
+                 user: models.User = Depends(S.require("manage_branches"))):
+    name = str((body or {}).get("timezone") or "").strip()
+    old = R.company_tz(db)
+    try:
+        R.set_company_tz(db, name, user)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    S.audit(db, user, "set_business_timezone", "settings", "business_timezone",
+            detail=f"{old} -> {name}")
+    return get_timezone(db, user)
+
+
+@router.post("/reports/pdf")
+def report_pdf(body: dict, x_bot_token: str = Header(None), db: Session = Depends(get_db)):
+    """Structured PDF for a recipient, base64 encoded for the worker."""
+    if not settings.bot_token or x_bot_token != settings.bot_token:
+        raise HTTPException(403, "Forbidden")
+    import base64
+    tg_id = str(body.get("tg_id") or "")
+    kind = str(body.get("kind") or R.MORNING)
+    link, row, err = _scope_for(db, tg_id)
+    if err:
+        raise HTTPException(422, err)
+    data = R.build_pdf(db, row["branches"], kind, test=bool(body.get("test")))
+    if not data:
+        return {"available": False, "reason": "pdf renderer unavailable"}
+    local, _ = R.now_local(db)
+    return {"available": True, "filename":
+            f"SmokeStack_{kind}_{local.strftime('%Y-%m-%d')}.pdf",
+            "b64": base64.b64encode(data).decode()}
+
+
+@router.get("/reports/pending")
+def pending_deliveries(x_bot_token: str = Header(None), db: Session = Depends(get_db)):
+    """Manual / test deliveries an owner queued from the UI, awaiting send."""
+    if not settings.bot_token or x_bot_token != settings.bot_token:
+        raise HTTPException(403, "Forbidden")
+    rows = (db.query(models.ReportDelivery)
+            .filter(models.ReportDelivery.status == "processing",
+                    models.ReportDelivery.report_type.in_(["manual", "test"]))
+            .order_by(models.ReportDelivery.id.asc()).limit(20).all())
+    out = []
+    for r in rows:
+        rec = db.get(models.ReportRecipient, r.tg_id)
+        out.append({"idem_key": r.idem_key, "tg_id": r.tg_id,
+                    "kind": ("evening" if "evening" in (r.idem_key or "") else "morning"),
+                    "test": r.report_type == "test",
+                    "include_pdf": bool(rec.include_pdf) if rec else False})
+    return {"pending": out}
