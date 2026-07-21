@@ -26,17 +26,57 @@ TG_LIMIT = 3900          # Telegram hard limit is 4096; leave room for the part 
 
 
 # --------------------------------------------------------------------------- tz
+DEFAULT_TZ = "UTC"
+
+
+def valid_tz(name) -> bool:
+    """A timezone is usable only if the IANA database actually knows it."""
+    if not name or not isinstance(name, str):
+        return False
+    if ZoneInfo is None:
+        return name == "UTC"
+    try:
+        ZoneInfo(name)
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def company_tz(db) -> str:
-    """The configured business timezone. Read from the branch configuration —
-    never assume the Render server's UTC clock is the business clock."""
+    """The configured business timezone.
+
+    Order: the company setting, then the branch configuration, then UTC. The
+    Render server's own clock is never used to decide when 06:00 happens — it
+    runs in UTC and would drift from the business day by hours, and by an extra
+    hour across a daylight-saving change.
+    """
+    row = db.get(models.CompanySetting, "business_timezone")
+    if row and valid_tz(row.value):
+        return row.value
     b = db.query(models.Branch).filter(models.Branch.timezone.isnot(None)).first()
-    tzname = (b.timezone if b and b.timezone else "UTC") or "UTC"
-    if ZoneInfo is not None:
-        try:
-            ZoneInfo(tzname)
-        except Exception:  # noqa: BLE001
-            return "UTC"
-    return tzname
+    if b and valid_tz(b.timezone):
+        return b.timezone
+    return DEFAULT_TZ
+
+
+def set_company_tz(db, name, actor=None):
+    if not valid_tz(name):
+        raise ValueError(f"Unknown timezone: {name}")
+    db.merge(models.CompanySetting(key="business_timezone", value=name,
+                                   updated_by=getattr(actor, "id", None),
+                                   updated_at=datetime.now(_tz.utc)))
+    db.commit()
+    return name
+
+
+def local_at(db, when_utc):
+    """Convert any UTC instant into business-local time (DST-aware)."""
+    tzname = company_tz(db)
+    if ZoneInfo is None:
+        return when_utc
+    if when_utc.tzinfo is None:
+        when_utc = when_utc.replace(tzinfo=_tz.utc)
+    return when_utc.astimezone(ZoneInfo(tzname))
 
 
 def now_local(db):
@@ -332,3 +372,111 @@ def split_message(text, limit=TG_LIMIT):
         chunks.append(cur)
     n = len(chunks)
     return [f"<b>Part {i+1} of {n}</b>\n{c}" for i, c in enumerate(chunks)]
+
+
+# ------------------------------------------------------------------------ PDF
+def build_pdf(db, scope_branches, kind, test=False):
+    """A structured PDF (real text and tables, not a screenshot).
+
+    Returns raw bytes, or None if reportlab is unavailable — the caller then
+    marks pdf_status 'unavailable' and still delivers the text report.
+    """
+    try:
+        from io import BytesIO
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.units import mm
+        from reportlab.lib import colors
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer,
+                                        Table, TableStyle)
+    except Exception:  # noqa: BLE001
+        return None
+
+    local, tzname = now_local(db)
+    today = local.date()
+    d0 = d1 = (today - timedelta(days=1)) if kind == MORNING else today
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, title="SmokeStack Business Report",
+                            leftMargin=18 * mm, rightMargin=18 * mm,
+                            topMargin=16 * mm, bottomMargin=16 * mm)
+    ss = getSampleStyleSheet()
+    h1 = ParagraphStyle("h1", parent=ss["Heading1"], fontSize=17, spaceAfter=2)
+    h2 = ParagraphStyle("h2", parent=ss["Heading2"], fontSize=12.5,
+                        spaceBefore=12, spaceAfter=4)
+    small = ParagraphStyle("small", parent=ss["Normal"], fontSize=8.5,
+                           textColor=colors.HexColor("#666666"))
+    body = ss["Normal"]
+
+    def fin_table(d):
+        rows = [["Metric", "Amount"],
+                ["Sales", money(d["sales"])],
+                ["  Cash", money(d["cash"])],
+                ["  Card / Bank", money(d["card"])],
+                ["COGS", money(d["cogs"])],
+                ["Operating expenses", money(d["expenses"])],
+                ["Payroll", money(d["payroll"])],
+                ["Sales tax collected", money(d["tax"])],
+                ["Gross profit", money(d["gross_profit"])],
+                ["Net operating result", money(d["net"])],
+                ["Cash ready to deposit", money(d["deposit"])],
+                ["Inventory value", money(d["inventory_value"])]]
+        t = Table(rows, colWidths=[95 * mm, 60 * mm])
+        t.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f2937")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 9.5),
+            ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1),
+             [colors.white, colors.HexColor("#f4f6f8")]),
+            ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#d7dce2")),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ("TOPPADDING", (0, 0), (-1, -1), 5)]))
+        return t
+
+    def alert_list(items):
+        if not items:
+            return [Paragraph("No alerts — normal operation.", body)]
+        icons = {"🔴": "[CRITICAL]", "🟠": "[URGENT]", "🟡": "[WATCH]"}
+        return [Paragraph(f"{icons.get(i, '[INFO]')} {t}", body) for i, t in items[:15]]
+
+    flow = [Paragraph("SmokeStack ERP", h1),
+            Paragraph(("TEST REPORT — " if test else "")
+                      + ("Morning Business Report" if kind == MORNING
+                         else "Evening Business Report"), ss["Heading2"]),
+            Paragraph(f"Generated {local.strftime('%Y-%m-%d %H:%M')} ({tzname}) &nbsp;·&nbsp; "
+                      f"Reporting period {d0}", small),
+            Spacer(1, 8)]
+
+    company = collect(db, scope_branches, d0, d1, today)
+    flow += [Paragraph("Company Summary — All Branches", h2), fin_table(company)]
+    flow += [Paragraph("Inventory &amp; Staff", h2),
+             Paragraph(f"Low stock: {company['low']} &nbsp;·&nbsp; Out of stock: "
+                       f"{company['out']} &nbsp;·&nbsp; Clocked in: "
+                       f"{company['att']['clocked_in']} &nbsp;·&nbsp; Late: "
+                       f"{company['att']['late']} &nbsp;·&nbsp; Absent: "
+                       f"{company['att']['absent']}", body)]
+    lic = company["lic"]
+    flow += [Paragraph("Licence Alerts", h2),
+             Paragraph(f"Expired: {len(lic['expired'])} &nbsp;·&nbsp; Expiring today: "
+                       f"{len(lic['today'])} &nbsp;·&nbsp; Within 7 days: {len(lic['week'])} "
+                       f"&nbsp;·&nbsp; Within 30 days: {len(lic['month'])}", body)]
+    flow += [Paragraph("Important Issues", h2)] + alert_list(alerts(db, company, kind))
+
+    for b in scope_branches:
+        bd = collect(db, [b], d0, d1, today)
+        flow += [Paragraph(f"Branch — {b}", h2), fin_table(bd)]
+        top = bd["top"]
+        flow.append(Paragraph(
+            "Top products: " + (", ".join(f"{p} ({money(a)})" for p, a in top) if top else "—"),
+            body))
+        flow += alert_list(alerts(db, bd, kind))
+
+    flow += [Spacer(1, 14),
+             Paragraph(f"Generated by SmokeStack ERP on "
+                       f"{local.strftime('%Y-%m-%d %H:%M:%S')} ({tzname}). "
+                       f"Figures come from the same calculation engine as the live "
+                       f"dashboard and reports.", small)]
+    doc.build(flow)
+    return buf.getvalue()

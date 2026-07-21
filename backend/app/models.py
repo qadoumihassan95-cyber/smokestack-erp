@@ -273,3 +273,17 @@ class ReportDelivery(Base):
     message_ids = Column(String)
     pdf_status = Column(String)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class CompanySetting(Base):
+    """Company-wide configuration as key/value rows.
+
+    Deliberately a table rather than a column on some other entity: settings are
+    read on every scheduler tick and must survive restarts, and new settings must
+    not require a schema change.
+    """
+    __tablename__ = "company_settings"
+    key = Column(String, primary_key=True)
+    value = Column(Text)
+    updated_by = Column(String)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now())
