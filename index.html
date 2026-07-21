@@ -1849,7 +1849,13 @@ function copRespond(text){
      was being claimed as an entry to draft, so the assistant answered "How much was it?"
      to a training question. Amount present = intent to post. No amount = let the brain think. */
   if(r.kind!=='transaction'||r.amount==null){
-    if(brainRespond(text))return;                        // the ERP brain handles questions, analysis, actions
+    // Questions, analysis and navigation are answered by the SERVER-side
+    // deterministic assistant (permission- and branch-scoped). The old
+    // client-side canned intent table is no longer consulted for these.
+    if(window.API_MODE && window.SS_API_LIVE && SS_API_LIVE.assistantAsk){
+      copAskBackend(text); return;
+    }
+    if(brainRespond(text))return;   // offline/demo fallback only
     if(r.kind==='question')return copSay(copAnswer(r,text),{actions:copAnswerActions(text)});
     if(r.kind==='unknown')return copSay("I didn't catch that one. I can **analyse** the business (*“why is my profit lower?”*, *“compare Store A and Store C”*, *“what's almost out of stock?”*) or **post entries** (*“Store B electricity 320”*). I'd rather ask than guess.",{chips:{field:'shortcut',items:["What should I focus on today?","Compare stores","What should I reorder?"]}});
   }
@@ -1919,6 +1925,63 @@ function copCopy(mid){const m=COP.msgs.find(x=>x.id==mid);if(!m)return;try{navig
 function copEditMsg(mid){const idx=COP.msgs.findIndex(x=>x.id==mid);if(idx<0)return;const m=COP.msgs[idx];COP.msgs=COP.msgs.slice(0,idx);COP.pending=null;copRender();const ta=document.getElementById('copTa');ta.value=m.text;ta.focus();copResize();}
 function copRetry(){const last=[...COP.msgs].reverse().find(x=>x.who==='user');if(last){COP.thinking=true;copRender();setTimeout(()=>{COP.thinking=false;copRespond(last.text);},400);}}
 function copCancel(){COP.pending=null;copSay('No problem — cancelled. What else can I do?');}
+/* ---------------------------------------------------------------------------
+   Business Assistant → deterministic backend.
+   Handles loading, expired session, permission denial and navigation. Tool
+   names, JSON and other internals are never shown to the user.
+--------------------------------------------------------------------------- */
+var COP_CTX = null;          // conversation context for follow-up questions
+
+function copFriendlyError(e){
+  if(e && e.status===401) return 'Your session expired. Please sign in again.';
+  if(e && e.status===403) return "You don't have permission to see that.";
+  if(e && e.status===422) return "I couldn't read that request — try rephrasing it.";
+  return 'I could not reach the business data just now. Please try again.';
+}
+
+function copWarnLines(warnings){
+  if(!warnings || !warnings.length) return '';
+  var icon={critical:'\u{1F534}',warning:'\u{1F7E0}',ok:'\u2705'};
+  return '\n\n' + warnings.map(function(w){
+    return (icon[w.level]||'\u2022')+' '+w.text; }).join('\n');
+}
+
+async function copAskBackend(text){
+  var typingId = null;
+  try{
+    var res = await SS_API_LIVE.assistantAsk(text, COP_CTX);
+
+    // navigation: open the page the user asked for
+    if(res.kind === 'navigate' && res.view){
+      copSay('Opening ' + res.view.replace(/^dash$/,'the dashboard') + '.');
+      setTimeout(function(){ try{ go(res.view); }catch(e){} }, 350);
+      return;
+    }
+
+    if(res.ok === false){
+      // denied / unknown / needs input — all plain sentences, no internals
+      var msg = res.answer || "I didn't catch that one.";
+      var chips = res.suggestions && res.suggestions.length
+        ? {field:'shortcut', items:res.suggestions} : undefined;
+      copSay(msg, chips?{chips:chips}:{});
+      return;
+    }
+
+    // successful answer: short sentence + warnings + next actions
+    COP_CTX = res.context || null;
+    var body = res.answer + copWarnLines(res.warnings);
+    // reuse the existing nav action so ERP_GRAPH routing/labels still apply
+    var actions = (res.actions||[]).slice(0,3).map(function(a){
+      return {label:a.label, act:'nav', val:a.view};
+    });
+    copSay(body, actions.length?{actions:actions}:{});
+  }catch(e){
+    copSay(copFriendlyError(e));
+    if(e && e.status===401){ setTimeout(function(){ try{ apiLogout(); }catch(x){} }, 1200); }
+  }
+}
+window.__copAskBackend = copAskBackend;
+
 function copNewChat(){COP={...COP,msgs:[],pending:null};copGreet();copSide();}
 
 // ---- delegated events ----
@@ -4898,6 +4961,11 @@ try{ empMigrate(); payRestore(); invDateRestore();
       {method:'POST',body:{employee_id:empId||null}});},
     tgCodeStatus:function(code){return call('/api/telegram/link-code/'+encodeURIComponent(code)+'/status');},
     tgPerms:function(eid){return call('/api/employees/'+encodeURIComponent(eid)+'/telegram-permissions');},
+    // --- Business Assistant (deterministic, server-side) ---
+    assistantAsk:function(q,context){return call('/api/assistant/ask',{method:'POST',body:{q:q,context:context||null}});},
+    assistantTools:function(){return call('/api/assistant/tools');},
+    assistantRun:function(tool,args){return call('/api/assistant/run',{method:'POST',body:{tool:tool,args:args||{}}});},
+    assistantSearch:function(q){return call('/api/assistant/search?q='+encodeURIComponent(q));},
     // --- scheduled reports ---
     rpRecipients:function(){return call('/api/telegram/reports/recipients');},
     rpSetRecipient:function(id,b){return call('/api/telegram/reports/recipients/'+encodeURIComponent(id),{method:'PUT',body:b});},
@@ -6845,6 +6913,158 @@ try{ empMigrate(); payRestore(); invDateRestore();
     return r;
   };
   window.__rpLoad=load; window.__rpState=function(){return RP;};
+})();
+
+/* ==========================================================================
+   GLOBAL SEARCH + VOICE INPUT for the Business Assistant.
+   Both feed the same deterministic backend; neither uses an external service.
+   ========================================================================== */
+(function(){
+  var A=function(){return window.SS_API_LIVE;};
+  var GS={open:false,timer:null,last:''};
+  function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+
+  /* ---------------------------------------------------------------- search */
+  function shell(){
+    var el=document.getElementById('gsWrap'); if(el) return el;
+    el=document.createElement('div'); el.id='gsWrap';
+    el.style.cssText='position:fixed;inset:0;z-index:9998;background:rgba(15,23,32,.5);'
+      +'display:flex;align-items:flex-start;justify-content:center;padding:80px 20px 20px';
+    el.innerHTML='<div style="background:var(--card,#fff);border-radius:14px;max-width:640px;'
+      +'width:100%;max-height:76vh;overflow:hidden;display:flex;flex-direction:column;'
+      +'box-shadow:0 20px 60px rgba(0,0,0,.3)">'
+      +'<div style="display:flex;gap:8px;align-items:center;padding:14px 16px;'
+      +'border-bottom:1px solid var(--line,#e2e6ea)">'
+      +'<input id="gsInput" placeholder="Search products, people, customers, suppliers, purchases…" '
+      +'style="flex:1;border:none;outline:none;font-size:15px;background:transparent">'
+      +'<button class="btn g" id="gsClose" style="padding:4px 10px;font-size:12px">Esc</button></div>'
+      +'<div id="gsBody" style="overflow:auto;padding:8px 0"></div></div>';
+    document.body.appendChild(el);
+    el.addEventListener('click',function(e){ if(e.target===el) close(); });
+    document.getElementById('gsClose').onclick=close;
+    var inp=document.getElementById('gsInput');
+    inp.addEventListener('input',function(){ clearTimeout(GS.timer); GS.timer=setTimeout(run,220); });
+    inp.addEventListener('keydown',function(e){ if(e.key==='Escape') close(); });
+    setTimeout(function(){ inp.focus(); },30);
+    return el;
+  }
+  function close(){ var el=document.getElementById('gsWrap');
+    if(el&&el.parentNode) el.parentNode.removeChild(el); GS.open=false; }
+
+  function render(html){ var b=document.getElementById('gsBody'); if(b) b.innerHTML=html; }
+
+  async function run(){
+    var inp=document.getElementById('gsInput'); if(!inp) return;
+    var q=inp.value.trim();
+    if(q.length<2){ render('<div style="padding:18px;color:var(--muted);font-size:13px">'
+      +'Type at least two characters.</div>'); return; }
+    if(q===GS.last) return; GS.last=q;
+    render('<div style="padding:18px;color:var(--muted);font-size:13px">Searching…</div>');
+    try{
+      var r=await A().assistantSearch(q);
+      if(!r.count){ render('<div style="padding:18px;color:var(--muted);font-size:13px">'
+        +'Nothing found for “'+esc(q)+'” in your branches.</div>'); return; }
+      render(r.groups.map(function(g){
+        return '<div style="font-size:11px;color:var(--muted);text-transform:uppercase;'
+          +'letter-spacing:.5px;padding:10px 16px 4px">'+esc(g.group)+'</div>'
+          +g.rows.map(function(row){
+            return '<div class="gs-row" data-view="'+esc(row.view)+'" style="padding:9px 16px;'
+              +'cursor:pointer;display:flex;justify-content:space-between;gap:10px">'
+              +'<span style="font-weight:600;font-size:13.5px">'+esc(row.title)+'</span>'
+              +'<span style="color:var(--muted);font-size:12.5px">'+esc(row.subtitle)+'</span></div>';
+          }).join('');
+      }).join(''));
+      [].forEach.call(document.querySelectorAll('#gsBody .gs-row'),function(el){
+        el.onmouseenter=function(){ el.style.background='var(--panel2,#f4f6f8)'; };
+        el.onmouseleave=function(){ el.style.background=''; };
+        el.onclick=function(){ var v=el.getAttribute('data-view'); close();
+          try{ go(v); }catch(e){} };
+      });
+    }catch(e){
+      var msg=(e&&e.status===401)?'Your session expired. Please sign in again.'
+             :(e&&e.status===403)?"You don't have permission to search that."
+             :'Search is unavailable right now.';
+      render('<div style="padding:18px;color:var(--bad,#c0392b);font-size:13px">'+esc(msg)+'</div>');
+    }
+  }
+
+  function openSearch(){ if(!window.API_MODE) return; GS.open=true; GS.last=''; shell(); }
+  window.__globalSearch=openSearch;
+
+  // Ctrl/Cmd+K anywhere
+  document.addEventListener('keydown',function(e){
+    if((e.ctrlKey||e.metaKey) && (e.key==='k'||e.key==='K')){ e.preventDefault(); openSearch(); }
+  });
+
+  /* ----------------------------------------------------------------- voice */
+  function speechCtor(){ return window.SpeechRecognition || window.webkitSpeechRecognition || null; }
+  window.__voiceSupported=function(){ return !!speechCtor(); };
+
+  function startVoice(lang){
+    var Ctor=speechCtor();
+    var ta=document.getElementById('copTa');
+    if(!Ctor){
+      if(typeof toast==='function')
+        toast('Voice input is not supported in this browser — please type your question.');
+      if(ta) ta.focus();
+      return false;
+    }
+    var rec=new Ctor();
+    rec.lang = lang || (/^ar/.test(navigator.language||'') ? 'ar-SA' : 'en-US');
+    rec.interimResults=false; rec.maxAlternatives=1;
+    var btn=document.getElementById('copMic');
+    if(btn){ btn.textContent='● Listening'; btn.disabled=true; }
+    rec.onresult=function(ev){
+      var text=(ev.results&&ev.results[0]&&ev.results[0][0]&&ev.results[0][0].transcript)||'';
+      if(text && ta){ ta.value=text; }
+      if(text && typeof copSubmit==='function'){ copSubmit(); }   // same deterministic engine
+    };
+    rec.onerror=function(ev){
+      var m=(ev&&ev.error==='not-allowed')
+        ? 'Microphone permission was denied — please type your question instead.'
+        : 'Could not capture audio — please type your question instead.';
+      if(typeof toast==='function') toast(m);
+    };
+    rec.onend=function(){ if(btn){ btn.textContent='🎤 Voice'; btn.disabled=false; } };
+    try{ rec.start(); }catch(e){
+      if(typeof toast==='function') toast('Voice input could not start — please type instead.');
+      if(btn){ btn.textContent='🎤 Voice'; btn.disabled=false; }
+      return false;
+    }
+    return true;
+  }
+  window.__startVoice=startVoice;
+
+  /* mount the mic + search buttons next to the assistant composer */
+  function mount(){
+    var send=document.getElementById('copSend');
+    if(send && !document.getElementById('copMic')){
+      var mic=document.createElement('button');
+      mic.id='copMic'; mic.className='cop-send'; mic.type='button';
+      mic.style.cssText='margin-right:6px;background:var(--panel2,#eef1f4);color:var(--txt)';
+      mic.textContent='🎤 Voice';
+      mic.title=speechCtor()? 'Speak your question (Arabic or English)'
+                            : 'Voice input is not supported in this browser';
+      mic.onclick=function(){ startVoice(); };
+      send.parentNode.insertBefore(mic, send);
+    }
+    var host=document.querySelector('#v-ai .top');
+    if(host && !document.getElementById('gsOpen')){
+      var b=document.createElement('button');
+      b.id='gsOpen'; b.className='btn g'; b.type='button';
+      b.style.cssText='padding:6px 12px;font-size:12.5px';
+      b.textContent='Search everything  ⌘K';
+      b.onclick=openSearch;
+      host.appendChild(b);
+    }
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',mount);
+  else setTimeout(mount,400);
+  var priorGo=window.go;
+  if(typeof priorGo==='function'){
+    window.go=function(v){ var r=priorGo.apply(this,arguments); try{ mount(); }catch(e){} return r; };
+  }
 })();
 </script>
 </body>
