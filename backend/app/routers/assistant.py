@@ -43,6 +43,18 @@ def run_tool(body: dict, db: Session = Depends(get_db),
             "warnings": E.rules(name, data, user), "answer": E.summarise(name, data)}
 
 
+@router.get("/search")
+def search(q: str = "", db: Session = Depends(get_db),
+           user: models.User = Depends(S.require("view"))):
+    """Global search — permission- and branch-scoped, grouped, clickable."""
+    try:
+        return T.run("search.global", db, user, q=q)
+    except T.Denied as e:
+        raise HTTPException(403, str(e))
+    except T.ToolError as e:
+        raise HTTPException(422, str(e))
+
+
 @router.get("/parse")
 def parse(q: str = "", db: Session = Depends(get_db),
           user: models.User = Depends(S.require("view"))):
