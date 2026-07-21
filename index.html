@@ -4966,6 +4966,10 @@ try{ empMigrate(); payRestore(); invDateRestore();
     assistantTools:function(){return call('/api/assistant/tools');},
     assistantRun:function(tool,args){return call('/api/assistant/run',{method:'POST',body:{tool:tool,args:args||{}}});},
     assistantSearch:function(q){return call('/api/assistant/search?q='+encodeURIComponent(q));},
+    changePassword:function(cur,nw){return call('/api/auth/change-password',
+      {method:'POST',body:{current_password:cur,new_password:nw}});},
+    listUsers:function(){return call('/api/users');},
+    createUser:function(b){return call('/api/users',{method:'POST',body:b});},
     // --- scheduled reports ---
     rpRecipients:function(){return call('/api/telegram/reports/recipients');},
     rpSetRecipient:function(id,b){return call('/api/telegram/reports/recipients/'+encodeURIComponent(id),{method:'PUT',body:b});},
@@ -5029,6 +5033,36 @@ try{ empMigrate(); payRestore(); invDateRestore();
   window.__detailText = detailText;
   window.__apiErr = apiErr;   // other modules live in separate IIFEs
 
+  /* A newly provisioned account cannot use the app until it replaces the
+     temporary password it was issued with. */
+  function forcePasswordChange(name){
+    overlay('<div style="background:var(--card,#fff);padding:28px;border-radius:14px;max-width:420px;width:100%">'
+      +'<h2 style="margin:0 0 6px">Choose a new password</h2>'
+      +'<div style="font-size:13px;color:var(--muted);margin-bottom:18px">'
+      +(name?('Welcome, '+name+'. '):'')+'Your account uses a temporary password. '
+      +'Set your own before continuing.</div>'
+      +'<input id="pcCur" type="password" placeholder="Temporary password" '
+      +'style="width:100%;padding:10px;margin-bottom:8px;border:1px solid var(--line,#e2e6ea);border-radius:8px">'
+      +'<input id="pcNew" type="password" placeholder="New password (min 10 characters)" '
+      +'style="width:100%;padding:10px;margin-bottom:8px;border:1px solid var(--line,#e2e6ea);border-radius:8px">'
+      +'<input id="pcNew2" type="password" placeholder="Repeat new password" '
+      +'style="width:100%;padding:10px;margin-bottom:12px;border:1px solid var(--line,#e2e6ea);border-radius:8px">'
+      +'<div id="pcErr" style="color:var(--bad,#c0392b);font-size:12.5px;min-height:18px;margin-bottom:8px"></div>'
+      +'<button class="btn p" id="pcGo" style="width:100%">Set password and continue</button></div>');
+    var err=document.getElementById('pcErr');
+    document.getElementById('pcGo').onclick=async function(){
+      var cur=document.getElementById('pcCur').value;
+      var a=document.getElementById('pcNew').value, b=document.getElementById('pcNew2').value;
+      if(a!==b){ err.textContent='The two new passwords do not match.'; return; }
+      if((a||'').length<10){ err.textContent='Use at least 10 characters.'; return; }
+      var btn=document.getElementById('pcGo'); btn.disabled=true; btn.textContent='Saving…';
+      try{ await SS_API_LIVE.changePassword(cur,a); hideOverlay(); await apiBoot(); }
+      catch(e){ err.textContent=(window.__apiErr?window.__apiErr(e):'Could not change the password.');
+                btn.disabled=false; btn.textContent='Set password and continue'; }
+    };
+  }
+  window.__forcePasswordChange = forcePasswordChange;
+
   /* ---- login gate ---- */
   function overlay(html){ var d=document.getElementById('ssAuth'); if(!d){d=document.createElement('div');d.id='ssAuth';
       d.style.cssText='position:fixed;inset:0;z-index:9999;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px';document.body.appendChild(d);} d.innerHTML=html; d.style.display='flex'; return d; }
@@ -5045,7 +5079,9 @@ try{ empMigrate(); payRestore(); invDateRestore();
     var btn=document.getElementById('ssLoginBtn');
     var go=async function(){ btn.disabled=true; btn.textContent='Signing in…';
       try{ var r=await API.login(document.getElementById('ssU').value.trim(), document.getElementById('ssP').value);
-        T.token=r.access_token; sessionStorage.setItem('ss_token',T.token); await apiBoot(); }
+        T.token=r.access_token; sessionStorage.setItem('ss_token',T.token);
+        if(r.must_change_password){ forcePasswordChange(r.user&&r.user.name); return; }
+        await apiBoot(); }
       catch(e){ btn.disabled=false; btn.textContent='Sign in'; loginScreen(e.status===401?'Incorrect username or password':apiErr(e)); } };
     btn.onclick=go;
     document.getElementById('ssP').onkeydown=function(e){ if(e.key==='Enter')go(); };
