@@ -446,3 +446,83 @@ def approvals_pending(db, user, **_):
                       "amount": money(a.amount), "summary": a.summary,
                       "requested_by": a.requested_by} for a in rows],
             "count": len(rows)}
+
+
+# ==================================================================== SEARCH
+@tool("search.global", "view", "Search everything the user may see",
+      {"q": "free text"}, module="search")
+def search_global(db, user, q="", **_):
+    """One query across every entity the signed-in user is allowed to see.
+
+    Each section is gated on its own permission and branch scope, so two users
+    running the same search legitimately get different results.
+    """
+    q = (q or "").strip()
+    if len(q) < 2:
+        raise ToolError("Type at least two characters to search.")
+    brs = scope(db, user)
+    like = f"%{q.lower()}%"
+    groups = []
+
+    prods = (db.query(models.Product)
+             .filter(func.lower(models.Product.name).like(like)
+                     | func.lower(models.Product.sku).like(like)
+                     | func.coalesce(models.Product.barcode, "").like(like))
+             .limit(6).all())
+    if prods:
+        rows = []
+        for p in prods:
+            qty = sum(int(s.qty or 0) for s in
+                      db.query(models.Stock).filter(models.Stock.sku == p.sku,
+                                                    models.Stock.branch.in_(brs)).all())
+            rows.append({"title": p.name, "subtitle": f"{p.sku} · {qty} in stock",
+                         "view": "inventory", "ref": p.sku})
+        groups.append({"group": "Products", "rows": rows})
+
+    emps = (db.query(models.Employee)
+            .filter(models.Employee.branch.in_(brs),
+                    func.lower(models.Employee.name).like(like)).limit(6).all())
+    if emps:
+        groups.append({"group": "Employees", "rows": [
+            {"title": e.name, "subtitle": f"{e.title or 'Staff'} · {e.branch}",
+             "view": "workhours", "ref": e.id} for e in emps]})
+
+    custs = (db.query(models.Customer)
+             .filter(func.lower(models.Customer.name).like(like)).limit(6).all())
+    if custs:
+        groups.append({"group": "Customers", "rows": [
+            {"title": c.name, "subtitle": f"Balance {money(c.balance):,.2f}"
+             if c.balance is not None else "Customer",
+             "view": "settings", "ref": c.id} for c in custs]})
+
+    sups = (db.query(models.Supplier)
+            .filter(func.lower(models.Supplier.name).like(like)).limit(6).all())
+    if sups:
+        groups.append({"group": "Suppliers", "rows": [
+            {"title": s.name, "subtitle": f"Balance {money(s.balance):,.2f}"
+             if s.balance is not None else "Supplier",
+             "view": "purchases", "ref": s.id} for s in sups]})
+
+    purch = (db.query(models.Purchase)
+             .filter(models.Purchase.branch.in_(brs),
+                     func.lower(func.coalesce(models.Purchase.vendor, "")).like(like))
+             .limit(6).all())
+    if purch:
+        groups.append({"group": "Purchases", "rows": [
+            {"title": f"{p.vendor} — {money(p.amount):,.2f}",
+             "subtitle": f"{p.branch} · {p.status}", "view": "purchases", "ref": p.id}
+            for p in purch]})
+
+    if P.can(user.role, "view_all_branches"):
+        lics = (db.query(models.License)
+                .filter(models.License.branch.in_(brs),
+                        func.lower(models.License.name).like(like)).limit(5).all())
+        if lics:
+            groups.append({"group": "Licenses", "rows": [
+                {"title": l.name, "subtitle": f"{l.branch} · expires {l.expiry_date}",
+                 "view": "licenses", "ref": str(l.id)} for l in lics]})
+
+    total = sum(len(g["rows"]) for g in groups)
+    return {"query": q, "groups": groups, "count": total, "branches": brs,
+            "explain": {"steps": [f"Searched products, staff, partners and purchases for '{q}'",
+                                  f"Limited to your branches: {', '.join(brs)}"]}}
