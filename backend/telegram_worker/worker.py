@@ -1975,7 +1975,7 @@ async def post_init(app):
 REPORT_SLOTS = {"06:00": "morning", "18:00": "evening"}
 
 
-async def _send_report(tg_id, kind, idem_key, test=False, bot=None):
+async def _send_report(tg_id, kind, idem_key, test=False, bot=None, include_pdf=False):
     """Render then deliver. One failed branch message does not abort the rest —
     the delivery is marked 'partial' instead."""
     status, data = await _req("POST", "/api/telegram/reports/render",
@@ -2003,6 +2003,26 @@ async def _send_report(tg_id, kind, idem_key, test=False, bot=None):
                 await asyncio.sleep(2 ** attempt)
         if not ok:
             failures += 1
+    pdf_status = None
+    if include_pdf and sent_ids:
+        try:
+            st2, pd = await _req("POST", "/api/telegram/reports/pdf",
+                                 headers={"X-Bot-Token": TOKEN},
+                                 body={"tg_id": str(tg_id), "kind": kind, "test": test})
+            if st2 == 200 and pd and pd.get("available"):
+                import base64, io
+                doc = io.BytesIO(base64.b64decode(pd["b64"]))
+                doc.name = pd.get("filename", "report.pdf")
+                await bot.send_document(chat_id=int(tg_id), document=doc,
+                                        filename=pd.get("filename", "report.pdf"),
+                                        caption="SmokeStack business report")
+                pdf_status = "sent"
+            else:
+                pdf_status = "unavailable"
+        except Exception as e:  # noqa: BLE001
+            log.warning("pdf delivery failed: %s", e)
+            pdf_status = "failed"
+
     if failures == 0:
         st_ = "sent"
     elif sent_ids:
@@ -2011,7 +2031,7 @@ async def _send_report(tg_id, kind, idem_key, test=False, bot=None):
         st_ = "failed"
     await _req("POST", "/api/telegram/reports/complete", headers={"X-Bot-Token": TOKEN},
                body={"idem_key": idem_key, "status": st_, "retries": retries,
-                     "message_ids": sent_ids,
+                     "message_ids": sent_ids, "pdf_status": pdf_status,
                      "error": (f"{failures} message(s) failed" if failures else None)})
     return st_ in ("sent", "partial")
 
@@ -2034,6 +2054,15 @@ async def report_scheduler(bot):
                         log.info("sending %s report to %s", job["kind"], job["tg_id"])
                         await _send_report(job["tg_id"], job["kind"],
                                            claim["idem_key"], test=False, bot=bot)
+            # manual "Send now" / "Send test to me" requests queued from the UI
+            st3, pend = await _req("GET", "/api/telegram/reports/pending",
+                                   headers={"X-Bot-Token": TOKEN})
+            if st3 == 200 and pend:
+                for job in pend.get("pending", []):
+                    log.info("sending manual %s report to %s", job["kind"], job["tg_id"])
+                    await _send_report(job["tg_id"], job["kind"], job["idem_key"],
+                                       test=job.get("test", True), bot=bot,
+                                       include_pdf=job.get("include_pdf", False))
         except Exception as e:  # noqa: BLE001
             log.warning("report scheduler tick failed: %s", e)
         await asyncio.sleep(60)
