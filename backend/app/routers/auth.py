@@ -24,7 +24,8 @@ def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get
         S.audit(db, None, "failed_login", "user", form.username, result="denied")
         raise HTTPException(403, "This account is not active.")
     S.audit(db, u, "login", "user", u.id)
-    return {"access_token": S.make_token(u), "token_type": "bearer", "user": _user_dict(u)}
+    return {"access_token": S.make_token(u), "token_type": "bearer", "user": _user_dict(u),
+            "must_change_password": bool(getattr(u, "must_change_password", False))}
 
 @router.get("/me")
 def me(user: models.User = Depends(S.get_current_user)):
