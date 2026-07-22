@@ -9,15 +9,15 @@ ALL_PERMS = [
     "deactivate_employee","run_payroll","finalize_payroll","view_inventory_history","view_asof","export_history",
     "chat_view","chat_send","chat_create_room","chat_manage_room","chat_delete_message",
     "chat_pin","chat_create_task","chat_announce","chat_company_room",
-    "manage_reminders",
+    "manage_reminders","manage_schedules",
 ]
 
 PERMS = {
     "owner": list(ALL_PERMS),
-    "admin": ["view","create","edit","delete","approve","void","refund","print","export","view_cost","view_profit","view_payroll","manage_branches","transfer_stock","adjust_stock","close_shift","view_all_branches","scan_barcode","print_labels","continuous_receiving","add_employee","edit_employee","deactivate_employee","run_payroll","finalize_payroll","view_inventory_history","view_asof","export_history","manage_reminders"],
-    "branch_manager": ["view","create","edit","approve","void","print","export","view_cost","transfer_stock","adjust_stock","close_shift","scan_barcode","print_labels","continuous_receiving","add_employee","edit_employee","run_payroll","view_inventory_history","view_asof","export_history",
+    "admin": ["view","create","edit","delete","approve","void","refund","print","export","view_cost","view_profit","view_payroll","manage_branches","transfer_stock","adjust_stock","close_shift","view_all_branches","scan_barcode","print_labels","continuous_receiving","add_employee","edit_employee","deactivate_employee","run_payroll","finalize_payroll","view_inventory_history","view_asof","export_history","manage_reminders","manage_schedules"],
+    "branch_manager": ["view","create","edit","approve","void","print","export","view_cost","transfer_stock","adjust_stock","close_shift","scan_barcode","print_labels","continuous_receiving","add_employee","edit_employee","run_payroll","view_inventory_history","view_asof","export_history","manage_schedules",
         "chat_view","chat_send","chat_create_room","chat_manage_room","chat_pin","chat_create_task","chat_announce","chat_company_room"],
-    "manager": ["view","create","edit","approve","void","print","export","view_cost","transfer_stock","adjust_stock","close_shift","scan_barcode","print_labels","continuous_receiving","add_employee","edit_employee","run_payroll","view_inventory_history","view_asof","export_history"],
+    "manager": ["view","create","edit","approve","void","print","export","view_cost","transfer_stock","adjust_stock","close_shift","scan_barcode","print_labels","continuous_receiving","add_employee","edit_employee","run_payroll","view_inventory_history","view_asof","export_history","manage_schedules"],
     "cashier": ["view","create","refund","print","close_shift","scan_barcode","chat_view","chat_send","chat_create_task"],
     "inventory_manager": ["view","create","edit","print","export","transfer_stock","adjust_stock","view_cost","scan_barcode","print_labels","continuous_receiving","view_inventory_history","view_asof","export_history","chat_view","chat_send","chat_create_room","chat_create_task"],
     "accountant": ["view","create","edit","void","refund","print","export","view_cost","view_profit","view_payroll","view_all_branches","add_employee","edit_employee","deactivate_employee","run_payroll","finalize_payroll","view_inventory_history","view_asof","export_history","chat_view","chat_send","chat_create_room","chat_create_task","chat_company_room"],

@@ -428,3 +428,91 @@ class ReminderDelivery(Base):
     error = Column(Text)
     message_id = Column(String)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+# =========================================================================
+# EMPLOYEE WORK SCHEDULE — normalized weekly scheduling with a calendar and
+# per-employee Telegram delivery. Reuses the existing Employees module,
+# TelegramLink (account↔employee) and company timezone. Additive: the legacy
+# Employee.sched_* fields (used by attendance) are left untouched.
+# =========================================================================
+class EmployeeSchedule(Base):
+    """One shift row per employee per calendar date — the calendar's source data.
+
+    A day with `is_off` (or simply no row) reads as OFF. `week_start` (the Monday
+    of the shift's ISO week) groups a week for publishing and delivery.
+    """
+    __tablename__ = "employee_schedules"
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    employee_id = Column(String, index=True)
+    branch = Column(String, index=True)
+    work_date = Column(Date, index=True)
+    week_start = Column(Date, index=True)                  # Monday of work_date's week
+    start_time = Column(String, default="09:00")           # HH:MM local
+    end_time = Column(String, default="17:00")             # HH:MM local
+    break_minutes = Column(Integer, default=0)
+    notes = Column(Text)
+    is_off = Column(Boolean, default=False)
+    published = Column(Boolean, default=False)
+    template_id = Column(BigInteger)
+    created_by = Column(String)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ScheduleTemplate(Base):
+    """A reusable recurring pattern (Mon–Fri, weekends, alternate weeks, custom).
+
+    `weekdays` is a JSON list of 0=Mon..6=Sun. `recurrence` distinguishes weekly
+    from alternate-week expansion; `every_other` marks the alternate cadence.
+    """
+    __tablename__ = "schedule_templates"
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    name = Column(String)
+    recurrence = Column(String, default="weekly")          # weekly|weekdays|weekends|alternate|custom
+    weekdays = Column(Text)                                 # JSON list of int 0..6
+    every_other = Column(Boolean, default=False)           # alternate-week cadence
+    start_time = Column(String, default="09:00")
+    end_time = Column(String, default="17:00")
+    break_minutes = Column(Integer, default=0)
+    notes = Column(Text)
+    created_by = Column(String)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ScheduleException(Base):
+    """A one-off override for a specific date (time-off, swap, modified hours)."""
+    __tablename__ = "schedule_exceptions"
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    employee_id = Column(String, index=True)
+    work_date = Column(Date, index=True)
+    kind = Column(String, default="off")                   # off | modified
+    start_time = Column(String)
+    end_time = Column(String)
+    break_minutes = Column(Integer, default=0)
+    reason = Column(Text)
+    created_by = Column(String)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class TelegramDeliveryLog(Base):
+    """Schedule-delivery audit + idempotency ledger.
+
+    idem_key is UNIQUE (e.g. publish|<week>|<tg_id>|<stamp> or weekly|<week>|<tg_id>),
+    so a retry, a redeploy or a second worker instance can never send or log the
+    same schedule twice for the same recipient.
+    """
+    __tablename__ = "telegram_delivery_log"
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    idem_key = Column(String, unique=True, index=True)
+    employee_id = Column(String, index=True)
+    tg_id = Column(String, index=True)
+    recipient = Column(String)
+    week_start = Column(Date, index=True)
+    kind = Column(String, default="publish")               # publish|update|weekly|manual|copy
+    status = Column(String, default="queued")              # queued|sent|failed|skipped
+    message = Column(Text)                                 # exact body to send (pre-rendered)
+    error = Column(Text)
+    message_id = Column(String)
+    created_by = Column(String)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
