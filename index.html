@@ -1023,7 +1023,9 @@
     <section class="view" id="v-workhours">
       <div class="top"><div><h1>Work Hours</h1><div class="sub">Employee work schedule &amp; hours from Telegram clock in / out.</div></div>
         <span class="pill" id="whPill">—</span></div>
-      <div id="whBody"><div class="card"><div class="sub" style="color:var(--muted)">Sign in to view work hours.</div></div></div>
+      <div class="kpiperiod" id="whTabs" style="margin-bottom:12px"><button type="button" data-t="schedule" class="on">Schedule</button><button type="button" data-t="hours">Hours</button></div>
+      <div id="schedRoot"></div>
+      <div id="whBody" style="display:none"><div class="card"><div class="sub" style="color:var(--muted)">Sign in to view work hours.</div></div></div>
     </section>
 
     <!-- LICENSES -->
@@ -5006,6 +5008,19 @@ try{ empMigrate(); payRestore(); invDateRestore();
     remSet:function(b){return call('/api/telegram/reminders/settings',{method:'PUT',body:b});},
     remDeliveries:function(){return call('/api/telegram/reminders/deliveries');},
     remSendNow:function(b){return call('/api/telegram/reminders/send-now',{method:'POST',body:b||{}});},
+    // --- work schedule ---
+    schEntries:function(q){return call('/api/schedule/entries'+(q?('?'+q):''));},
+    schMy:function(q){return call('/api/schedule/my'+(q?('?'+q):''));},
+    schCreate:function(b){return call('/api/schedule/entries',{method:'POST',body:b});},
+    schBulk:function(b){return call('/api/schedule/bulk',{method:'POST',body:b});},
+    schEdit:function(id,b){return call('/api/schedule/entries/'+id,{method:'PUT',body:b});},
+    schDelete:function(id){return call('/api/schedule/entries/'+id,{method:'DELETE'});},
+    schCopyWeek:function(b){return call('/api/schedule/copy-week',{method:'POST',body:b});},
+    schPublish:function(b){return call('/api/schedule/publish',{method:'POST',body:b});},
+    schSend:function(b){return call('/api/schedule/send',{method:'POST',body:b});},
+    schPreview:function(q){return call('/api/schedule/preview'+(q?('?'+q):''));},
+    schDeliveries:function(){return call('/api/schedule/deliveries');},
+    schResend:function(id){return call('/api/schedule/deliveries/'+id+'/resend',{method:'POST'});},
     tgSetPerms:function(eid,caps){return call('/api/employees/'+encodeURIComponent(eid)+'/telegram-permissions',
       {method:'PUT',body:{capabilities:caps}});},
     tgStatus:function(){return call('/api/telegram/status');},
@@ -7142,6 +7157,401 @@ try{ empMigrate(); payRestore(); invDateRestore();
     return r;
   };
   window.__remLoad=load; window.__remState=function(){return RM;};
+})();
+
+
+/* ==========================================================================
+   EMPLOYEE WORK SCHEDULE — calendar (month/week/day) + management, inside the
+   Work Hours page. Managers (manage_schedules) assign/edit/publish/send;
+   employees see only their own schedule, read-only. Telegram delivery + audit
+   are handled server-side. No AI, no external calendar. Keeps the app's style.
+   ========================================================================== */
+(function(){
+  var A=function(){return window.SS_API_LIVE;};
+  var SCH={view:'month',anchor:new Date(),entries:[],employees:[],canManage:false,selfOnly:false,
+           selEmp:'all',selBranch:'all',myMsg:null,loaded:false};
+  var DOW=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  var DOWFULL=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+  function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+  function say(m){ if(typeof toast==='function') toast(m); }
+  function er(e){ try{ return (window.__apiErr?window.__apiErr(e):(e&&e.message))||'Request failed'; }catch(x){ return 'Request failed'; } }
+  function pad(n){return (n<10?'0':'')+n;}
+  function iso(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
+  function parseISO(s){var p=String(s).split('-');return new Date(+p[0],+p[1]-1,+p[2]);}
+  function addDays(d,n){var x=new Date(d);x.setDate(x.getDate()+n);return x;}
+  function mondayOf(d){var x=new Date(d);var w=(x.getDay()+6)%7;return addDays(x,-w);}  // Mon=0
+  function sameDay(a,b){return iso(a)===iso(b);}
+  function monthName(d){return d.toLocaleString(undefined,{month:'long',year:'numeric'});}
+
+  /* ---- visible range for the current view ---- */
+  function range(){
+    if(SCH.view==='day'){ return [iso(SCH.anchor), iso(SCH.anchor)]; }
+    if(SCH.view==='week'){ var m=mondayOf(SCH.anchor); return [iso(m), iso(addDays(m,6))]; }
+    var first=new Date(SCH.anchor.getFullYear(),SCH.anchor.getMonth(),1);
+    var gridStart=mondayOf(first); return [iso(gridStart), iso(addDays(gridStart,41))];
+  }
+  function entriesByDate(){
+    var m={}; SCH.entries.forEach(function(e){ (m[e.work_date]=m[e.work_date]||[]).push(e); }); return m;
+  }
+  function empName(id){ var e=SCH.employees.filter(function(x){return x.id===id;})[0]; return e?e.name:id; }
+
+  /* ---- mount shell ---- */
+  function host(){ return document.getElementById('schedRoot'); }
+  function mount(){
+    var h=host(); if(!h) return false;
+    if(document.getElementById('schShell')) return true;
+    h.innerHTML='<div id="schShell"><div id="schBar" class="card" style="margin-bottom:12px"></div>'
+      +'<div id="schCal"></div><div id="schSide"></div></div>';
+    return true;
+  }
+
+  function renderBar(){
+    var el=document.getElementById('schBar'); if(!el) return;
+    var title = SCH.view==='month'? monthName(SCH.anchor)
+      : SCH.view==='week'? ('Week of '+parseISO(range()[0]).toLocaleDateString(undefined,{month:'short',day:'numeric'}))
+      : SCH.anchor.toLocaleDateString(undefined,{weekday:'long',month:'short',day:'numeric'});
+    var views=['month','week','day'];
+    var mgr=SCH.canManage;
+    var empOpts='<option value="all">All employees</option>'+SCH.employees.map(function(e){
+      return '<option value="'+esc(e.id)+'"'+(SCH.selEmp===e.id?' selected':'')+'>'+esc(e.name)+(e.tg_linked?'':' (no TG)')+'</option>';}).join('');
+    var branches=(typeof STORES!=='undefined'?STORES:[]);
+    var brOpts='<option value="all">All branches</option>'+branches.map(function(b){return '<option'+(SCH.selBranch===b?' selected':'')+'>'+esc(b)+'</option>';}).join('');
+    el.innerHTML='<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between">'
+      +'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
+        +'<div class="kpiperiod" id="schViews">'+views.map(function(v){return '<button type="button" data-v="'+v+'" class="'+(SCH.view===v?'on':'')+'">'+v.charAt(0).toUpperCase()+v.slice(1)+'</button>';}).join('')+'</div>'
+        +'<button class="btn g" id="schPrev" style="padding:6px 10px">‹</button>'
+        +'<button class="btn g" id="schToday" style="padding:6px 10px">Today</button>'
+        +'<button class="btn g" id="schNext" style="padding:6px 10px">›</button>'
+        +'<b style="margin-left:6px">'+esc(title)+'</b>'
+      +'</div>'
+      +'<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">'
+        +(mgr?'<select id="schEmp" style="max-width:180px">'+empOpts+'</select>':'')
+        +(mgr&&branches.length?'<select id="schBranch" style="max-width:150px">'+brOpts+'</select>':'')
+      +'</div></div>'
+      +(mgr?('<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">'
+        +'<button class="btn p" id="schAssign" style="padding:7px 12px;font-size:12.5px">＋ Assign shift</button>'
+        +'<button class="btn g" id="schDupPrev" style="padding:7px 12px;font-size:12.5px">Duplicate previous week</button>'
+        +'<button class="btn g" id="schCopy" style="padding:7px 12px;font-size:12.5px">Copy week →</button>'
+        +'<button class="btn g" id="schBulk" style="padding:7px 12px;font-size:12.5px">Bulk edit</button>'
+        +'<span style="flex:1"></span>'
+        +'<button class="btn g" id="schPreview" style="padding:7px 12px;font-size:12.5px">Preview</button>'
+        +'<button class="btn g" id="schDeliv" style="padding:7px 12px;font-size:12.5px">Delivery status</button>'
+        +'<button class="btn g" id="schSend" style="padding:7px 12px;font-size:12.5px">Send now</button>'
+        +'<button class="btn p" id="schPublish" style="padding:7px 12px;font-size:12.5px">Publish week &amp; notify</button>'
+      +'</div>'):'')
+      ;
+    // wire
+    [].forEach.call(el.querySelectorAll('#schViews button'),function(b){ b.onclick=function(){ SCH.view=b.getAttribute('data-v'); load(); }; });
+    document.getElementById('schPrev').onclick=function(){ nav(-1); };
+    document.getElementById('schNext').onclick=function(){ nav(1); };
+    document.getElementById('schToday').onclick=function(){ SCH.anchor=new Date(); load(); };
+    var se=document.getElementById('schEmp'); if(se) se.onchange=function(){ SCH.selEmp=se.value; load(); };
+    var sb=document.getElementById('schBranch'); if(sb) sb.onchange=function(){ SCH.selBranch=sb.value; load(); };
+    if(mgr){
+      document.getElementById('schAssign').onclick=function(){ assignDialog(null); };
+      document.getElementById('schDupPrev').onclick=duplicatePrev;
+      document.getElementById('schCopy').onclick=copyWeekDialog;
+      document.getElementById('schBulk').onclick=bulkDialog;
+      document.getElementById('schPreview').onclick=previewModal;
+      document.getElementById('schDeliv').onclick=deliveriesModal;
+      document.getElementById('schSend').onclick=sendDialog;
+      document.getElementById('schPublish').onclick=publishConfirm;
+    }
+  }
+  function nav(dir){
+    if(SCH.view==='month'){ SCH.anchor=new Date(SCH.anchor.getFullYear(),SCH.anchor.getMonth()+dir,1); }
+    else if(SCH.view==='week'){ SCH.anchor=addDays(SCH.anchor,7*dir); }
+    else { SCH.anchor=addDays(SCH.anchor,dir); }
+    load();
+  }
+
+  /* ---- calendar renders ---- */
+  function chip(e){
+    var lbl=e.is_off? 'OFF' : (e.start_time+'-'+e.end_time);
+    var col=e.is_off?'var(--muted)':(e.published?'var(--ok,#1a7f37)':'var(--accent,#2f6fed)');
+    return '<div class="schChip" data-id="'+e.id+'" style="cursor:pointer;font-size:11px;border-left:3px solid '+col+';'
+      +'background:var(--panel2,#f4f6f8);border-radius:4px;padding:2px 5px;margin:2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'
+      +esc(empName(e.employee_id))+' · '+esc(lbl)+(e.published?' 📤':'')+'</div>';
+  }
+  function renderMonth(){
+    var el=document.getElementById('schCal'); var by=entriesByDate();
+    var first=new Date(SCH.anchor.getFullYear(),SCH.anchor.getMonth(),1);
+    var start=mondayOf(first); var cells='';
+    for(var i=0;i<42;i++){
+      var d=addDays(start,i); var key=iso(d); var inMonth=d.getMonth()===SCH.anchor.getMonth();
+      var list=(by[key]||[]);
+      var chips=list.slice(0,3).map(chip).join('')+(list.length>3?'<div style="font-size:10px;color:var(--muted)">+'+(list.length-3)+' more</div>':'');
+      cells+='<div class="schDay" data-date="'+key+'" style="min-height:96px;border:1px solid var(--line,#eef1f4);border-radius:8px;padding:5px;'
+        +(inMonth?'':'opacity:.45;')+(sameDay(d,new Date())?'outline:2px solid var(--accent,#2f6fed);':'')+'cursor:'+(SCH.canManage?'pointer':'default')+'">'
+        +'<div style="font-size:11px;font-weight:600;color:var(--muted)">'+d.getDate()+'</div>'+chips+'</div>';
+    }
+    el.innerHTML='<div class="card"><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px">'
+      +DOW.map(function(w){return '<div style="font-size:11px;font-weight:600;color:var(--muted);text-align:center">'+w+'</div>';}).join('')
+      +'</div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">'+cells+'</div></div>';
+    bindCells();
+  }
+  function renderWeek(){
+    var el=document.getElementById('schCal'); var by=entriesByDate(); var m=mondayOf(SCH.anchor);
+    var cols='';
+    for(var i=0;i<7;i++){ var d=addDays(m,i); var key=iso(d); var list=by[key]||[];
+      cols+='<div class="schDay" data-date="'+key+'" style="border:1px solid var(--line,#eef1f4);border-radius:8px;padding:6px;min-height:150px;'
+        +(sameDay(d,new Date())?'outline:2px solid var(--accent,#2f6fed);':'')+'">'
+        +'<div style="font-size:12px;font-weight:600;margin-bottom:4px">'+DOW[i]+' '+d.getDate()+'</div>'
+        +list.map(chip).join('')
+        +(SCH.canManage?'<div class="schAdd" data-date="'+key+'" style="cursor:pointer;font-size:11px;color:var(--accent,#2f6fed);margin-top:4px">＋ add</div>':'')
+        +'</div>';
+    }
+    el.innerHTML='<div class="card"><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px">'+cols+'</div></div>';
+    bindCells();
+  }
+  function renderDay(){
+    var el=document.getElementById('schCal'); var by=entriesByDate(); var key=iso(SCH.anchor); var list=by[key]||[];
+    el.innerHTML='<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
+      +'<b>'+SCH.anchor.toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'})+'</b>'
+      +(SCH.canManage?'<button class="btn g schAdd" data-date="'+key+'" style="padding:5px 10px;font-size:12px">＋ Add shift</button>':'')+'</div>'
+      +(list.length? list.map(function(e){
+          return '<div class="schChip" data-id="'+e.id+'" style="cursor:pointer;display:flex;justify-content:space-between;border:1px solid var(--line,#eef1f4);border-radius:8px;padding:8px 10px;margin-bottom:6px">'
+            +'<span><b>'+esc(empName(e.employee_id))+'</b> · '+esc(e.branch||'')+'</span>'
+            +'<span>'+(e.is_off?'OFF':esc(e.start_time+' - '+e.end_time+(e.break_minutes?(' · break '+e.break_minutes+'m'):'')))+(e.published?' · 📤 published':'')+'</span></div>';
+        }).join('') : '<div class="sub" style="color:var(--muted)">No shifts scheduled.</div>')+'</div>';
+    bindCells();
+  }
+  function bindCells(){
+    if(SCH.canManage){
+      [].forEach.call(document.querySelectorAll('#schCal .schDay'),function(c){
+        c.onclick=function(ev){ if(ev.target.closest('.schChip')||ev.target.closest('.schAdd')) return; assignDialog(c.getAttribute('data-date')); }; });
+      [].forEach.call(document.querySelectorAll('#schCal .schAdd'),function(a){
+        a.onclick=function(ev){ ev.stopPropagation(); assignDialog(a.getAttribute('data-date')); }; });
+    }
+    [].forEach.call(document.querySelectorAll('#schCal .schChip'),function(ch){
+      ch.onclick=function(ev){ ev.stopPropagation(); var id=parseInt(ch.getAttribute('data-id'),10);
+        var e=SCH.entries.filter(function(x){return x.id===id;})[0]; if(e){ SCH.canManage? editDialog(e) : viewEntry(e); } }; });
+  }
+
+  function renderSide(){
+    var el=document.getElementById('schSide'); if(!el) return;
+    if(SCH.selfOnly && SCH.myMsg){
+      el.innerHTML='<div class="card" style="margin-top:12px"><h3 style="margin:0 0 8px">Your week at a glance</h3>'
+        +'<pre style="white-space:pre-wrap;font-family:inherit;font-size:13px;margin:0;color:var(--ink,#111)">'+esc(SCH.myMsg)+'</pre></div>';
+    } else el.innerHTML='';
+  }
+
+  /* ---- data ---- */
+  async function load(){
+    if(!mount()) return;
+    var r=range();
+    var q='start='+r[0]+'&end='+r[1];
+    if(SCH.selEmp&&SCH.selEmp!=='all') q+='&employee_id='+encodeURIComponent(SCH.selEmp);
+    if(SCH.selBranch&&SCH.selBranch!=='all') q+='&branch='+encodeURIComponent(SCH.selBranch);
+    try{
+      var res=await A().schEntries(q);
+      SCH.entries=res.entries||[]; SCH.employees=res.employees||[];
+      SCH.canManage=!!res.can_manage; SCH.selfOnly=!!res.self_only;
+      if(SCH.selfOnly){ try{ SCH.myMsg=(await A().schMy('start='+r[0]+'&end='+r[1])).week_message; }catch(e){ SCH.myMsg=null; } }
+      SCH.loaded=true;
+      renderBar();
+      if(SCH.view==='month') renderMonth(); else if(SCH.view==='week') renderWeek(); else renderDay();
+      renderSide();
+    }catch(e){
+      host().innerHTML='<div class="card"><div class="sub" style="color:var(--muted)">'+(e&&e.status===403?'Not permitted to view schedules.':esc(er(e)))+'</div></div>';
+    }
+  }
+
+  /* ---- dialogs ---- */
+  function modal(inner,wide){
+    var el=document.createElement('div'); el.className='schModal';
+    el.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(15,23,32,.5);display:flex;align-items:flex-start;justify-content:center;padding:40px 20px;overflow:auto';
+    el.innerHTML='<div style="background:var(--card,#fff);border-radius:14px;max-width:'+(wide?'720px':'480px')+';width:100%;padding:22px">'+inner+'</div>';
+    document.body.appendChild(el); el.addEventListener('click',function(e){ if(e.target===el) el.remove(); });
+    return el;
+  }
+  function empSelect(id,sel){ return '<select id="'+id+'" style="width:100%;padding:9px;border:1px solid var(--line,#e2e6ea);border-radius:8px">'
+    +SCH.employees.map(function(e){return '<option value="'+esc(e.id)+'"'+(sel===e.id?' selected':'')+'>'+esc(e.name)+' · '+esc(e.branch||'')+(e.tg_linked?'':' (no TG)')+'</option>';}).join('')+'</select>'; }
+  function timeInputs(s,e,b){ return '<div style="display:flex;gap:8px;margin:8px 0">'
+    +'<div style="flex:1"><label style="font-size:11.5px;color:var(--muted)">Start</label><input id="scfStart" type="time" value="'+(s||'09:00')+'" style="width:100%;padding:8px;border:1px solid var(--line,#e2e6ea);border-radius:8px"></div>'
+    +'<div style="flex:1"><label style="font-size:11.5px;color:var(--muted)">End</label><input id="scfEnd" type="time" value="'+(e||'17:00')+'" style="width:100%;padding:8px;border:1px solid var(--line,#e2e6ea);border-radius:8px"></div>'
+    +'<div style="flex:1"><label style="font-size:11.5px;color:var(--muted)">Break (min)</label><input id="scfBreak" type="number" min="0" value="'+(b||0)+'" style="width:100%;padding:8px;border:1px solid var(--line,#e2e6ea);border-radius:8px"></div></div>'; }
+
+  function assignDialog(prefDate){
+    if(!SCH.employees.length){ say('No employees in scope'); return; }
+    var m=modal('<h3 style="margin:0 0 14px">Assign shift</h3>'
+      +'<label style="font-size:12px;color:var(--muted)">Employee</label>'+empSelect('scfEmp',SCH.selEmp!=='all'?SCH.selEmp:null)
+      +'<label style="font-size:12px;color:var(--muted);display:block;margin-top:10px">Pattern</label>'
+      +'<select id="scfRec" style="width:100%;padding:9px;border:1px solid var(--line,#e2e6ea);border-radius:8px">'
+        +'<option value="single">Specific date</option><option value="weekdays">Every Mon–Fri</option>'
+        +'<option value="weekends">Weekends (Sat–Sun)</option><option value="custom">Custom weekdays</option>'
+        +'<option value="alternate">Alternate weeks (custom days)</option></select>'
+      +'<div id="scfSingleWrap" style="margin-top:8px"><label style="font-size:12px;color:var(--muted)">Date</label>'
+        +'<input id="scfDate" type="date" value="'+(prefDate||iso(new Date()))+'" style="width:100%;padding:9px;border:1px solid var(--line,#e2e6ea);border-radius:8px"></div>'
+      +'<div id="scfRecWrap" style="display:none;margin-top:8px">'
+        +'<div id="scfDows" style="margin-bottom:6px"></div>'
+        +'<div style="display:flex;gap:8px"><div style="flex:1"><label style="font-size:12px;color:var(--muted)">Starting</label>'
+          +'<input id="scfStartDate" type="date" value="'+(prefDate||iso(new Date()))+'" style="width:100%;padding:8px;border:1px solid var(--line,#e2e6ea);border-radius:8px"></div>'
+          +'<div style="flex:1"><label style="font-size:12px;color:var(--muted)">For (weeks)</label>'
+          +'<input id="scfWeeks" type="number" min="1" max="26" value="4" style="width:100%;padding:8px;border:1px solid var(--line,#e2e6ea);border-radius:8px"></div></div></div>'
+      +timeInputs()
+      +'<label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;margin-top:2px"><input type="checkbox" id="scfOff"> Day off (no shift)</label>'
+      +'<label style="font-size:12px;color:var(--muted);display:block;margin-top:8px">Notes</label>'
+      +'<input id="scfNotes" style="width:100%;padding:9px;border:1px solid var(--line,#e2e6ea);border-radius:8px;margin-bottom:14px">'
+      +'<div style="display:flex;gap:8px"><button class="btn p" id="scfGo">Assign</button><button class="btn g" id="scfX">Cancel</button></div>');
+    var dows='<div style="font-size:11.5px;color:var(--muted);margin-bottom:4px">Weekdays</div>'+DOW.map(function(w,i){
+      return '<label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;margin-right:10px"><input type="checkbox" class="scfDow" data-d="'+i+'">'+w+'</label>';}).join('');
+    m.querySelector('#scfDows').innerHTML=dows;
+    function sync(){ var r=m.querySelector('#scfRec').value; var single=r==='single';
+      m.querySelector('#scfSingleWrap').style.display=single?'block':'none';
+      m.querySelector('#scfRecWrap').style.display=single?'none':'block';
+      m.querySelector('#scfDows').style.display=(r==='custom'||r==='alternate')?'block':'none'; }
+    m.querySelector('#scfRec').onchange=sync; sync();
+    m.querySelector('#scfX').onclick=function(){ m.remove(); };
+    m.querySelector('#scfGo').onclick=async function(){
+      var rec=m.querySelector('#scfRec').value;
+      var body={employee_id:m.querySelector('#scfEmp').value,
+        start_time:m.querySelector('#scfStart').value, end_time:m.querySelector('#scfEnd').value,
+        break_minutes:parseInt(m.querySelector('#scfBreak').value,10)||0,
+        notes:m.querySelector('#scfNotes').value, is_off:m.querySelector('#scfOff').checked};
+      if(rec==='single'){ body.dates=[m.querySelector('#scfDate').value]; }
+      else { body.recurrence=rec; body.start=m.querySelector('#scfStartDate').value;
+        body.weeks=parseInt(m.querySelector('#scfWeeks').value,10)||1;
+        if(rec==='alternate') body.every_other=true;
+        if(rec==='custom'||rec==='alternate'){ body.weekdays=[].map.call(m.querySelectorAll('.scfDow:checked'),function(x){return parseInt(x.getAttribute('data-d'),10);});
+          if(!body.weekdays.length){ say('Pick at least one weekday'); return; } } }
+      try{ await A().schCreate(body); m.remove(); say('Shift(s) assigned'); load(); }catch(e){ say(er(e)); }
+    };
+  }
+
+  function editDialog(e){
+    var m=modal('<h3 style="margin:0 0 4px">Edit shift</h3>'
+      +'<div style="font-size:12.5px;color:var(--muted);margin-bottom:12px">'+esc(empName(e.employee_id))+' · '+esc(e.work_date)+'</div>'
+      +timeInputs(e.start_time,e.end_time,e.break_minutes)
+      +'<label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px"><input type="checkbox" id="scfOff"'+(e.is_off?' checked':'')+'> Day off</label>'
+      +'<label style="font-size:12px;color:var(--muted);display:block;margin-top:8px">Notes</label>'
+      +'<input id="scfNotes" value="'+esc(e.notes||'')+'" style="width:100%;padding:9px;border:1px solid var(--line,#e2e6ea);border-radius:8px;margin-bottom:14px">'
+      +'<div style="display:flex;gap:8px"><button class="btn p" id="scfGo">Save</button>'
+      +'<button class="btn g" id="scfDel" style="color:var(--bad,#c0392b)">Delete</button><button class="btn g" id="scfX">Cancel</button></div>');
+    m.querySelector('#scfX').onclick=function(){ m.remove(); };
+    m.querySelector('#scfGo').onclick=async function(){
+      try{ await A().schEdit(e.id,{start_time:m.querySelector('#scfStart').value,end_time:m.querySelector('#scfEnd').value,
+        break_minutes:parseInt(m.querySelector('#scfBreak').value,10)||0,notes:m.querySelector('#scfNotes').value,
+        is_off:m.querySelector('#scfOff').checked}); m.remove(); say('Shift updated'+(e.published?' — employee re-notified':'')); load(); }catch(err){ say(er(err)); }
+    };
+    m.querySelector('#scfDel').onclick=async function(){ if(!window.confirm('Delete this shift?')) return;
+      try{ await A().schDelete(e.id); m.remove(); say('Shift deleted'); load(); }catch(err){ say(er(err)); } };
+  }
+  function viewEntry(e){ modal('<h3 style="margin:0 0 10px">'+esc(e.work_date)+'</h3><div style="font-size:14px">'
+    +(e.is_off?'Day off':esc(e.start_time+' – '+e.end_time+(e.break_minutes?(' (break '+e.break_minutes+'m)'):'')))
+    +(e.notes?('<div style="color:var(--muted);margin-top:6px">'+esc(e.notes)+'</div>'):'')+'</div>'
+    +'<div style="margin-top:14px"><button class="btn g" onclick="this.closest(\'.schModal\').remove()">Close</button></div>'); }
+
+  function publishConfirm(){
+    var ws=iso(mondayOf(SCH.anchor));
+    var m=modal('<h3 style="margin:0 0 10px">Publish week &amp; notify</h3>'
+      +'<div style="font-size:13px;color:var(--muted);margin-bottom:12px">Publishes the week of <b>'+ws+'</b> and sends each employee their own schedule over Telegram.</div>'
+      +'<label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px"><input type="checkbox" id="scfCopy"> Also send me a copy</label>'
+      +'<div style="display:flex;gap:8px;margin-top:14px"><button class="btn p" id="scfGo">Publish &amp; send</button><button class="btn g" id="scfX">Cancel</button></div>');
+    m.querySelector('#scfX').onclick=function(){ m.remove(); };
+    m.querySelector('#scfGo').onclick=async function(){
+      try{ var r=await A().schPublish({week_start:ws,employee_id:(SCH.selEmp!=='all'?SCH.selEmp:undefined),copy_to_me:m.querySelector('#scfCopy').checked});
+        m.remove(); say('Published '+r.published_employees+' · queued '+r.queued+(r.skipped?(' · '+r.skipped+' unlinked'):'')); load(); }catch(e){ say(er(e)); }
+    };
+  }
+  function sendDialog(){
+    var ws=iso(mondayOf(SCH.anchor));
+    var m=modal('<h3 style="margin:0 0 10px">Send schedules now</h3>'
+      +'<label style="font-size:12px;color:var(--muted)">Recipient</label>'
+      +'<select id="scfWho" style="width:100%;padding:9px;border:1px solid var(--line,#e2e6ea);border-radius:8px;margin-bottom:10px"><option value="all">All employees</option>'
+        +SCH.employees.map(function(e){return '<option value="'+esc(e.id)+'">'+esc(e.name)+'</option>';}).join('')+'</select>'
+      +'<label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px"><input type="checkbox" id="scfCopy"> Also send me a copy</label>'
+      +'<div style="display:flex;gap:8px;margin-top:14px"><button class="btn p" id="scfGo">Send</button><button class="btn g" id="scfX">Cancel</button></div>');
+    m.querySelector('#scfX').onclick=function(){ m.remove(); };
+    m.querySelector('#scfGo').onclick=async function(){ var who=m.querySelector('#scfWho').value;
+      try{ var r=await A().schSend({week_start:ws,employee_id:(who!=='all'?who:undefined),copy_to_me:m.querySelector('#scfCopy').checked});
+        m.remove(); say('Queued '+r.queued+(r.skipped?(' · '+r.skipped+' unlinked'):'')); }catch(e){ say(er(e)); } };
+  }
+  async function previewModal(){
+    var ws=iso(mondayOf(SCH.anchor));
+    try{ var r=await A().schPreview('week_start='+ws+(SCH.selEmp!=='all'?('&employee_id='+SCH.selEmp):''));
+      var body=(r.previews||[]).map(function(p){ return '<div style="border:1px solid var(--line,#eef1f4);border-radius:8px;padding:10px;margin-bottom:10px">'
+        +'<b>'+esc(p.name)+'</b> '+(p.tg_linked?'<span style="color:var(--ok,#1a7f37);font-size:11px">· Telegram linked</span>':'<span style="color:var(--warn,#b26a00);font-size:11px">· no Telegram</span>')
+        +'<pre style="white-space:pre-wrap;font-family:inherit;font-size:12.5px;margin:6px 0 0">'+esc(p.message)+'</pre></div>'; }).join('')||'<div class="sub">No employees.</div>';
+      modal('<h3 style="margin:0 0 12px">Preview — week of '+ws+'</h3>'+body+'<button class="btn g" onclick="this.closest(\'.schModal\').remove()">Close</button>',true);
+    }catch(e){ say(er(e)); }
+  }
+  async function deliveriesModal(){
+    try{ var r=await A().schDeliveries(); var rows=r.deliveries||[];
+      var body='<div style="overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr style="background:var(--panel2,#f4f6f8)">'
+        +['When','Recipient','Week','Type','Status',''].map(function(h){return '<th style="text-align:left;padding:6px 8px">'+h+'</th>';}).join('')+'</tr></thead><tbody>'
+        +(rows.length?rows.slice(0,50).map(function(d){ var col=d.status==='sent'?'var(--ok,#1a7f37)':(d.status==='failed'?'var(--bad,#c0392b)':(d.status==='skipped'?'var(--muted)':'var(--warn,#b26a00)'));
+          return '<tr><td style="padding:5px 8px">'+esc((d.at||'').slice(0,16).replace('T',' '))+'</td><td style="padding:5px 8px">'+esc(d.recipient||'—')+'</td>'
+            +'<td style="padding:5px 8px">'+esc(d.week_start||'')+'</td><td style="padding:5px 8px">'+esc(d.kind)+'</td>'
+            +'<td style="padding:5px 8px;color:'+col+';font-weight:600">'+esc(d.status)+(d.error?(' <span style="color:var(--muted);font-weight:400">('+esc(d.error)+')</span>'):'')+'</td>'
+            +'<td style="padding:5px 8px">'+((d.status==='failed'&&d.tg_id)?'<a href="#" class="schResend" data-id="'+d.id+'" style="color:var(--accent,#2f6fed)">Resend</a>':'')+'</td></tr>';
+        }).join(''):'<tr><td colspan="6" style="padding:10px;color:var(--muted)">No schedule deliveries yet.</td></tr>')+'</tbody></table></div>';
+      var m=modal('<h3 style="margin:0 0 12px">Telegram delivery status</h3>'+body+'<div style="margin-top:12px"><button class="btn g" id="scfX">Close</button></div>',true);
+      m.querySelector('#scfX').onclick=function(){ m.remove(); };
+      [].forEach.call(m.querySelectorAll('.schResend'),function(a){ a.onclick=async function(ev){ ev.preventDefault();
+        try{ await A().schResend(parseInt(a.getAttribute('data-id'),10)); say('Re-queued'); a.textContent='queued'; }catch(e){ say(er(e)); } }; });
+    }catch(e){ say(er(e)); }
+  }
+  function copyWeekDialog(){
+    var thisMon=iso(mondayOf(SCH.anchor));
+    var m=modal('<h3 style="margin:0 0 10px">Copy this week forward</h3>'
+      +'<div style="font-size:13px;color:var(--muted);margin-bottom:10px">Duplicate the week of <b>'+thisMon+'</b> into the next N weeks.</div>'
+      +'<label style="font-size:12px;color:var(--muted)">Number of weeks</label><input id="scfN" type="number" min="1" max="12" value="1" style="width:100%;padding:9px;border:1px solid var(--line,#e2e6ea);border-radius:8px;margin-bottom:14px">'
+      +'<div style="display:flex;gap:8px"><button class="btn p" id="scfGo">Copy</button><button class="btn g" id="scfX">Cancel</button></div>');
+    m.querySelector('#scfX').onclick=function(){ m.remove(); };
+    m.querySelector('#scfGo').onclick=async function(){ var n=parseInt(m.querySelector('#scfN').value,10)||1; var to=[];
+      for(var i=1;i<=n;i++) to.push(iso(addDays(parseISO(thisMon),7*i)));
+      try{ var r=await A().schCopyWeek({from_week:thisMon,to_weeks:to,employee_id:(SCH.selEmp!=='all'?SCH.selEmp:undefined)});
+        m.remove(); say('Copied '+r.copied+' shifts into '+r.weeks+' week(s)'); load(); }catch(e){ say(er(e)); } };
+  }
+  async function duplicatePrev(){
+    var thisMon=mondayOf(SCH.anchor); var prev=iso(addDays(thisMon,-7));
+    try{ var r=await A().schCopyWeek({from_week:prev,to_weeks:[iso(thisMon)],employee_id:(SCH.selEmp!=='all'?SCH.selEmp:undefined)});
+      say('Duplicated previous week ('+r.copied+' shifts)'); load(); }catch(e){ say(er(e)); }
+  }
+  function bulkDialog(){
+    if(!SCH.employees.length){ say('No employees in scope'); return; }
+    var m=modal('<h3 style="margin:0 0 12px">Bulk assign a pattern</h3>'
+      +'<label style="font-size:12px;color:var(--muted)">Employees</label>'
+      +'<div id="scfEmps" style="max-height:150px;overflow:auto;border:1px solid var(--line,#eef1f4);border-radius:8px;padding:8px;margin-bottom:10px">'
+        +SCH.employees.map(function(e){return '<label style="display:block;font-size:12.5px;margin:3px 0"><input type="checkbox" class="scfEmpChk" data-id="'+esc(e.id)+'"> '+esc(e.name)+' · '+esc(e.branch||'')+'</label>';}).join('')+'</div>'
+      +'<label style="font-size:12px;color:var(--muted)">Pattern</label>'
+      +'<select id="scfRec" style="width:100%;padding:9px;border:1px solid var(--line,#e2e6ea);border-radius:8px;margin-bottom:8px"><option value="weekdays">Every Mon–Fri</option><option value="weekends">Weekends</option><option value="custom">Custom weekdays</option></select>'
+      +'<div id="scfDows" style="margin-bottom:8px;display:none">'+DOW.map(function(w,i){return '<label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;margin-right:10px"><input type="checkbox" class="scfDow" data-d="'+i+'">'+w+'</label>';}).join('')+'</div>'
+      +'<div style="display:flex;gap:8px"><div style="flex:1"><label style="font-size:12px;color:var(--muted)">Starting</label><input id="scfStartDate" type="date" value="'+iso(mondayOf(SCH.anchor))+'" style="width:100%;padding:8px;border:1px solid var(--line,#e2e6ea);border-radius:8px"></div>'
+        +'<div style="flex:1"><label style="font-size:12px;color:var(--muted)">Weeks</label><input id="scfWeeks" type="number" min="1" max="26" value="1" style="width:100%;padding:8px;border:1px solid var(--line,#e2e6ea);border-radius:8px"></div></div>'
+      +timeInputs()
+      +'<div style="display:flex;gap:8px;margin-top:6px"><button class="btn p" id="scfGo">Apply</button><button class="btn g" id="scfX">Cancel</button></div>');
+    m.querySelector('#scfRec').onchange=function(){ m.querySelector('#scfDows').style.display=this.value==='custom'?'block':'none'; };
+    m.querySelector('#scfX').onclick=function(){ m.remove(); };
+    m.querySelector('#scfGo').onclick=async function(){
+      var ids=[].map.call(m.querySelectorAll('.scfEmpChk:checked'),function(x){return x.getAttribute('data-id');});
+      if(!ids.length){ say('Select at least one employee'); return; }
+      var rec=m.querySelector('#scfRec').value;
+      var body={employee_ids:ids,recurrence:rec,start:m.querySelector('#scfStartDate').value,weeks:parseInt(m.querySelector('#scfWeeks').value,10)||1,
+        start_time:m.querySelector('#scfStart').value,end_time:m.querySelector('#scfEnd').value,break_minutes:parseInt(m.querySelector('#scfBreak').value,10)||0};
+      if(rec==='custom'){ body.weekdays=[].map.call(m.querySelectorAll('.scfDow:checked'),function(x){return parseInt(x.getAttribute('data-d'),10);}); if(!body.weekdays.length){ say('Pick weekdays'); return; } }
+      try{ var r=await A().schBulk(body); m.remove(); say('Created '+r.created+' shifts for '+r.employees+' employees'); load(); }catch(e){ say(er(e)); }
+    };
+  }
+
+  /* ---- tab controller (Schedule | Hours) ---- */
+  function showTab(t){
+    var tabs=document.getElementById('whTabs'); if(tabs) [].forEach.call(tabs.querySelectorAll('button'),function(b){ b.classList.toggle('on',b.getAttribute('data-t')===t); });
+    var sr=document.getElementById('schedRoot'), wb=document.getElementById('whBody');
+    if(t==='hours'){ if(sr) sr.style.display='none'; if(wb) wb.style.display=''; if(typeof renderWorkHours==='function') try{ renderWorkHours(); }catch(e){} }
+    else { if(wb) wb.style.display='none'; if(sr) sr.style.display=''; load(); }
+  }
+  function bindTabs(){ var tabs=document.getElementById('whTabs'); if(!tabs||tabs.__b) return; tabs.__b=1;
+    [].forEach.call(tabs.querySelectorAll('button'),function(b){ b.onclick=function(){ showTab(b.getAttribute('data-t')); }; }); }
+
+  function boot(){ if(!window.API_MODE) return; bindTabs(); showTab('schedule'); }
+  window.__schedBoot=boot; window.__schedState=function(){return SCH;};
+
+  var _go=window.go;
+  if(typeof _go==='function'){ window.go=function(v,opts){ var r=_go.apply(this,arguments); try{ if(v==='workhours') boot(); }catch(e){} return r; }; }
+  document.addEventListener('DOMContentLoaded',function(){ try{ var cur=document.querySelector('.view.on'); if(cur&&cur.id==='v-workhours') boot(); }catch(e){} });
 })();
 
 /* ==========================================================================
