@@ -961,3 +961,232 @@ def pending_deliveries(x_bot_token: str = Header(None), db: Session = Depends(ge
                     "test": r.report_type == "test",
                     "include_pdf": bool(rec.include_pdf) if rec else False})
     return {"pending": out}
+
+
+# ==========================================================================
+# RECURRING TELEGRAM REMINDERS
+# Interval-based nudges to enter business data. Same architecture as scheduled
+# reports: the schedule lives in the DB (one settings row + company timezone),
+# the worker holds no state, and a UNIQUE idempotency key per (slot, recipient)
+# guarantees no double-send across restarts or multiple worker instances.
+# ==========================================================================
+from .. import reminders_tg as RM  # noqa: E402
+
+
+def _reminder_settings_out(db, s):
+    local, tzname = R.now_local(db)
+    nrl = RM.next_run_local(db, s)
+    return {
+        "enabled": bool(s.enabled),
+        "interval_hours": int(s.interval_hours or 12),
+        "message": s.message or RM.DEFAULT_MESSAGE,
+        "active_start_hour": int(s.active_start_hour if s.active_start_hour is not None else 8),
+        "active_end_hour": int(s.active_end_hour if s.active_end_hour is not None else 22),
+        "paused_days": sorted(RM.paused_days(s)),
+        "recipient_mode": s.recipient_mode or "all",
+        "recipient_ids": list(RM.recipient_selection(s) or []),
+        "slot_hours": RM.daily_slot_hours(s),
+        "timezone": tzname,
+        "local_time": local.strftime("%Y-%m-%d %H:%M:%S"),
+        "next_run_local": (nrl.strftime("%Y-%m-%d %H:%M") if nrl else None),
+        "next_run_utc": RM.iso(s.next_run_at),
+        "last_run_utc": RM.iso(s.last_run_at),
+        "weekday_labels": RM.WEEKDAYS,
+        "default_message": RM.DEFAULT_MESSAGE,
+        "candidates": RM.candidate_accounts(db),
+        "updated_by": s.updated_by,
+        "updated_at": _iso(s.updated_at),
+    }
+
+
+@router.get("/reminders/settings")
+def reminder_get_settings(db: Session = Depends(get_db),
+                          user: models.User = Depends(S.require("manage_reminders"))):
+    return _reminder_settings_out(db, RM.get_settings(db))
+
+
+@router.put("/reminders/settings")
+def reminder_set_settings(body: dict, db: Session = Depends(get_db),
+                          user: models.User = Depends(S.require("manage_reminders"))):
+    s = RM.get_settings(db)
+    body = body or {}
+    if "enabled" in body:
+        s.enabled = bool(body["enabled"])
+    if "interval_hours" in body:
+        iv = int(body["interval_hours"])
+        if iv < 1 or iv > 168:
+            raise HTTPException(422, "interval_hours must be between 1 and 168")
+        s.interval_hours = iv
+    if "message" in body:
+        msg = str(body["message"] or "").strip()
+        s.message = msg or RM.DEFAULT_MESSAGE
+    if "active_start_hour" in body:
+        s.active_start_hour = max(0, min(23, int(body["active_start_hour"])))
+    if "active_end_hour" in body:
+        s.active_end_hour = max(0, min(23, int(body["active_end_hour"])))
+    if s.active_end_hour < s.active_start_hour:
+        raise HTTPException(422, "active_end_hour must be >= active_start_hour")
+    if "paused_days" in body:
+        days = [int(x) for x in (body["paused_days"] or []) if 0 <= int(x) <= 6]
+        s.paused_days = json.dumps(sorted(set(days)))
+    if "recipient_mode" in body:
+        mode = str(body["recipient_mode"] or "all")
+        s.recipient_mode = mode if mode in ("all", "selected") else "all"
+    if "recipient_ids" in body:
+        s.recipient_ids = json.dumps([str(x) for x in (body["recipient_ids"] or [])])
+    s.updated_by = user.id
+    s.updated_at = datetime.now(timezone.utc)
+    # Any change to timing recomputes the next fire so the new schedule takes
+    # effect immediately; disabling clears it.
+    if s.enabled:
+        local, _ = R.now_local(db)
+        s.next_run_at = RM.compute_next_run(local, s)
+    else:
+        s.next_run_at = None
+    db.commit()
+    S.audit(db, user, "set_reminder_settings", "reminders", "config",
+            detail=f"enabled={s.enabled} every={s.interval_hours}h "
+                   f"{s.active_start_hour}:00-{s.active_end_hour}:00 mode={s.recipient_mode}")
+    return _reminder_settings_out(db, s)
+
+
+@router.get("/reminders/deliveries")
+def reminder_deliveries(limit: int = 100, db: Session = Depends(get_db),
+                        user: models.User = Depends(S.require("manage_reminders"))):
+    rows = (db.query(models.ReminderDelivery)
+            .order_by(models.ReminderDelivery.id.desc()).limit(min(limit, 500)).all())
+    return {"deliveries": [{
+        "id": r.id, "run_at": _iso(r.run_at), "logged_at": _iso(r.created_at),
+        "kind": r.kind, "tg_id": r.tg_id, "recipient": r.recipient,
+        "status": r.status, "error": r.error, "message_id": r.message_id,
+    } for r in rows]}
+
+
+def _reminder_row(db, idem_key, **fields):
+    """Insert a delivery-ledger row; None if the key already exists (idempotent)."""
+    if db.query(models.ReminderDelivery).filter(
+            models.ReminderDelivery.idem_key == idem_key).first():
+        return None
+    row = models.ReminderDelivery(idem_key=idem_key, **fields)
+    db.add(row)
+    try:
+        db.commit()
+    except Exception:  # noqa: BLE001  (another instance won the race)
+        db.rollback()
+        return None
+    return row
+
+
+@router.post("/reminders/send-now")
+def reminder_send_now(body: dict, db: Session = Depends(get_db),
+                      user: models.User = Depends(S.require("manage_reminders"))):
+    """Queue an immediate reminder to all current recipients — lets an admin
+    verify delivery without waiting for the next scheduled slot."""
+    s = RM.get_settings(db)
+    msg = str((body or {}).get("message") or s.message or RM.DEFAULT_MESSAGE)
+    recips = RM.resolve_recipients(db, s)
+    now = datetime.now(timezone.utc)
+    stamp = now.strftime("%Y%m%d%H%M%S%f")
+    queued = []
+    for r in recips:
+        key = f"manual|{stamp}|{r['tg_id']}"
+        row = _reminder_row(db, key, run_at=now, kind="manual", tg_id=r["tg_id"],
+                            recipient=r["name"], message=msg, status="queued")
+        if row:
+            queued.append(r["name"])
+    S.audit(db, user, "send_reminder_now", "reminders", "manual",
+            detail=f"{len(queued)} recipient(s)")
+    return {"queued": len(queued), "recipients": [r["name"] for r in recips]}
+
+
+@router.post("/reminders/claim")
+def reminder_claim(x_bot_token: str = Header(None), db: Session = Depends(get_db)):
+    """Worker entry point. Atomically claims the current slot if due, advancing
+    next_run_at so no other tick/instance can claim it, and returns the batch to
+    send. Respects active hours and paused days; a suppressed slot is logged."""
+    if not settings.bot_token or x_bot_token != settings.bot_token:
+        raise HTTPException(403, "Forbidden")
+    s = RM.get_settings(db)
+    if not s.enabled:
+        return {"claimed": False, "reason": "disabled"}
+    now = datetime.now(timezone.utc)
+    if not s.next_run_at:
+        RM.ensure_next_run(db, s)
+        return {"claimed": False, "reason": "initialised", "next_run": RM.iso(s.next_run_at)}
+    nr = s.next_run_at if s.next_run_at.tzinfo else s.next_run_at.replace(tzinfo=timezone.utc)
+    if now < nr:
+        return {"claimed": False, "reason": "not_due", "next_run": RM.iso(nr)}
+    # Advance atomically: only the instance whose UPDATE matches the old value wins.
+    local_now, _ = R.now_local(db)
+    new_next = RM.compute_next_run(local_now, s)
+    updated = (db.query(models.ReminderSetting)
+               .filter(models.ReminderSetting.id == 1,
+                       models.ReminderSetting.next_run_at == s.next_run_at)
+               .update({"next_run_at": new_next, "last_run_at": now}))
+    db.commit()
+    if not updated:
+        return {"claimed": False, "reason": "raced"}
+    run_iso = nr.astimezone(timezone.utc).isoformat()
+    # Was this fired slot still inside the active window / not a paused day?
+    fire_local = None
+    try:
+        from zoneinfo import ZoneInfo
+        fire_local = nr.astimezone(ZoneInfo(R.company_tz(db)))
+    except Exception:  # noqa: BLE001
+        fire_local = None
+    if fire_local is not None and not RM.is_active_time(fire_local, s):
+        _reminder_row(db, f"reminder|{run_iso}|-", run_at=nr, kind="skipped", tg_id="-",
+                      recipient="(schedule)", status="skipped",
+                      error="outside active hours or paused day")
+        return {"claimed": True, "skipped": True, "reason": "outside active hours / paused day",
+                "next_run": RM.iso(new_next)}
+    recips = RM.resolve_recipients(db, s)
+    if not recips:
+        _reminder_row(db, f"reminder|{run_iso}|-", run_at=nr, kind="skipped", tg_id="-",
+                      recipient="(schedule)", status="skipped", error="no active recipients")
+        return {"claimed": True, "skipped": True, "reason": "no recipients",
+                "next_run": RM.iso(new_next)}
+    batch = []
+    for r in recips:
+        key = f"reminder|{run_iso}|{r['tg_id']}"
+        row = _reminder_row(db, key, run_at=nr, kind="scheduled", tg_id=r["tg_id"],
+                            recipient=r["name"], message=s.message, status="queued")
+        if row:
+            batch.append({"tg_id": r["tg_id"], "name": r["name"], "idem_key": key})
+    return {"claimed": True, "skipped": False, "run_at": run_iso,
+            "message": s.message, "recipients": batch, "next_run": RM.iso(new_next)}
+
+
+@router.get("/reminders/pending")
+def reminder_pending(x_bot_token: str = Header(None), db: Session = Depends(get_db)):
+    """Manual 'send now' batches awaiting delivery by the worker."""
+    if not settings.bot_token or x_bot_token != settings.bot_token:
+        raise HTTPException(403, "Forbidden")
+    rows = (db.query(models.ReminderDelivery)
+            .filter(models.ReminderDelivery.status == "queued",
+                    models.ReminderDelivery.kind == "manual")
+            .order_by(models.ReminderDelivery.id.asc()).limit(50).all())
+    return {"pending": [{"idem_key": r.idem_key, "tg_id": r.tg_id,
+                         "message": r.message} for r in rows]}
+
+
+@router.post("/reminders/complete")
+def reminder_complete(body: dict, x_bot_token: str = Header(None), db: Session = Depends(get_db)):
+    """Worker reports the per-recipient outcome; the row is the delivery log."""
+    if not settings.bot_token or x_bot_token != settings.bot_token:
+        raise HTTPException(403, "Forbidden")
+    key = str((body or {}).get("idem_key") or "")
+    row = (db.query(models.ReminderDelivery)
+           .filter(models.ReminderDelivery.idem_key == key).first())
+    if not row:
+        raise HTTPException(404, "Unknown delivery")
+    row.status = str(body.get("status") or "sent")
+    row.error = body.get("error")
+    row.message_id = str(body.get("message_id") or "")[:60]
+    db.commit()
+    db.add(models.AuditLog(source="TELEGRAM", tg_id=row.tg_id, action="reminder_sent",
+                           entity="reminder", ref=row.kind, detail=row.recipient,
+                           result=("ok" if row.status == "sent" else "denied"),
+                           branch=None, ip="telegram"))
+    db.commit()
+    return {"ok": True, "status": row.status}
