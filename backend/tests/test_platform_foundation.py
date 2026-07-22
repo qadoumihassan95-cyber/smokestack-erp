@@ -17,9 +17,11 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.database import SessionLocal
 from app import models
+from app.apps import load_apps
 from app.platform import registry
 from app.platform.seed import seed_platform
 
+load_apps()   # applications self-register (startup does this too)
 client = TestClient(app)
 
 
@@ -28,31 +30,57 @@ def _db():
 
 
 # ------------------------------------------------------------- registry seed
-def test_applications_and_modules_seeded_from_manifest():
+def test_applications_and_modules_seeded_from_registered_apps():
     with TestClient(app):
         db = _db()
         try:
             apps = {a.key for a in db.query(models.Application).all()}
             mods = {m.key for m in db.query(models.Module).all()}
-            assert apps == {a["key"] for a in registry.APPLICATIONS}
-            assert mods == {m["key"] for m in registry.MODULES}
-            # smoke_shop is the only live application; the rest are registered/inactive
+            assert apps == {a.key for a in registry.applications()}
+            assert mods == set(registry.all_module_specs().keys())
+            # smoke_shop is the only live application; the catalog types are inactive
             assert db.get(models.Application, "smoke_shop").active is True
             assert db.get(models.Application, "retail").active is False
         finally:
             db.close()
 
 
-def test_manifest_is_internally_consistent():
-    keys = [m["key"] for m in registry.MODULES]
-    assert len(keys) == len(set(keys)), "module keys must be unique"
-    valid = set(keys)
-    for m in registry.MODULES:                      # every dependency references a real module
-        for dep in m.get("depends_on", []):
-            assert dep in valid, f"{m['key']} depends on unknown module {dep}"
-    app_keys = {a["key"] for a in registry.APPLICATIONS}
-    for m in registry.MODULES:
-        assert m.get("application", "core") in (app_keys | {"core"})
+def test_registry_is_internally_consistent():
+    specs = registry.all_module_specs()
+    valid = set(specs.keys())
+    for key, (app_key, spec) in specs.items():
+        for dep in spec.depends_on:
+            assert dep in valid, f"{key} depends on unknown module {dep}"
+    app_keys = {a.key for a in registry.applications()} | {"core"}
+    for key, (app_key, spec) in specs.items():
+        assert app_key in app_keys
+
+
+# -------------------------------- BUSINESS-AGNOSTIC PLATFORM (the constraint)
+def test_platform_layer_contains_no_business_specifics():
+    """The platform package must not hardcode any business identity — all of that
+    lives inside app/apps/. This guards the 'platform is business-agnostic' rule."""
+    import os
+    plat_dir = os.path.join(os.path.dirname(__file__), "..", "app", "platform")
+    forbidden = ["smoke", "smokestack", "u-owner", "vape", "tobacco", "cigarette"]
+    offenders = []
+    for fn in os.listdir(plat_dir):
+        if not fn.endswith(".py"):
+            continue
+        src = open(os.path.join(plat_dir, fn), encoding="utf-8").read().lower()
+        for term in forbidden:
+            if term in src:
+                offenders.append(f"{fn}: '{term}'")
+    assert not offenders, "business specifics leaked into the platform layer: " + ", ".join(offenders)
+
+
+def test_smoke_shop_specifics_live_in_the_app_layer():
+    # the founding company + its modules are defined by the smoke_shop APP, not the platform
+    from app.apps import smoke_shop
+    assert smoke_shop.SMOKE_SHOP.bootstrap is not None
+    assert any(m.key == "inventory" for m in smoke_shop.MODULES)
+    # the platform registry knows nothing until an app registers
+    assert registry.get_application("smoke_shop").name == "Smoke Shop ERP"
 
 
 # --------------------------------------------------------------- Company #1
@@ -68,7 +96,7 @@ def test_company_one_is_the_existing_smokestack_business():
             assert c.status == "active"
             # every module enabled for the founding company
             cm = db.query(models.CompanyModule).filter(models.CompanyModule.company_id == c.id).count()
-            assert cm == len(registry.MODULES)
+            assert cm == len(registry.all_module_specs())
             # lifetime subscription
             sub = db.query(models.Subscription).filter(models.Subscription.company_id == c.id).first()
             assert sub and sub.plan == "lifetime" and sub.status == "active"
@@ -86,7 +114,7 @@ def test_seed_is_idempotent():
             assert db.query(models.Company).count() == before   # no duplicate companies
             # no duplicate module rows for Company #1 either
             cm = db.query(models.CompanyModule).filter(models.CompanyModule.company_id == 1).count()
-            assert cm == len(registry.MODULES)
+            assert cm == len(registry.all_module_specs())
         finally:
             db.close()
 
