@@ -377,3 +377,54 @@ class ChatAnnouncement(Base):
     created_by = Column(String)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     active = Column(Boolean, default=True)
+
+
+# =========================================================================
+# RECURRING TELEGRAM REMINDERS — interval-based nudges to enter business data.
+# Reuses the existing Telegram integration + company timezone. Like the
+# scheduled reports, the entire schedule lives in the database (one settings
+# row), so the worker holds no state and a restart/redeploy loses nothing.
+# =========================================================================
+class ReminderSetting(Base):
+    """Single-row configuration for the recurring reminder (id is always 1).
+
+    The scheduler reads this every tick; `next_run_at` (UTC) is the source of
+    truth for *when* the next reminder fires, advanced atomically on each claim
+    so two worker instances can never double-send.
+    """
+    __tablename__ = "reminder_settings"
+    id = Column(Integer, primary_key=True, default=1)
+    enabled = Column(Boolean, default=False)
+    interval_hours = Column(Integer, default=12)          # every N hours
+    message = Column(Text)                                # editable reminder body
+    active_start_hour = Column(Integer, default=8)        # local hour, inclusive
+    active_end_hour = Column(Integer, default=22)         # local hour, inclusive
+    paused_days = Column(Text)                            # JSON list, 0=Mon..6=Sun
+    recipient_mode = Column(String, default="all")        # all | selected
+    recipient_ids = Column(Text)                          # JSON list of tg_id (when selected)
+    next_run_at = Column(DateTime(timezone=True))         # UTC; when the next reminder is due
+    last_run_at = Column(DateTime(timezone=True))         # UTC; last time a batch was claimed
+    updated_by = Column(String)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ReminderDelivery(Base):
+    """One row per recipient per reminder send — the audit + idempotency ledger.
+
+    idem_key is UNIQUE (reminder|<run-iso>|<tg_id>, or manual|<stamp>|<tg_id>),
+    so a retry or a second worker instance can never log or send twice for the
+    same slot and recipient. A schedule-level 'skipped' row (outside active
+    hours / paused day) is recorded with tg_id '-'.
+    """
+    __tablename__ = "reminder_deliveries"
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    idem_key = Column(String, unique=True, index=True)
+    run_at = Column(DateTime(timezone=True), index=True)   # scheduled/queued time (UTC)
+    kind = Column(String, default="scheduled")             # scheduled | manual | skipped
+    tg_id = Column(String, index=True)
+    recipient = Column(String)                             # employee/display name
+    message = Column(Text)                                 # exact body queued (manual sends)
+    status = Column(String, default="queued")              # queued|sent|failed|skipped
+    error = Column(Text)
+    message_id = Column(String)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
