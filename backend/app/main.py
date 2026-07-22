@@ -29,10 +29,15 @@ def health():
 @app.on_event("startup")
 def on_startup():
     Base.metadata.create_all(bind=engine)
-    if settings.seed_on_start:
-        from .seed import seed
-        db = SessionLocal()
-        try:
+    db = SessionLocal()
+    try:
+        if settings.seed_on_start:
+            from .seed import seed
             seed(db)
-        finally:
-            db.close()
+        # PFS Platform: seed applications + modules + Company #1 (idempotent, and
+        # required in production regardless of seed_on_start). Never touches
+        # tenant data, so it is safe on every boot.
+        from .platform.seed import seed_platform
+        seed_platform(db)
+    finally:
+        db.close()

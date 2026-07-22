@@ -516,3 +516,119 @@ class TelegramDeliveryLog(Base):
     message_id = Column(String)
     created_by = Column(String)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+# =========================================================================
+# PFS PLATFORM — multi-tenant SaaS foundation (Phase 0).
+# These tables are ADDITIVE and platform-level. No existing tenant table is
+# touched in this phase. The live SmokeStack business becomes Company #1.
+# Tenancy (company_id on tenant tables) is introduced in Phase 1.
+# =========================================================================
+class PlatformUser(Base):
+    """A Super Admin of the PFS Control Center — separate from tenant `users`.
+    Belongs to no company; can never be used on tenant endpoints."""
+    __tablename__ = "platform_users"
+    id = Column(String, primary_key=True)                  # e.g. "SA-root"
+    username = Column(String, unique=True, index=True)
+    name = Column(String)
+    password_hash = Column(String)
+    active = Column(Boolean, default=True)
+    must_change_password = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    last_login = Column(DateTime(timezone=True))
+
+
+class Application(Base):
+    """A registered ERP application type (smoke_shop, retail, restaurant, …).
+    Seeded from the code manifest so new ERPs register without core changes."""
+    __tablename__ = "applications"
+    key = Column(String, primary_key=True)                 # smoke_shop
+    name = Column(String)
+    industry = Column(String)
+    description = Column(Text)
+    active = Column(Boolean, default=True)                  # is the app live yet?
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class Company(Base):
+    """A tenant. Company #1 is the existing SmokeStack business (created by the
+    Phase 0 seed). status drives lifecycle: active|suspended|archived|deleted."""
+    __tablename__ = "companies"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String)
+    slug = Column(String, unique=True, index=True)
+    industry = Column(String)
+    application_key = Column(String, default="smoke_shop")
+    owner_user_id = Column(String)                         # tenant user id of the owner
+    status = Column(String, default="active")              # active|suspended|archived|deleted
+    version = Column(String)                               # platform version the company is on
+    notes = Column(Text)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    suspended_at = Column(DateTime(timezone=True))
+    archived_at = Column(DateTime(timezone=True))
+    deleted_at = Column(DateTime(timezone=True))
+    last_activity = Column(DateTime(timezone=True))
+
+
+class Module(Base):
+    """A capability that can be enabled per company. Seeded from the manifest.
+    `depends_on` is a JSON list of other module keys (dependency graph)."""
+    __tablename__ = "modules"
+    key = Column(String, primary_key=True)                 # payroll, inventory, …
+    name = Column(String)
+    category = Column(String)                              # Payroll, Inventory, Core Platform …
+    application_key = Column(String, default="core")       # core = shared across apps
+    depends_on = Column(Text)                              # JSON list of module keys
+    default_enabled = Column(Boolean, default=True)
+    is_beta = Column(Boolean, default=False)
+    version = Column(String)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class CompanyModule(Base):
+    """Per-company enable state for a module. Absent row = manifest default.
+    `source` records whether the value came from a global rollout or a local
+    (per-company) override."""
+    __tablename__ = "company_modules"
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    company_id = Column(Integer, index=True)
+    module_key = Column(String, index=True)
+    enabled = Column(Boolean, default=True)
+    source = Column(String, default="global")              # global | local
+    updated_by = Column(String)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class Subscription(Base):
+    """A company's subscription. Gateway columns are present but unused for now
+    (payment integration is a later phase)."""
+    __tablename__ = "subscriptions"
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    company_id = Column(Integer, index=True)
+    plan = Column(String, default="trial")                 # trial|monthly|quarterly|yearly|lifetime
+    status = Column(String, default="active")              # active|trial|expired|suspended
+    trial_ends = Column(Date)
+    period_start = Column(Date)
+    period_end = Column(Date)
+    gateway = Column(String)                               # future: stripe|paddle|…
+    gateway_customer_id = Column(String)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class PlatformAudit(Base):
+    """Every Super Admin action — the Control Center's audit trail. Separate
+    from the tenant AuditLog so platform actions can never be confused with a
+    company's own activity."""
+    __tablename__ = "platform_audit"
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    super_admin_id = Column(String, index=True)
+    action = Column(String)                                # login_as, reset_password, module_enabled, …
+    entity = Column(String)
+    ref = Column(String)
+    company_id = Column(Integer, index=True)
+    detail = Column(Text)
+    prev_value = Column(Text)
+    new_value = Column(Text)
+    ip = Column(String)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
