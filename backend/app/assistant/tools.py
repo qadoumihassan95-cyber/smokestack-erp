@@ -526,3 +526,63 @@ def search_global(db, user, q="", **_):
     return {"query": q, "groups": groups, "count": total, "branches": brs,
             "explain": {"steps": [f"Searched products, staff, partners and purchases for '{q}'",
                                   f"Limited to your branches: {', '.join(brs)}"]}}
+
+
+# ====================================================================== CHAT
+@tool("chat.summary", "chat_view", "Summarise recent activity in a chat room",
+      {"room_id": "room id"}, module="chat")
+def chat_summary(db, user, room_id=None, **_):
+    """Deterministic recap: message/participant counts, pending tasks, pinned
+    items and the most recent shared ERP records. No LLM — it counts and lists."""
+    from ..routers.chat import _rooms_for, _profile
+    rid = int(room_id or 0)
+    if rid not in {r.id for r in _rooms_for(db, user)}:
+        raise Denied("You are not a member of that conversation.")
+    msgs = (db.query(models.ChatMessage)
+            .filter(models.ChatMessage.room_id == rid,
+                    models.ChatMessage.deleted == False)  # noqa: E712
+            .order_by(models.ChatMessage.id.desc()).limit(200).all())
+    people = {}
+    shared, pinned = [], []
+    import json as _json
+    for m in msgs:
+        people[m.user_id] = people.get(m.user_id, 0) + 1
+        if m.pinned:
+            pinned.append(m.body[:80])
+        if m.erp_ref:
+            try:
+                shared.append(_json.loads(m.erp_ref))
+            except Exception:  # noqa: BLE001
+                pass
+    tasks = (db.query(models.ChatTask)
+             .filter(models.ChatTask.room_id == rid,
+                     models.ChatTask.status != "done").all())
+    top = sorted(people.items(), key=lambda kv: kv[1], reverse=True)[:5]
+    return {"room_id": rid, "messages": len(msgs),
+            "participants": [{"user": _profile(db, uid), "messages": n} for uid, n in top],
+            "open_tasks": [{"title": t.title, "assignee": t.assignee,
+                            "status": t.status, "percent": t.percent} for t in tasks],
+            "pinned": pinned[:5],
+            "shared_records": shared[:8],
+            "explain": {"steps": [f"Scanned the last {len(msgs)} messages",
+                                  f"{len(people)} participant(s), {len(tasks)} open task(s)"]}}
+
+
+@tool("chat.find", "chat_view", "Find past chat messages by keyword",
+      {"q": "text to find"}, module="chat")
+def chat_find(db, user, q="", **_):
+    from ..routers.chat import _rooms_for, _profile
+    from sqlalchemy import func as _f
+    ql = (q or "").strip().lower()
+    if len(ql) < 2:
+        raise ToolError("Type at least two characters to search chat.")
+    mine = {r.id for r in _rooms_for(db, user)}
+    rows = (db.query(models.ChatMessage)
+            .filter(models.ChatMessage.room_id.in_(mine or {0}),
+                    models.ChatMessage.deleted == False,  # noqa: E712
+                    _f.lower(models.ChatMessage.body).like(f"%{ql}%"))
+            .order_by(models.ChatMessage.id.desc()).limit(20).all())
+    return {"query": q, "count": len(rows), "results": [
+        {"room_id": m.room_id, "user": _profile(db, m.user_id)["name"],
+         "body": m.body[:160], "at": (m.created_at.isoformat() if m.created_at else None)}
+        for m in rows]}
