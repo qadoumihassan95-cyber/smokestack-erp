@@ -838,6 +838,7 @@
       <a data-v="workhours"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4M8 14h4"/></svg></span>Work Hours</a>
       <a data-v="licenses"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></span>Licenses</a>
       <a data-v="telegram"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 3L2.5 10.3l6.2 2.4L11.5 20 15 13.7 21 3z"/><path d="M8.7 12.7L21 3"/></svg></span>Telegram</a>
+      <a data-v="chat"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg></span>Team Chat <span id="chatNavBadge" class="pill" style="display:none;margin-left:auto;background:var(--bad,#c0392b);color:#fff;font-size:10px;padding:1px 7px"></span></a>
       <a data-v="settings"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v2.6M12 18.9v2.6M4.6 4.6l1.9 1.9M17.5 17.5l1.9 1.9M2.5 12h2.6M18.9 12h2.6M4.6 19.4l1.9-1.9M17.5 6.5l1.9-1.9"/></svg></span>Settings</a>
     </nav>
     <div class="foot">Accounting-first · AI-driven<br>Not legal or tax advice.</div>
@@ -1041,6 +1042,11 @@
     </section>
 
     <!-- SETTINGS -->
+    <section class="view" id="v-chat">
+      <div class="top"><div><h1>Team Chat</h1><div class="sub">Company communication, integrated with your ERP.</div></div><span class="pill">Beta</span></div>
+      <div id="chatRoot"></div>
+    </section>
+
     <section class="view" id="v-settings">
       <div class="top"><div><h1>Settings</h1><div class="sub">Stores & accounts — the two things every entry belongs to.</div></div></div>
       <div class="grid g2">
@@ -4970,6 +4976,23 @@ try{ empMigrate(); payRestore(); invDateRestore();
       {method:'POST',body:{current_password:cur,new_password:nw}});},
     listUsers:function(){return call('/api/users');},
     createUser:function(b){return call('/api/users',{method:'POST',body:b});},
+    // --- Team Chat (internal messaging, short-polled) ---
+    chatRooms:function(){return call('/api/chat/rooms');},
+    chatCreateRoom:function(b){return call('/api/chat/rooms',{method:'POST',body:b});},
+    chatMessages:function(id,before){return call('/api/chat/rooms/'+id+'/messages'+(before?('?before='+before):''));},
+    chatSend:function(id,b){return call('/api/chat/rooms/'+id+'/messages',{method:'POST',body:b});},
+    chatPoll:function(id,after){return call('/api/chat/poll?room_id='+id+'&after='+(after||0));},
+    chatReact:function(mid,e){return call('/api/chat/messages/'+mid+'/react',{method:'POST',body:{emoji:e}});},
+    chatEdit:function(mid,b){return call('/api/chat/messages/'+mid,{method:'PATCH',body:{body:b}});},
+    chatDelete:function(mid){return call('/api/chat/messages/'+mid,{method:'DELETE'});},
+    chatPin:function(mid){return call('/api/chat/messages/'+mid+'/pin',{method:'POST'});},
+    chatTyping:function(id){return call('/api/chat/rooms/'+id+'/typing',{method:'POST'});},
+    chatRead:function(id,up){return call('/api/chat/rooms/'+id+'/read',{method:'POST',body:{up_to:up}});},
+    chatToTask:function(mid,b){return call('/api/chat/messages/'+mid+'/to-task',{method:'POST',body:b});},
+    chatTasks:function(id){return call('/api/chat/tasks'+(id?('?room_id='+id):''));},
+    chatAnn:function(){return call('/api/chat/announcements');},
+    chatAnnPost:function(b){return call('/api/chat/announcements',{method:'POST',body:b});},
+    chatErpSearch:function(q){return call('/api/chat/erp-search?q='+encodeURIComponent(q));},
     // --- scheduled reports ---
     rpRecipients:function(){return call('/api/telegram/reports/recipients');},
     rpSetRecipient:function(id,b){return call('/api/telegram/reports/recipients/'+encodeURIComponent(id),{method:'PUT',body:b});},
@@ -5137,6 +5160,10 @@ try{ empMigrate(); payRestore(); invDateRestore();
     loadingScreen();
     try{
       T.user = await API.me();
+      try{ window.__ME=T.user.id;
+        window.__canDeleteChat=['owner','admin','branch_manager','manager'].indexOf(T.user.role)>=0;
+        window.__canPinChat=window.__canDeleteChat;
+        window.__canAnnounce=['owner','admin','branch_manager','manager'].indexOf(T.user.role)>=0; }catch(e){}
       await hydrate();
       if(typeof fillStores==='function') fillStores();
       var canAll = (ROLE.branches==='all');
@@ -7102,6 +7129,374 @@ try{ empMigrate(); payRestore(); invDateRestore();
     window.go=function(v){ var r=priorGo.apply(this,arguments); try{ mount(); }catch(e){} return r; };
   }
 })();
+
+
+/* ==========================================================================
+   TEAM CHAT — internal ERP messaging. Near-real-time via short polling (2.5s).
+   Text + ERP cards + tasks + announcements + reactions + reply + mentions +
+   pins + presence/typing. Additive: mounts into #chatRoot only; hooks window.go
+   with the same wrapper pattern the other modules use. No external services.
+   ========================================================================== */
+(function(){
+  var api=function(){ return window.SS_API_LIVE; };
+  var C={rooms:[],room:null,msgs:[],lastId:0,poll:null,busy:false,replyTo:null,typingTimer:null,mounted:false};
+  function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+  function say(m){ if(typeof toast==='function') toast(m); }
+  function er(e){ try{ if(typeof apiErr==='function') return String(apiErr(e)||'Request failed');
+    var m=e&&e.message; return String((!m||m==='[object Object]')?'Request failed':m); }catch(x){ return 'Request failed'; } }
+  function tfmt(iso){ if(!iso) return ''; try{ return new Date(iso).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }catch(e){ return ''; } }
+  function initials(n){ return (n||'?').split(/\s+/).filter(Boolean).map(function(w){return w[0];}).slice(0,2).join('').toUpperCase()||'?'; }
+  function root(){ return document.getElementById('chatRoot'); }
+
+  function layout(){
+    var r=root(); if(!r) return false;
+    if(document.getElementById('chatShell')) return true;
+    r.innerHTML=''
+      +'<div id="chatShell" style="display:grid;grid-template-columns:262px 1fr;border:1px solid var(--line,#e2e6ea);'
+        +'border-radius:14px;overflow:hidden;height:calc(100vh - 190px);min-height:440px;background:var(--card,#fff)">'
+      +'<div style="border-right:1px solid var(--line,#e2e6ea);display:flex;flex-direction:column;min-height:0">'
+        +'<div style="padding:11px;border-bottom:1px solid var(--line,#e2e6ea);display:flex;gap:6px">'
+          +'<button class="btn p" id="chatNewRoom" style="flex:1;font-size:12.5px;padding:7px 8px">＋ New room</button>'
+          +'<button class="btn g" id="chatAnnBtn" style="font-size:12.5px;padding:7px 8px" title="Post announcement">📢</button></div>'
+        +'<div style="padding:8px 11px;border-bottom:1px solid var(--line,#eef1f4)">'
+          +'<input id="chatRoomFilter" placeholder="Filter conversations" style="width:100%;padding:6px 9px;font-size:12.5px;border:1px solid var(--line,#e2e6ea);border-radius:8px"></div>'
+        +'<div id="chatRoomList" style="flex:1;overflow-y:auto;min-height:0"></div></div>'
+      +'<div style="display:flex;flex-direction:column;min-height:0">'
+        +'<div id="chatAnnBar"></div>'
+        +'<div id="chatHead" style="padding:11px 16px;border-bottom:1px solid var(--line,#e2e6ea);font-weight:600;display:flex;justify-content:space-between;align-items:center">'
+          +'<span id="chatHeadName">Select a conversation</span>'
+          +'<span id="chatHeadTools" style="display:none"><input id="chatSearch" placeholder="Search messages" style="padding:5px 9px;font-size:12px;border:1px solid var(--line,#e2e6ea);border-radius:8px;width:170px"></span></div>'
+        +'<div id="chatMsgs" style="flex:1;overflow-y:auto;padding:14px 16px;min-height:0;background:var(--panel2,#f7f8fa)"></div>'
+        +'<div id="chatTyping" style="height:18px;padding:1px 16px;font-size:11.5px;color:var(--muted)"></div>'
+        +'<div id="chatCompose" style="padding:10px 12px;border-top:1px solid var(--line,#e2e6ea);display:none">'
+          +'<div id="chatReplyBar"></div>'
+          +'<div style="display:flex;gap:8px;align-items:flex-end">'
+            +'<button class="btn g" id="chatShareErp" title="Share an ERP record" style="padding:8px 11px">＋</button>'
+            +'<textarea id="chatInput" rows="1" placeholder="Message…  (@ to mention, Enter to send)" '
+              +'style="flex:1;resize:none;border:1px solid var(--line,#e2e6ea);border-radius:10px;padding:9px 11px;font-size:14px;font-family:inherit;max-height:120px"></textarea>'
+            +'<button class="btn p" id="chatSendBtn" style="padding:9px 17px">Send</button></div></div>'
+      +'</div></div>';
+    document.getElementById('chatNewRoom').onclick=newRoomDialog;
+    document.getElementById('chatAnnBtn').onclick=announceDialog;
+    document.getElementById('chatShareErp').onclick=shareErpDialog;
+    document.getElementById('chatSendBtn').onclick=sendMsg;
+    var inp=document.getElementById('chatInput');
+    inp.addEventListener('input',function(){ inp.style.height='auto'; inp.style.height=Math.min(inp.scrollHeight,120)+'px';
+      if(C.room){ clearTimeout(C.typingTimer); C.typingTimer=setTimeout(function(){ api().chatTyping(C.room.id).catch(function(){}); },300); } });
+    inp.addEventListener('keydown',function(e){ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendMsg(); } });
+    var flt=document.getElementById('chatRoomFilter'); if(flt) flt.addEventListener('input',renderRooms);
+    var srch=document.getElementById('chatSearch'); if(srch) srch.addEventListener('input',renderMsgs);
+    return true;
+  }
+
+  function renderRooms(){
+    var el=document.getElementById('chatRoomList'); if(!el) return;
+    var f=(document.getElementById('chatRoomFilter')||{}).value||''; f=f.toLowerCase();
+    var rooms=C.rooms.filter(function(r){ return !f || (r.name||'').toLowerCase().indexOf(f)>=0; });
+    if(!rooms.length){ el.innerHTML='<div style="padding:16px;color:var(--muted);font-size:13px">'+(f?'No matches.':'No conversations yet. Create one to begin.')+'</div>'; }
+    else el.innerHTML=rooms.map(function(r){
+      var active=C.room&&C.room.id===r.id;
+      var badge=r.unread? '<span class="pill" style="background:var(--bad,#c0392b);color:#fff;font-size:10px;padding:0 6px;border-radius:9px">'+r.unread+'</span>':'';
+      var icon={company:'🏢',branch:'🏬',department:'👥',management:'🗂️',private:'🔒',group:'💬'}[r.kind]||'💬';
+      var last=r.last? esc(((r.last.user&&r.last.user.name)?r.last.user.name.split(' ')[0]+': ':'')+(r.last.body||(r.last.kind==='erp_card'?'shared a record':(r.last.kind==='system'?r.last.body:'')))).slice(0,44):'';
+      return '<div class="chatRoomRow" data-id="'+r.id+'" style="padding:11px 14px;cursor:pointer;border-bottom:1px solid var(--line,#eef1f4);'
+        +(active?'background:var(--accent-bg,#eef4ff)':'')+'">'
+        +'<div style="display:flex;justify-content:space-between;gap:8px;align-items:center">'
+        +'<span style="font-weight:600;font-size:13.5px">'+icon+' '+esc(r.name)+'</span>'+badge+'</div>'
+        +'<div style="font-size:12px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+last+'</div></div>';
+    }).join('');
+    [].forEach.call(el.querySelectorAll('.chatRoomRow'),function(row){
+      row.onclick=function(){ openRoom(parseInt(row.getAttribute('data-id'),10)); }; });
+    var tot=C.rooms.reduce(function(a,r){return a+(r.unread||0);},0);
+    var nb=document.getElementById('chatNavBadge');
+    if(nb){ if(tot){ nb.textContent=tot>99?'99+':tot; nb.style.display=''; } else nb.style.display='none'; }
+  }
+
+  function bubble(m){
+    var mine=m.user&&window.__ME&&m.user.id===window.__ME;
+    if(m.kind==='system'||m.kind==='alert'){
+      var col=m.kind==='alert'?'var(--warn,#b26a00)':'var(--muted)';
+      return '<div style="text-align:center;margin:8px 0"><span style="font-size:12px;color:'+col
+        +';background:var(--card,#fff);border:1px solid var(--line,#e2e6ea);border-radius:20px;padding:4px 12px">'
+        +(m.kind==='alert'?'🔔 ':'')+esc(m.body)+'</span></div>';
+    }
+    var reactHtml='';
+    if(m.reactions && Object.keys(m.reactions).length){
+      reactHtml='<div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap"'+(mine?' ':'')+'>'
+        +Object.keys(m.reactions).map(function(e){return '<span class="chatReact" data-mid="'+m.id+'" data-e="'+esc(e)
+          +'" style="cursor:pointer;font-size:12px;background:var(--panel2,#eef1f4);border-radius:10px;padding:1px 7px">'+esc(e)+' '+m.reactions[e].length+'</span>';}).join('')+'</div>';
+    }
+    var card='';
+    if(m.erp_ref && m.erp_ref.label){
+      card='<div class="chatErpCard" data-view="'+esc(m.erp_ref.view||m.erp_ref.type||'')+'" style="margin-top:6px;border:1px solid var(--line,#e2e6ea);'
+        +'border-radius:10px;padding:8px 10px;cursor:pointer;background:var(--card,#fff);max-width:280px">'
+        +'<div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">'+esc(m.erp_ref.type||'record')+'</div>'
+        +'<div style="font-weight:600;font-size:13px;color:var(--ink,#111)">'+esc(m.erp_ref.label)+'</div>'
+        +(m.erp_ref.subtitle?'<div style="font-size:12px;color:var(--muted)">'+esc(m.erp_ref.subtitle)+'</div>':'')
+        +'<div style="font-size:11px;color:var(--accent,#2f6fed);margin-top:3px">Open →</div></div>';
+    }
+    var reply='';
+    if(m.reply_to && m._replyPreview){
+      reply='<div style="font-size:11.5px;color:var(--muted);border-left:2px solid var(--line,#ccd);padding-left:6px;margin-bottom:3px">'+esc(m._replyPreview)+'</div>';
+    }
+    var body=m.deleted? '<i style="color:var(--muted)">message deleted</i>'
+      : esc(m.body).replace(/@([\w.]+)/g,'<b style="color:'+(mine?'#fff':'var(--accent,#2f6fed)')+'">@$1</b>');
+    return '<div class="chatMsg" data-mid="'+m.id+'" style="display:flex;gap:9px;margin-bottom:12px;'+(mine?'flex-direction:row-reverse':'')+'">'
+      +'<div title="'+esc((m.user&&m.user.name)||'')+'" style="width:34px;height:34px;border-radius:50%;flex:0 0 34px;'
+        +'background:var(--accent-bg,#e8eefc);color:var(--accent,#2f6fed);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700">'
+        +esc(initials(m.user&&m.user.name))+'</div>'
+      +'<div style="max-width:72%">'
+        +'<div style="font-size:11.5px;color:var(--muted);margin-bottom:2px'+(mine?';text-align:right':'')+'">'
+          +esc((m.user&&m.user.name)||'')+(m.user&&m.user.title?(' · '+esc(m.user.title)):'')+(m.user&&m.user.branch?(' · '+esc(m.user.branch)):'')
+          +' · '+tfmt(m.at)+(m.edited?' · edited':'')+(m.pinned?' · 📌':'')+'</div>'
+        +reply
+        +'<div style="background:'+(mine?'var(--accent,#2f6fed);color:#fff':'var(--card,#fff)')+';border:1px solid var(--line,#e2e6ea);'
+          +'border-radius:12px;padding:8px 11px;font-size:14px;line-height:1.45;word-wrap:break-word;overflow-wrap:anywhere">'+body+card+'</div>'
+        +reactHtml
+        +'<div class="chatActs" style="font-size:11px;color:var(--muted);margin-top:3px;display:flex;gap:10px'+(mine?';justify-content:flex-end':'')+'">'
+          +'<span class="chatAct" data-a="react" data-mid="'+m.id+'" style="cursor:pointer">React</span>'
+          +'<span class="chatAct" data-a="reply" data-mid="'+m.id+'" style="cursor:pointer">Reply</span>'
+          +'<span class="chatAct" data-a="task" data-mid="'+m.id+'" style="cursor:pointer">→ Task</span>'
+          +(window.__canPinChat?'<span class="chatAct" data-a="pin" data-mid="'+m.id+'" style="cursor:pointer">'+(m.pinned?'Unpin':'Pin')+'</span>':'')
+          +((mine||window.__canDeleteChat)&&!m.deleted?'<span class="chatAct" data-a="del" data-mid="'+m.id+'" style="cursor:pointer;color:var(--bad,#c0392b)">Delete</span>':'')
+        +'</div></div></div>';
+  }
+
+  function decorateReplies(){
+    var by={}; C.msgs.forEach(function(m){ by[m.id]=m; });
+    C.msgs.forEach(function(m){ if(m.reply_to && by[m.reply_to]){
+      var t=by[m.reply_to]; m._replyPreview=((t.user&&t.user.name)?t.user.name.split(' ')[0]+': ':'')+((t.body||'').slice(0,60)||'record'); } });
+  }
+
+  function renderMsgs(){
+    var el=document.getElementById('chatMsgs'); if(!el) return;
+    var q=((document.getElementById('chatSearch')||{}).value||'').toLowerCase();
+    var atBottom=el.scrollHeight-el.scrollTop-el.clientHeight<90;
+    decorateReplies();
+    var list=q? C.msgs.filter(function(m){ return (m.body||'').toLowerCase().indexOf(q)>=0; }) : C.msgs;
+    el.innerHTML=list.map(bubble).join('') || '<div style="color:var(--muted);text-align:center;margin-top:40px">'+(q?'No matching messages.':'No messages yet. Say hello.')+'</div>';
+    bindMsgActions(el);
+    if(!q && atBottom) el.scrollTop=el.scrollHeight;
+  }
+
+  function bindMsgActions(el){
+    [].forEach.call(el.querySelectorAll('.chatAct'),function(a){
+      a.onclick=function(){ msgAction(a.getAttribute('data-a'), parseInt(a.getAttribute('data-mid'),10)); }; });
+    [].forEach.call(el.querySelectorAll('.chatReact'),function(r){
+      r.onclick=function(){ api().chatReact(parseInt(r.getAttribute('data-mid'),10), r.getAttribute('data-e')).then(function(){ reloadRoom(); }).catch(function(e){ say(er(e)); }); }; });
+    [].forEach.call(el.querySelectorAll('.chatErpCard'),function(c){
+      c.onclick=function(){ var v=c.getAttribute('data-view'); if(v && typeof go==='function'){ try{ go(v); }catch(e){} } }; });
+  }
+
+  async function msgAction(a,mid){
+    try{
+      if(a==='del'){ if(!window.confirm('Delete this message?')) return; await api().chatDelete(mid); reloadRoom(); }
+      else if(a==='pin'){ await api().chatPin(mid); reloadRoom(); }
+      else if(a==='react'){ var e=window.prompt('React with an emoji:','👍'); if(e){ await api().chatReact(mid,e); reloadRoom(); } }
+      else if(a==='reply'){ C.replyTo=mid; renderReplyBar(); var i=document.getElementById('chatInput'); if(i) i.focus(); }
+      else if(a==='task'){ taskDialog(mid); }
+    }catch(e){ say(er(e)); }
+  }
+
+  function renderReplyBar(){
+    var el=document.getElementById('chatReplyBar'); if(!el) return;
+    if(!C.replyTo){ el.innerHTML=''; return; }
+    var m=C.msgs.filter(function(x){return x.id===C.replyTo;})[0];
+    el.innerHTML='<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);'
+      +'padding:4px 8px;margin-bottom:6px;border-left:3px solid var(--accent,#2f6fed);background:var(--panel2,#f4f6f8)">'
+      +'<span>Replying to '+esc((m&&m.user&&m.user.name)||'message')+'</span><span id="chatCancelReply" style="cursor:pointer">✕</span></div>';
+    var x=document.getElementById('chatCancelReply'); if(x) x.onclick=function(){ C.replyTo=null; renderReplyBar(); };
+  }
+
+  async function sendMsg(){
+    var inp=document.getElementById('chatInput'); if(!inp) return;
+    var t=inp.value.trim(); if(!t || !C.room || C.busy) return;
+    var mentions=(t.match(/@([\w.]+)/g)||[]).map(function(x){return x.slice(1);});
+    C.busy=true;
+    try{
+      await api().chatSend(C.room.id,{body:t,reply_to:C.replyTo,mentions:mentions});
+      inp.value=''; inp.style.height='auto'; C.replyTo=null; renderReplyBar(); await refreshNow();
+    }catch(e){ say(er(e)); }
+    finally{ C.busy=false; }
+  }
+
+  async function openRoom(id){
+    C.room=C.rooms.filter(function(r){return r.id===id;})[0]||null; if(!C.room) return;
+    document.getElementById('chatHeadName').textContent=C.room.name;
+    document.getElementById('chatHeadTools').style.display='';
+    document.getElementById('chatCompose').style.display='';
+    C.msgs=[]; C.lastId=0; C.replyTo=null; renderReplyBar();
+    await reloadRoom(true);
+  }
+
+  async function reloadRoom(scroll){
+    if(!C.room) return;
+    try{
+      var r=await api().chatMessages(C.room.id);
+      C.msgs=r.messages||[]; C.lastId=C.msgs.length? C.msgs[C.msgs.length-1].id : 0;
+      renderMsgs(); C.room.unread=0; renderRooms();
+      if(C.lastId) api().chatRead(C.room.id,C.lastId).catch(function(){});
+    }catch(e){ say(er(e)); }
+  }
+
+  async function refreshNow(){
+    if(!C.room) return;
+    try{
+      var p=await api().chatPoll(C.room.id,C.lastId);
+      if(p.messages && p.messages.length){
+        C.msgs=C.msgs.concat(p.messages); C.lastId=C.msgs[C.msgs.length-1].id;
+        renderMsgs(); api().chatRead(C.room.id,C.lastId).catch(function(){});
+      }
+      var tp=document.getElementById('chatTyping');
+      if(tp) tp.textContent=(p.typing&&p.typing.length)? (p.typing.map(function(x){return x.name;}).join(', ')+(p.typing.length>1?' are':' is')+' typing…'):'';
+      if(p.unread){ C.rooms.forEach(function(r){ var u=p.unread[r.id]!=null?p.unread[r.id]:p.unread[String(r.id)];
+        if(u!=null) r.unread=(C.room&&r.id===C.room.id)?0:u; }); renderRooms(); }
+    }catch(e){ /* transient poll error — ignore */ }
+  }
+
+  async function load(){
+    if(!layout()) return;
+    try{
+      var r=await api().chatRooms(); C.rooms=r.rooms||[];
+      renderRooms(); renderAnnouncements();
+      if(!C.room && C.rooms.length) openRoom(C.rooms[0].id);
+      else if(C.room){ var still=C.rooms.filter(function(x){return x.id===C.room.id;})[0]; if(still){ C.room=still; refreshNow(); } }
+    }catch(e){
+      if(e&&e.status===403){ var sh=document.getElementById('chatShell'); if(sh) sh.innerHTML='<div style="padding:34px;color:var(--muted)">You do not have access to Team Chat.</div>';
+        var nav=document.querySelector('a[data-v="chat"]'); if(nav) nav.style.display='none'; }
+    }
+  }
+
+  async function renderAnnouncements(){
+    var el=document.getElementById('chatAnnBar'); if(!el) return;
+    try{ var r=await api().chatAnn(); var anns=r.announcements||[];
+      if(!anns.length){ el.innerHTML=''; return; }
+      el.innerHTML=anns.slice(0,3).map(function(a){
+        return '<div style="background:var(--accent-bg,#eef4ff);border-bottom:1px solid var(--line,#e2e6ea);padding:9px 16px;font-size:13px">'
+          +'<b>📢 '+esc(a.title)+'</b>'+(a.body?(' — '+esc(a.body)):'')
+          +' <span style="color:var(--muted);font-size:11.5px">· '+esc((a.by&&a.by.name)||'')+'</span></div>';
+      }).join('');
+    }catch(e){ el.innerHTML=''; }
+  }
+
+  /* ---- dialogs ---- */
+  function modal(inner){
+    var el=document.createElement('div'); el.className='chatModal';
+    el.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(15,23,32,.5);display:flex;align-items:center;justify-content:center;padding:20px';
+    el.innerHTML='<div style="background:var(--card,#fff);border-radius:14px;max-width:460px;width:100%;padding:22px;max-height:88vh;overflow:auto">'+inner+'</div>';
+    document.body.appendChild(el);
+    el.addEventListener('click',function(e){ if(e.target===el) el.remove(); });
+    return el;
+  }
+
+  function newRoomDialog(){
+    var canCompany = !!window.__canAnnounce; // company/management rooms need elevated role; server also enforces
+    var m=modal('<h3 style="margin:0 0 14px">New conversation</h3>'
+      +'<label style="font-size:12px;color:var(--muted)">Type</label>'
+      +'<select id="crKind" style="width:100%;padding:9px;margin:4px 0 10px;border:1px solid var(--line,#e2e6ea);border-radius:8px">'
+        +'<option value="group">Custom group</option><option value="department">Department</option>'
+        +'<option value="private">Private (direct)</option>'
+        +(canCompany?'<option value="management">Management</option><option value="branch">Branch</option><option value="company">Company-wide</option>':'')
+      +'</select>'
+      +'<label style="font-size:12px;color:var(--muted)">Name</label>'
+      +'<input id="crName" placeholder="e.g. Store A floor team" style="width:100%;padding:9px;margin:4px 0 10px;border:1px solid var(--line,#e2e6ea);border-radius:8px">'
+      +'<label style="font-size:12px;color:var(--muted)">Add people (comma-separated usernames, optional)</label>'
+      +'<input id="crMembers" placeholder="gihad.wazwaz, hiyam.wazwaz" style="width:100%;padding:9px;margin:4px 0 14px;border:1px solid var(--line,#e2e6ea);border-radius:8px">'
+      +'<div style="display:flex;gap:8px"><button class="btn p" id="crGo">Create</button><button class="btn g" id="crX">Cancel</button></div>');
+    m.querySelector('#crX').onclick=function(){ m.remove(); };
+    m.querySelector('#crGo').onclick=async function(){
+      var body={kind:m.querySelector('#crKind').value, name:m.querySelector('#crName').value.trim(),
+        members:(m.querySelector('#crMembers').value||'').split(',').map(function(s){return s.trim();}).filter(Boolean)};
+      if(!body.name){ say('Give the room a name'); return; }
+      try{ var res=await api().chatCreateRoom(body); m.remove(); await load(); if(res&&res.id) openRoom(res.id); }
+      catch(e){ say(er(e)); }
+    };
+  }
+
+  function announceDialog(){
+    if(!window.__canAnnounce){ say('You do not have permission to post announcements'); return; }
+    var m=modal('<h3 style="margin:0 0 14px">Post announcement</h3>'
+      +'<label style="font-size:12px;color:var(--muted)">Scope</label>'
+      +'<select id="anScope" style="width:100%;padding:9px;margin:4px 0 10px;border:1px solid var(--line,#e2e6ea);border-radius:8px"><option value="company">Company-wide</option><option value="branch">Branch</option></select>'
+      +'<input id="anBranch" placeholder="Branch (only if branch scope)" style="width:100%;padding:9px;margin:0 0 10px;border:1px solid var(--line,#e2e6ea);border-radius:8px">'
+      +'<input id="anTitle" placeholder="Title" style="width:100%;padding:9px;margin:0 0 10px;border:1px solid var(--line,#e2e6ea);border-radius:8px">'
+      +'<textarea id="anBody" placeholder="Details (optional)" rows="3" style="width:100%;padding:9px;margin:0 0 14px;border:1px solid var(--line,#e2e6ea);border-radius:8px;font-family:inherit"></textarea>'
+      +'<div style="display:flex;gap:8px"><button class="btn p" id="anGo">Post</button><button class="btn g" id="anX">Cancel</button></div>');
+    m.querySelector('#anX').onclick=function(){ m.remove(); };
+    m.querySelector('#anGo').onclick=async function(){
+      var t=m.querySelector('#anTitle').value.trim(); if(!t){ say('Title required'); return; }
+      try{ await api().chatAnnPost({scope:m.querySelector('#anScope').value, branch:m.querySelector('#anBranch').value.trim()||null,
+             title:t, body:m.querySelector('#anBody').value.trim()});
+        m.remove(); say('Announcement posted'); renderAnnouncements(); }
+      catch(e){ say(er(e)); }
+    };
+  }
+
+  function taskDialog(mid){
+    var msg=C.msgs.filter(function(x){return x.id===mid;})[0];
+    var m=modal('<h3 style="margin:0 0 14px">Turn message into a task</h3>'
+      +'<input id="tkTitle" value="'+esc((msg&&msg.body)||'')+'" style="width:100%;padding:9px;margin:0 0 10px;border:1px solid var(--line,#e2e6ea);border-radius:8px">'
+      +'<label style="font-size:12px;color:var(--muted)">Assignee (username, optional)</label>'
+      +'<input id="tkAssignee" placeholder="gihad.wazwaz" style="width:100%;padding:9px;margin:4px 0 10px;border:1px solid var(--line,#e2e6ea);border-radius:8px">'
+      +'<div style="display:flex;gap:8px;margin-bottom:14px">'
+        +'<select id="tkPri" style="flex:1;padding:9px;border:1px solid var(--line,#e2e6ea);border-radius:8px"><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option><option value="low">Low</option></select>'
+        +'<input id="tkDue" type="date" style="flex:1;padding:8px;border:1px solid var(--line,#e2e6ea);border-radius:8px"></div>'
+      +'<div style="display:flex;gap:8px"><button class="btn p" id="tkGo">Create task</button><button class="btn g" id="tkX">Cancel</button></div>');
+    m.querySelector('#tkX').onclick=function(){ m.remove(); };
+    m.querySelector('#tkGo').onclick=async function(){
+      try{ await api().chatToTask(mid,{title:m.querySelector('#tkTitle').value, assignee:m.querySelector('#tkAssignee').value.trim()||undefined,
+             priority:m.querySelector('#tkPri').value, due_date:m.querySelector('#tkDue').value||undefined});
+        m.remove(); say('Task created'); reloadRoom(); }
+      catch(e){ say(er(e)); }
+    };
+  }
+
+  function shareErpDialog(){
+    if(!C.room){ say('Open a conversation first'); return; }
+    var m=modal('<h3 style="margin:0 0 12px">Share an ERP record</h3>'
+      +'<input id="erpQ" placeholder="Search products, employees, customers…" autofocus style="width:100%;padding:10px;margin-bottom:10px;border:1px solid var(--line,#e2e6ea);border-radius:8px">'
+      +'<div id="erpResults" style="max-height:320px;overflow:auto"></div>');
+    var q=m.querySelector('#erpQ'), out=m.querySelector('#erpResults'), t=null, cur=[];
+    q.oninput=function(){ clearTimeout(t); t=setTimeout(async function(){
+      var v=q.value.trim(); if(v.length<2){ out.innerHTML=''; return; }
+      try{ var r=await api().chatErpSearch(v); cur=r.results||[];
+        out.innerHTML=cur.map(function(x,i){
+          return '<div class="erpPick" data-i="'+i+'" style="padding:9px;border-bottom:1px solid var(--line,#eef1f4);cursor:pointer">'
+            +'<div style="font-size:11px;color:var(--muted);text-transform:uppercase">'+esc(x.type||'record')+'</div>'
+            +'<b style="font-size:13px">'+esc(x.label)+'</b> <span style="color:var(--muted);font-size:12px">'+esc(x.subtitle||'')+'</span></div>';
+        }).join('') || '<div style="padding:12px;color:var(--muted)">No matches.</div>';
+        [].forEach.call(out.querySelectorAll('.erpPick'),function(el){
+          el.onclick=async function(){ var x=cur[parseInt(el.getAttribute('data-i'),10)];
+            try{ await api().chatSend(C.room.id,{body:'',erp_ref:x}); m.remove(); refreshNow(); }catch(e){ say(er(e)); } };
+        });
+      }catch(e){ out.innerHTML='<div style="padding:12px;color:var(--bad,#c0392b)">'+esc(er(e))+'</div>'; }
+    },220); };
+  }
+
+  function isChatOn(){ var v=document.getElementById('v-chat'); return v && v.classList.contains('on'); }
+  function startPolling(){
+    if(C.poll) clearInterval(C.poll);
+    C.poll=setInterval(function(){ if(window.API_MODE && isChatOn()) refreshNow(); }, 2500);
+    // lightweight unread badge refresh even when not on the chat view
+    setInterval(function(){ if(window.API_MODE && !isChatOn() && C.mounted){ api().chatRooms().then(function(r){ C.rooms=r.rooms||C.rooms;
+      var tot=C.rooms.reduce(function(a,x){return a+(x.unread||0);},0); var nb=document.getElementById('chatNavBadge');
+      if(nb){ if(tot){ nb.textContent=tot>99?'99+':tot; nb.style.display=''; } else nb.style.display='none'; } }).catch(function(){}); } }, 20000);
+  }
+
+  function boot(){ if(!window.API_MODE) return; C.mounted=true; load(); if(!C._pollStarted){ C._pollStarted=true; startPolling(); } }
+  window.__chatBoot=boot;
+
+  /* ---- hook the wrapped router (same pattern as other modules) ---- */
+  var _go=window.go;
+  if(typeof _go==='function'){
+    window.go=function(v,opts){ var r=_go.apply(this,arguments);
+      try{ if(v==='chat') boot(); }catch(e){} return r; };
+  }
+  document.addEventListener('DOMContentLoaded',function(){
+    try{ var cur=document.querySelector('.view.on'); if(cur&&cur.id==='v-chat') boot(); }catch(e){} });
+})();
+
 </script>
 </body>
 </html>
