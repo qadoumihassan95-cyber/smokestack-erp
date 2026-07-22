@@ -34,9 +34,11 @@ def on_startup():
         if settings.seed_on_start:
             from .seed import seed
             seed(db)
-        # PFS Platform: seed applications + modules + Company #1 (idempotent, and
-        # required in production regardless of seed_on_start). Never touches
-        # tenant data, so it is safe on every boot.
+        # PFS Platform: applications self-register, then the (business-agnostic)
+        # platform seed upserts apps + modules and runs each app's bootstrap.
+        # Idempotent and additive — safe on every boot, tenant data untouched.
+        from .apps import load_apps
+        load_apps()
         from .platform.seed import seed_platform
         seed_platform(db)
     finally:
