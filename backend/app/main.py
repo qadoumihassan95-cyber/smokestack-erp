@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import settings
 from .database import Base, engine, SessionLocal
 from .routers import (auth, inventory, ledger, hr, partners, workflow, core,
-                      telegram, attendance, licenses, control, assistant, users)
+                      telegram, attendance, licenses, control, assistant, users, chat)
 
 app = FastAPI(title="SmokeStack ERP API", version="1.0.0")
 
@@ -18,7 +18,7 @@ app.add_middleware(
 
 for r in (auth.router, core.router, inventory.router, ledger.router, hr.router,
           partners.router, workflow.router, telegram.router, attendance.router,
-          licenses.router, control.router, assistant.router, users.router):
+          licenses.router, control.router, assistant.router, users.router, chat.router):
     app.include_router(r)
 
 @app.get("/api/health")

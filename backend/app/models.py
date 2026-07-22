@@ -290,3 +290,90 @@ class CompanySetting(Base):
     value = Column(Text)
     updated_by = Column(String)
     updated_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+# =========================================================================
+# TEAM CHAT — normalized schema. Near-real-time via short polling (no
+# WebSocket infra on the current host); attachments deferred (no object store).
+# =========================================================================
+class ChatRoom(Base):
+    __tablename__ = "chat_rooms"
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    kind = Column(String, default="group")     # company|branch|department|management|private|group
+    name = Column(String)
+    branch = Column(String, index=True)        # set for branch rooms
+    department = Column(String)                # set for department rooms
+    created_by = Column(String)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    archived = Column(Boolean, default=False)
+
+
+class ChatMember(Base):
+    __tablename__ = "chat_members"
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    room_id = Column(BigInteger, index=True)
+    user_id = Column(String, index=True)
+    role = Column(String, default="member")    # member | admin
+    last_read_id = Column(BigInteger, default=0)
+    muted = Column(Boolean, default=False)
+    joined_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    room_id = Column(BigInteger, index=True)
+    user_id = Column(String, index=True)
+    body = Column(Text)
+    kind = Column(String, default="text")      # text | erp_card | system | alert
+    erp_ref = Column(String)                   # JSON: {type, id, label, view}
+    reply_to = Column(BigInteger)
+    pinned = Column(Boolean, default=False)
+    edited = Column(Boolean, default=False)
+    deleted = Column(Boolean, default=False)
+    mentions = Column(String)                  # JSON list of user ids / role / branch tokens
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    edited_at = Column(DateTime(timezone=True))
+
+
+class ChatReaction(Base):
+    __tablename__ = "chat_reactions"
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    message_id = Column(BigInteger, index=True)
+    user_id = Column(String)
+    emoji = Column(String)
+
+
+class ChatPresence(Base):
+    __tablename__ = "chat_presence"
+    user_id = Column(String, primary_key=True)
+    last_seen = Column(DateTime(timezone=True))
+    typing_room = Column(BigInteger)
+    typing_at = Column(DateTime(timezone=True))
+
+
+class ChatTask(Base):
+    __tablename__ = "chat_tasks"
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    room_id = Column(BigInteger, index=True)
+    message_id = Column(BigInteger)
+    title = Column(Text)
+    assignee = Column(String, index=True)
+    priority = Column(String, default="normal")   # low|normal|high|urgent
+    due_date = Column(Date)
+    status = Column(String, default="open")        # open|in_progress|done
+    percent = Column(Integer, default=0)
+    created_by = Column(String)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ChatAnnouncement(Base):
+    __tablename__ = "chat_announcements"
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    scope = Column(String, default="company")      # company | branch
+    branch = Column(String)
+    title = Column(String)
+    body = Column(Text)
+    created_by = Column(String)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    active = Column(Boolean, default=True)
