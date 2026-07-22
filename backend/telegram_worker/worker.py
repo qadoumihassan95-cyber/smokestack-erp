@@ -2083,6 +2083,39 @@ async def reminder_tick(bot):
             await _send_reminder(bot, job["tg_id"], job.get("message") or "", job["idem_key"])
 
 
+async def _send_schedule(bot, tg_id, text, idem_key):
+    """Deliver one work-schedule message with backoff, then log the outcome."""
+    ok, err, mid = False, None, ""
+    for attempt in range(3):
+        try:
+            res = await bot.send_message(chat_id=int(tg_id), text=text)
+            mid = str(getattr(res, "message_id", ""))
+            ok = True
+            break
+        except Exception as e:  # noqa: BLE001
+            err = str(e)
+            log.warning("schedule send attempt %s to %s failed: %s", attempt + 1, tg_id, e)
+            await asyncio.sleep(2 ** attempt)
+    await _req("POST", "/api/schedule/complete", headers={"X-Bot-Token": TOKEN},
+               body={"idem_key": idem_key, "status": ("sent" if ok else "failed"),
+                     "error": (None if ok else (err or "send failed")), "message_id": mid})
+    return ok
+
+
+async def schedule_tick(bot):
+    """One pass of the work-schedule delivery loop.
+
+    First ask the API to enqueue the weekly auto-send if it is due (the day
+    before a new work week, business-local). Then drain whatever is queued —
+    publish/update/manual/copy/weekly — all from the same idempotent ledger."""
+    await _req("POST", "/api/schedule/auto", headers={"X-Bot-Token": TOKEN})
+    st, pend = await _req("GET", "/api/schedule/pending", headers={"X-Bot-Token": TOKEN})
+    if st == 200 and pend:
+        for job in pend.get("pending", []):
+            log.info("sending schedule to %s", job["tg_id"])
+            await _send_schedule(bot, job["tg_id"], job.get("message") or "", job["idem_key"])
+
+
 async def report_scheduler(bot):
     """Wake every 60s; fire only inside the matching business-local minute."""
     await asyncio.sleep(15)
@@ -2112,6 +2145,8 @@ async def report_scheduler(bot):
                                        include_pdf=job.get("include_pdf", False))
             # recurring reminders share the same 60s clock
             await reminder_tick(bot)
+            # work-schedule deliveries share it too
+            await schedule_tick(bot)
         except Exception as e:  # noqa: BLE001
             log.warning("report scheduler tick failed: %s", e)
         await asyncio.sleep(60)
