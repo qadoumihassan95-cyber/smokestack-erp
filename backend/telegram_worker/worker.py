@@ -1048,6 +1048,38 @@ async def flow_confirm_screen(tg_id):
     return ("\n".join(L), kbb, None)
 
 
+# -------------------------------------------------------- confirmation UX
+# After a successful save we edit the SAME message to a success card, keep it
+# on screen for HOME_DELAY seconds, then edit it AGAIN to the main menu — no new
+# messages, no user click. A handler asks for this by returning a 4th tuple
+# element {"then_home": HOME_DELAY}; on_callback schedules the second edit.
+HOME_DELAY = 2.5
+
+
+def success_card(what, ref, lines=None):
+    """The '✅ Successfully Saved' confirmation card (edited into the message)."""
+    now = datetime.utcnow()
+    L = ["✅ <b>Successfully Saved</b>", "",
+         f"Your {what} has been saved successfully.", "",
+         "Reference:", f"<code>{ref}</code>",
+         "Date:", now.strftime("%d %b %Y"), now.strftime("%H:%M") + " UTC"]
+    if lines:
+        L.append("")
+        L.extend(lines)
+    L += ["", "The operation has been recorded in SmokeStack ERP."]
+    return "\n".join(L)
+
+
+def _error_card(reason):
+    """The '❌ Operation Failed' card — keeps the screen, offers Retry/Cancel/Back.
+    Deliberately never returns the user to the main menu."""
+    return ("❌ <b>Operation Failed</b>\n\n" + str(reason) +
+            "\n\nThe data was <b>not</b> saved. Choose an option:",
+            kb([[("\U0001f501 Retry", "f:go")],
+                [("❌ Cancel", "f:cancel"), ("⬅️ Back", "f:sb")]]),
+            None)
+
+
 async def flow_submit(tg_id):
     f = flow(tg_id)
     if not f:
@@ -1080,10 +1112,10 @@ async def flow_submit(tg_id):
             label = custom or d["category"]
             await bot_audit(tg_id, user, "create", "expense", rid,
                             f"{label} {money(d['amount'])} @ {d['branch']} pay:{d.get('account')}")
-            txt = (f"✅ <b>Expense saved</b>\nID: <code>{rid}</code>\nBranch: {d['branch']}\n"
-                   f"Category: {d['category']}" + (f"\nDescription: {html.escape(custom)}" if custom else "") + "\n"
-                   f"Amount: {money(d['amount'])}\n"
-                   f"By: {user['name']}\n{datetime.utcnow().strftime('%b %d, %Y %H:%M UTC')}")
+            what = "expense"; ref = f"#{rid}"
+            _lines = [f"{d['category']}: {money(d['amount'])} @ {d['branch']}"]
+            if custom:
+                _lines.append(f"Description: {html.escape(custom)}")
         elif name == "recv":
             reason = " · ".join([x for x in [
                 (f"Supplier {d['supplier']}" if d.get("supplier") else None),
@@ -1097,8 +1129,9 @@ async def flow_submit(tg_id):
                 raise ApiErr(stx, res)
             await bot_audit(tg_id, user, "receive", "product", d["sku"],
                             f"+{d['qty']} @ {d['branch']} new={res.get('new_stock')}")
-            txt = (f"✅ <b>Stock received</b>\nProduct: {d['pname']}\nBranch: {d['branch']}\n"
-                   f"Received: +{d['qty']} → new stock <b>{res.get('new_stock')}</b>")
+            what = "stock receipt"; ref = html.escape(str(d["sku"]))
+            _lines = [f"+{d['qty']} {d['pname']} @ {d['branch']}",
+                      f"New stock: {res.get('new_stock')}"]
         elif name == "adj":
             cur = await _product_qty(token, d["sku"], d["branch"])
             if d["adjtype"] == "inc":
@@ -1114,8 +1147,10 @@ async def flow_submit(tg_id):
                 raise ApiErr(stx, res)
             await bot_audit(tg_id, user, "adjust", "product", d["sku"],
                             f"{cur}->{res.get('new_stock')} @ {d['branch']} ({d['reason']})")
-            txt = (f"✅ <b>Stock adjusted</b>\nProduct: {d['pname']}\nBranch: {d['branch']}\n"
-                   f"Old: {cur} → New: <b>{res.get('new_stock')}</b>\nReason: {d['reason']}")
+            what = "stock adjustment"; ref = html.escape(str(d["sku"]))
+            _lines = [f"{d['pname']} @ {d['branch']}",
+                      f"{cur} → new stock {res.get('new_stock')}",
+                      f"Reason: {d['reason']}"]
         elif name == "xfer":
             avail = await _product_qty(token, d["sku"], d["from"])
             if int(d["qty"]) > avail:
@@ -1126,9 +1161,9 @@ async def flow_submit(tg_id):
                 raise ApiErr(stx, res)
             await bot_audit(tg_id, user, "create", "transfer", res.get("id"),
                             f"{d['qty']}x {d['sku']} {d['from']}->{d['to']}")
-            txt = (f"✅ <b>Transfer submitted</b> · status <b>{res.get('status')}</b>\n"
-                   f"Product: {d['pname']}\n{d['from']} → {d['to']}\nQty: {d['qty']}\n"
-                   f"Awaiting manager approval.")
+            what = "transfer"; ref = f"#{res.get('id')}"
+            _lines = [f"{d['qty']}× {d['pname']}", f"{d['from']} → {d['to']}",
+                      f"Status: {res.get('status')} · awaiting manager approval"]
         elif name == "pur":
             stx, res = await _req("POST", "/api/purchases", token=token,
                                   body={"vendor": d["vendor"], "branch": d["branch"], "amount": d["amount"]})
@@ -1136,13 +1171,15 @@ async def flow_submit(tg_id):
                 raise ApiErr(stx, res)
             await bot_audit(tg_id, user, "create", "purchase", res.get("id"),
                             f"{d['vendor']} {money(d['amount'])} @ {d['branch']}")
-            txt = (f"✅ <b>Purchase submitted</b> · status <b>{res.get('status')}</b>\n"
-                   f"ID: <code>{res.get('id')}</code>\nVendor: {d['vendor']}\nBranch: {d['branch']}\n"
-                   f"Amount: {money(d['amount'])}\nAwaiting approval.")
+            what = "purchase"; ref = f"#{res.get('id')}"
+            _lines = [f"{d['vendor']}: {money(d['amount'])} @ {d['branch']}",
+                      f"Status: {res.get('status')} · awaiting approval"]
         else:
-            txt = "Done."
+            what = "operation"; ref = "#—"; _lines = None
         flow_end(tg_id)
-        return (txt, kb([[("🏠 Main Menu", "home")]]), None)
+        # success → edit into the confirmation card, then auto-return to the menu
+        return (success_card(what, ref, _lines),
+                kb([[("🏠 Main Menu", "home")]]), None, {"then_home": HOME_DELAY})
     except (ApiErr, FlowErr) as e:
         f["submitting"] = False
         msg = e.friendly() if isinstance(e, ApiErr) else str(e)
@@ -1151,12 +1188,11 @@ async def flow_submit(tg_id):
                             name, "", msg, result="fail")
         except Exception:  # noqa: BLE001
             pass
-        return (f"⚠️ {msg}", kb([[("🔁 Try Again", "f:go")], [("🏠 Main Menu", "home")]]), None)
+        return _error_card(msg)
     except Exception as e:  # noqa: BLE001
         f["submitting"] = False
         log.exception("submit error: %s", e)
-        return ("⚠️ Something went wrong. Please try again.",
-                kb([[("🔁 Try Again", "f:go")], [("🏠 Main Menu", "home")]]), None)
+        return _error_card("Something went wrong while saving. Please try again.")
 
 
 async def flow_cb(tg_id, action):
@@ -1802,11 +1838,32 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not s.get("stack") or s["stack"][-1] != data:
             s.setdefault("stack", []).append(data)
     try:
-        text, markup, document = await dispatch(tg_id, data)
+        res = await dispatch(tg_id, data)
     except Exception as e:  # noqa: BLE001
         log.exception("callback error: %s", e)
-        text, markup, document = ("⚠️ Something went wrong. Returning home.", home_kb(), None)
+        res = ("⚠️ Something went wrong. Returning home.", home_kb(), None)
+    text, markup = res[0], res[1]
+    document = res[2] if len(res) > 2 else None
+    after = res[3] if len(res) > 3 else None
+    # edit the existing message in place (no new message) — keeps the chat clean
     await show(update, ctx, text, markup, document)
+    # auto-return: after a short delay, edit the SAME message to the main menu.
+    if after and after.get("then_home") and document is None:
+        delay = after.get("then_home")
+        delay = HOME_DELAY if delay is True else float(delay)
+
+        async def _auto_home(query=q, tid=tg_id, dly=delay):
+            try:
+                await asyncio.sleep(dly)
+                ht, hm, _ = await render_home(tid)
+                await query.edit_message_text(ht[:4000], reply_markup=hm, parse_mode=ParseMode.HTML)
+            except Exception as ex:  # noqa: BLE001  (message gone / not modified)
+                log.warning("auto-return edit failed: %s", ex)
+
+        try:
+            ctx.application.create_task(_auto_home())
+        except Exception:  # noqa: BLE001
+            asyncio.create_task(_auto_home())
 
 
 async def _send(update, ctx, res):
