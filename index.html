@@ -5001,6 +5001,11 @@ try{ empMigrate(); payRestore(); invDateRestore();
     rpDeliveries:function(){return call('/api/telegram/reports/deliveries');},
     rpPreview:function(kind,id){return call('/api/telegram/reports/preview?kind='+encodeURIComponent(kind)+(id?('&tg_id='+encodeURIComponent(id)):''));},
     rpSendNow:function(b){return call('/api/telegram/reports/send-now',{method:'POST',body:b});},
+    // --- recurring reminders ---
+    remGet:function(){return call('/api/telegram/reminders/settings');},
+    remSet:function(b){return call('/api/telegram/reminders/settings',{method:'PUT',body:b});},
+    remDeliveries:function(){return call('/api/telegram/reminders/deliveries');},
+    remSendNow:function(b){return call('/api/telegram/reminders/send-now',{method:'POST',body:b||{}});},
     tgSetPerms:function(eid,caps){return call('/api/employees/'+encodeURIComponent(eid)+'/telegram-permissions',
       {method:'PUT',body:{capabilities:caps}});},
     tgStatus:function(){return call('/api/telegram/status');},
@@ -6976,6 +6981,167 @@ try{ empMigrate(); payRestore(); invDateRestore();
     return r;
   };
   window.__rpLoad=load; window.__rpState=function(){return RP;};
+})();
+
+
+/* ==========================================================================
+   RECURRING TELEGRAM REMINDERS — admin settings + delivery log.
+   Mounts into the Telegram admin page beneath Scheduled Reports. Owner/admin
+   only (the API answers 403 and we remove the card for everyone else). No AI,
+   no external scheduler — the backend + company timezone drive everything.
+   ========================================================================== */
+(function(){
+  var A=function(){return window.SS_API_LIVE;};
+  var RM={cfg:null,deliveries:[],busy:false};
+  function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+  function say(m){ if(typeof toast==='function') toast(m); }
+  function er(e){ try{ return (window.__apiErr?window.__apiErr(e):(e&&e.message))||'Request failed'; }catch(x){ return 'Request failed'; } }
+  function fmt(iso){ if(!iso) return '—';
+    try{ return new Date(iso).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }catch(e){ return '—'; } }
+  function sec(){ return document.getElementById('v-telegram'); }
+
+  function ensure(){
+    var s=sec(); if(!s) return false;
+    if(document.getElementById('remCard')) return true;
+    var c=document.createElement('div'); c.className='card'; c.id='remCard'; c.style.marginBottom='16px';
+    c.innerHTML='<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">'
+      +'<div><h3 style="margin:0">Automatic Reminders</h3>'
+      +'<div class="sub" style="color:var(--muted)">Recurring Telegram nudges to keep business data entered — every N hours, in the company timezone.</div></div>'
+      +'<button class="btn g" id="remRefresh">Refresh</button></div>'
+      +'<div id="remBody" style="margin-top:14px"></div>'
+      +'<div id="remLog" style="margin-top:18px"></div>';
+    var anchor=document.getElementById('rpCard');
+    if(anchor&&anchor.parentNode) anchor.parentNode.insertBefore(c,anchor.nextSibling);
+    else s.appendChild(c);
+    document.getElementById('remRefresh').onclick=load;
+    return true;
+  }
+
+  function hourOpts(sel){ var o=''; for(var h=0;h<=23;h++){ o+='<option value="'+h+'"'+(h===sel?' selected':'')+'>'+(h<10?'0'+h:h)+':00</option>'; } return o; }
+
+  function renderBody(){
+    var el=document.getElementById('remBody'); if(!el||!RM.cfg) return;
+    var c=RM.cfg;
+    var days=(c.weekday_labels||['Mon','Tue','Wed','Thu','Fri','Sat','Sun']);
+    var paused=new Set(c.paused_days||[]);
+    var sel=new Set(c.recipient_ids||[]);
+    var recips=(c.candidates||[]);
+    var slotTxt=(c.slot_hours||[]).map(function(h){return (h<10?'0'+h:h)+':00';}).join(', ');
+    el.innerHTML=''
+      +'<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;border:1px solid var(--line,#e2e6ea);border-radius:10px;padding:12px;margin-bottom:14px">'
+        +'<label style="display:inline-flex;align-items:center;gap:8px;font-weight:600">'
+          +'<input type="checkbox" id="remEnabled"'+(c.enabled?' checked':'')+'> Reminders enabled</label>'
+        +'<div style="flex:1"></div>'
+        +'<div style="font-size:12.5px;color:var(--muted)">Timezone <b>'+esc(c.timezone)+'</b> · now '+esc(c.local_time)+'</div>'
+        +'<div style="font-size:12.5px">Next run: <b>'+esc(c.next_run_local||'— (disabled)')+'</b></div>'
+      +'</div>'
+      +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:14px">'
+        +'<div><div style="font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Interval (hours)</div>'
+          +'<input type="number" id="remInterval" min="1" max="168" value="'+esc(c.interval_hours)+'" style="width:100%;margin-top:5px;padding:8px 10px;border:1px solid var(--line,#e2e6ea);border-radius:8px"></div>'
+        +'<div><div style="font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Active from</div>'
+          +'<select id="remStart" style="width:100%;margin-top:5px;padding:8px 10px;border:1px solid var(--line,#e2e6ea);border-radius:8px">'+hourOpts(c.active_start_hour)+'</select></div>'
+        +'<div><div style="font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Active to</div>'
+          +'<select id="remEnd" style="width:100%;margin-top:5px;padding:8px 10px;border:1px solid var(--line,#e2e6ea);border-radius:8px">'+hourOpts(c.active_end_hour)+'</select></div>'
+        +'<div><div style="font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Fires at (local)</div>'
+          +'<div id="remSlots" style="margin-top:11px;font-weight:600">'+esc(slotTxt)+'</div></div>'
+      +'</div>'
+      +'<div style="margin-bottom:14px"><div style="font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px">Pause on days</div>'
+        +days.map(function(d,i){return '<label style="display:inline-flex;align-items:center;gap:5px;font-size:12.5px;margin-right:12px">'
+          +'<input type="checkbox" class="remDay" data-d="'+i+'"'+(paused.has(i)?' checked':'')+'>'+esc(d)+'</label>';}).join('')+'</div>'
+      +'<div style="margin-bottom:14px"><div style="font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px">Reminder message</div>'
+        +'<textarea id="remMsg" rows="9" style="width:100%;padding:10px;border:1px solid var(--line,#e2e6ea);border-radius:8px;font-family:inherit;font-size:13px;line-height:1.5">'+esc(c.message)+'</textarea>'
+        +'<div style="margin-top:4px"><a href="#" id="remDefault" style="font-size:12px;color:var(--accent,#2f6fed)">Reset to default message</a></div></div>'
+      +'<div style="margin-bottom:14px"><div style="font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px">Recipients</div>'
+        +'<label style="display:inline-flex;align-items:center;gap:5px;font-size:12.5px;margin-right:14px"><input type="radio" name="remMode" value="all"'+(c.recipient_mode!=='selected'?' checked':'')+'> All linked accounts</label>'
+        +'<label style="display:inline-flex;align-items:center;gap:5px;font-size:12.5px"><input type="radio" name="remMode" value="selected"'+(c.recipient_mode==='selected'?' checked':'')+'> Selected only</label>'
+        +'<div id="remRecips" style="margin-top:8px;display:'+(c.recipient_mode==='selected'?'block':'none')+'">'
+          +(recips.length?recips.map(function(r){return '<label style="display:inline-flex;align-items:center;gap:5px;font-size:12.5px;margin:3px 12px 3px 0">'
+              +'<input type="checkbox" class="remRec" data-id="'+esc(r.tg_id)+'"'+(sel.has(r.tg_id)?' checked':'')+(r.status!=='active'?' disabled':'')+'>'
+              +esc(r.name)+' <span style="color:var(--muted)">'+esc(r.role||'')+(r.status!=='active'?' · disabled':'')+'</span></label>';}).join('')
+              :'<span style="color:var(--muted);font-size:12.5px">No linked Telegram accounts yet.</span>')
+        +'</div></div>'
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap">'
+        +'<button class="btn p" id="remSave">Save settings</button>'
+        +'<button class="btn g" id="remSend">Send reminder now</button></div>';
+    // interactions
+    document.getElementById('remDefault').onclick=function(e){ e.preventDefault(); document.getElementById('remMsg').value=c.default_message||''; };
+    [].forEach.call(el.querySelectorAll('input[name="remMode"]'),function(r){ r.onchange=function(){
+      document.getElementById('remRecips').style.display=(r.value==='selected'&&r.checked)?'block':(document.querySelector('input[name=remMode][value=selected]').checked?'block':'none'); }; });
+    document.getElementById('remSave').onclick=save;
+    document.getElementById('remSend').onclick=sendNow;
+  }
+
+  function collect(){
+    var mode=(document.querySelector('input[name="remMode"]:checked')||{}).value||'all';
+    return {
+      enabled:document.getElementById('remEnabled').checked,
+      interval_hours:parseInt(document.getElementById('remInterval').value,10)||12,
+      active_start_hour:parseInt(document.getElementById('remStart').value,10),
+      active_end_hour:parseInt(document.getElementById('remEnd').value,10),
+      paused_days:[].map.call(document.querySelectorAll('.remDay:checked'),function(x){return parseInt(x.getAttribute('data-d'),10);}),
+      message:document.getElementById('remMsg').value,
+      recipient_mode:mode,
+      recipient_ids:[].map.call(document.querySelectorAll('.remRec:checked'),function(x){return x.getAttribute('data-id');})
+    };
+  }
+
+  async function save(){
+    if(RM.busy) return; RM.busy=true;
+    try{ RM.cfg=await A().remSet(collect()); renderBody(); say('Reminder settings saved'); }
+    catch(e){ say(er(e)); }
+    finally{ RM.busy=false; }
+  }
+
+  async function sendNow(){
+    if(RM.busy) return; RM.busy=true;
+    try{ var r=await A().remSendNow({}); say('Reminder queued to '+(r.queued||0)+' recipient(s)');
+      setTimeout(loadLog,1500); }
+    catch(e){ say(er(e)); }
+    finally{ RM.busy=false; }
+  }
+
+  function renderLog(){
+    var el=document.getElementById('remLog'); if(!el) return;
+    var rows=RM.deliveries||[];
+    var body=rows.length? rows.slice(0,30).map(function(d){
+      var col=d.status==='sent'?'var(--ok,#1a7f37)':(d.status==='failed'?'var(--bad,#c0392b)':(d.status==='skipped'?'var(--muted)':'var(--warn,#b26a00)'));
+      return '<tr><td style="padding:5px 9px">'+fmt(d.run_at)+'</td>'
+        +'<td style="padding:5px 9px">'+esc(d.recipient||d.tg_id||'—')+'</td>'
+        +'<td style="padding:5px 9px">'+esc(d.kind)+'</td>'
+        +'<td style="padding:5px 9px;color:'+col+';font-weight:600">'+esc(d.status)+'</td>'
+        +'<td style="padding:5px 9px;color:var(--muted)">'+esc(d.error||'')+'</td></tr>';
+    }).join(''):'<tr><td colspan="5" style="padding:10px;color:var(--muted)">No reminders sent yet.</td></tr>';
+    el.innerHTML='<div style="font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Delivery log</div>'
+      +'<div style="overflow:auto;border:1px solid var(--line,#e2e6ea);border-radius:10px"><table style="width:100%;border-collapse:collapse;font-size:12.5px">'
+      +'<thead><tr style="background:var(--panel2,#f4f6f8)">'
+      +['Time','Recipient','Type','Status','Error'].map(function(h){return '<th style="text-align:left;padding:7px 9px;font-weight:600">'+h+'</th>';}).join('')
+      +'</tr></thead><tbody>'+body+'</tbody></table></div>';
+  }
+
+  async function loadLog(){
+    try{ RM.deliveries=(await A().remDeliveries()).deliveries||[]; renderLog(); }catch(e){}
+  }
+
+  async function load(){
+    if(!ensure()) return;
+    try{
+      RM.cfg=await A().remGet();
+      renderBody();
+      await loadLog();
+    }catch(e){
+      var c=document.getElementById('remCard');
+      if(c&&c.parentNode) c.parentNode.removeChild(c);   // not authorised → remove
+    }
+  }
+
+  var prior=window.__tgStartPolling;
+  window.__tgStartPolling=function(){
+    var r=(typeof prior==='function')?prior.apply(this,arguments):undefined;
+    try{ load(); }catch(e){}
+    return r;
+  };
+  window.__remLoad=load; window.__remState=function(){return RM;};
 })();
 
 /* ==========================================================================
