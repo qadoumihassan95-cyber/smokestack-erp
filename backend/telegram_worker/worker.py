@@ -2036,6 +2036,53 @@ async def _send_report(tg_id, kind, idem_key, test=False, bot=None, include_pdf=
     return st_ in ("sent", "partial")
 
 
+async def _send_reminder(bot, tg_id, text, idem_key):
+    """Deliver one reminder with exponential backoff, then log the outcome.
+
+    The API row was already claimed (idempotency ledger), so a failure here just
+    marks that row 'failed' — the reminder is never silently lost, and the next
+    scheduled slot still fires."""
+    ok, err, mid = False, None, ""
+    for attempt in range(3):
+        try:
+            res = await bot.send_message(chat_id=int(tg_id), text=text)
+            mid = str(getattr(res, "message_id", ""))
+            ok = True
+            break
+        except Exception as e:  # noqa: BLE001
+            err = str(e)
+            log.warning("reminder send attempt %s to %s failed: %s", attempt + 1, tg_id, e)
+            await asyncio.sleep(2 ** attempt)
+    await _req("POST", "/api/telegram/reminders/complete", headers={"X-Bot-Token": TOKEN},
+               body={"idem_key": idem_key, "status": ("sent" if ok else "failed"),
+                     "error": (None if ok else (err or "send failed")), "message_id": mid})
+    return ok
+
+
+async def reminder_tick(bot):
+    """One pass of the recurring-reminder scheduler.
+
+    The schedule lives entirely in the database (settings row + company
+    timezone); this only claims the current slot if due and delivers it. Manual
+    'send now' batches are drained from the same loop."""
+    # Scheduled slot — claim is atomic server-side, so a restart or a second
+    # worker can never double-send.
+    st_, claim = await _req("POST", "/api/telegram/reminders/claim",
+                            headers={"X-Bot-Token": TOKEN})
+    if st_ == 200 and claim and claim.get("claimed") and not claim.get("skipped"):
+        msg = claim.get("message") or ""
+        for r in claim.get("recipients", []):
+            log.info("sending scheduled reminder to %s", r["tg_id"])
+            await _send_reminder(bot, r["tg_id"], msg, r["idem_key"])
+    # Manual 'send now' batches queued from the admin UI
+    st2, pend = await _req("GET", "/api/telegram/reminders/pending",
+                           headers={"X-Bot-Token": TOKEN})
+    if st2 == 200 and pend:
+        for job in pend.get("pending", []):
+            log.info("sending manual reminder to %s", job["tg_id"])
+            await _send_reminder(bot, job["tg_id"], job.get("message") or "", job["idem_key"])
+
+
 async def report_scheduler(bot):
     """Wake every 60s; fire only inside the matching business-local minute."""
     await asyncio.sleep(15)
@@ -2063,6 +2110,8 @@ async def report_scheduler(bot):
                     await _send_report(job["tg_id"], job["kind"], job["idem_key"],
                                        test=job.get("test", True), bot=bot,
                                        include_pdf=job.get("include_pdf", False))
+            # recurring reminders share the same 60s clock
+            await reminder_tick(bot)
         except Exception as e:  # noqa: BLE001
             log.warning("report scheduler tick failed: %s", e)
         await asyncio.sleep(60)
