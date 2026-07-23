@@ -1,7 +1,7 @@
 """SQLAlchemy models — one table per ERP module. The `movements` table is the
 immutable stock ledger used for history + as-of reporting."""
 from sqlalchemy import (Column, Integer, BigInteger, String, Numeric, Boolean,
-                        Date, DateTime, ForeignKey, Text, func)
+                        Date, DateTime, ForeignKey, Text, UniqueConstraint, func)
 from sqlalchemy.orm import relationship
 from .database import Base
 
@@ -307,7 +307,12 @@ class CompanySetting(Base):
     read on every scheduler tick and must survive restarts, and new settings must
     not require a schema change.
     """
+    # Wave B (B-A): key is per-company. EXPAND phase keeps `key` as the PK and
+    # adds a composite unique (company_id, key); the CONTRACT phase (B-A2) moves
+    # the PK to (company_id, key). Childless table → composite PK, no surrogate.
     __tablename__ = "company_settings"
+    __table_args__ = (UniqueConstraint("company_id", "key",
+                                       name="uq_company_settings_company_key"),)
     company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     key = Column(String, primary_key=True)
     value = Column(Text)

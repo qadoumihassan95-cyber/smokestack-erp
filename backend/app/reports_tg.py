@@ -50,7 +50,8 @@ def company_tz(db) -> str:
     runs in UTC and would drift from the business day by hours, and by an extra
     hour across a daylight-saving change.
     """
-    row = db.get(models.CompanySetting, "business_timezone")
+    from . import company_config
+    row = company_config.get_setting(db, "business_timezone")
     if row and valid_tz(row.value):
         return row.value
     b = db.query(models.Branch).filter(models.Branch.timezone.isnot(None)).first()
@@ -62,21 +63,9 @@ def company_tz(db) -> str:
 def set_company_tz(db, name, actor=None):
     if not valid_tz(name):
         raise ValueError(f"Unknown timezone: {name}")
-    db.merge(models.CompanySetting(key="business_timezone", value=name,
-                                   updated_by=getattr(actor, "id", None),
-                                   updated_at=datetime.now(_tz.utc)))
-    db.commit()
+    from . import company_config
+    company_config.set_value(db, "business_timezone", name, actor=actor)
     return name
-
-
-def local_at(db, when_utc):
-    """Convert any UTC instant into business-local time (DST-aware)."""
-    tzname = company_tz(db)
-    if ZoneInfo is None:
-        return when_utc
-    if when_utc.tzinfo is None:
-        when_utc = when_utc.replace(tzinfo=_tz.utc)
-    return when_utc.astimezone(ZoneInfo(tzname))
 
 
 def now_local(db):
