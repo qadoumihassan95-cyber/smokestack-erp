@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, update as sa_update
 from datetime import datetime, timedelta
 from ..database import get_db
-from .. import models, security as S, permissions as P
+from .. import models, security as S, permissions as P, counters
 from ..schemas import ProductIn, ProductUpdate, StockOp
 
 router = APIRouter(prefix="/api/inventory", tags=["inventory"])
@@ -124,7 +124,7 @@ def _write_movement(db, user, sku, branch, mtype, change, notes="", unit_cost=No
     before = after - change   # derived, so qty_before + qty_change == qty_after always holds
     p = db.get(models.Product, sku)
     uc = unit_cost if unit_cost is not None else (p.cost if p else 0)
-    db.add(models.Movement(ref=f"MV-{int(datetime.utcnow().timestamp())}", sku=sku, branch=branch,
+    db.add(models.Movement(ref=counters.next_number(db, counters.MOVEMENT), sku=sku, branch=branch,
                            type=mtype, qty_before=before, qty_change=int(change), qty_after=after,
                            unit_cost=uc, user_id=user.id, notes=notes))
     db.commit()

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from ..database import get_db
-from .. import models, security as S
+from .. import models, security as S, counters
 from ..schemas import ExpenseIn, PurchaseIn, SaleIn
 from datetime import datetime
 
@@ -77,10 +77,10 @@ def purchases(branch: str = "all", db: Session = Depends(get_db), user: models.U
 def add_purchase(body: PurchaseIn, db: Session = Depends(get_db), user: models.User = Depends(S.require("create"))):
     S.assert_branch(user, db, body.branch)
     _check_amount(body.amount)
-    pid = f"PO-{int(datetime.utcnow().timestamp())}"
+    pid = counters.next_number(db, counters.PURCHASE)   # per-company PO-000001 (Phase 4)
     p = models.Purchase(id=pid, vendor=body.vendor, branch=body.branch, amount=body.amount, status="pending_approval")
     db.add(p)
-    db.add(models.Approval(id=f"AP-{pid}", kind="purchase", ref=pid, branch=body.branch, amount=body.amount,
+    db.add(models.Approval(id=counters.next_number(db, counters.APPROVAL), kind="purchase", ref=pid, branch=body.branch, amount=body.amount,
                            requested_by=user.name, summary=f"Purchase {pid} · {body.vendor} · ${body.amount:.0f}"))
     db.commit()
     S.audit(db, user, "create", "purchase", pid, f"{body.vendor} {body.amount}")

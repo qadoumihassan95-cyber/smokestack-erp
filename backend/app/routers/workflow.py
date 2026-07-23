@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime
 from ..database import get_db
-from .. import models, security as S, partners_repo as PR
+from .. import models, security as S, partners_repo as PR, counters
+from ..locking import apply_ordered_movements
 from ..schemas import TransferIn, ApprovalDecision, ClockIn
 
 router = APIRouter(prefix="/api", tags=["workflow"])
@@ -26,9 +27,9 @@ def create_transfer(body: TransferIn, db: Session = Depends(get_db), user: model
     have = int(src.qty or 0) if src else 0
     if have < int(body.qty):
         raise HTTPException(422, f"Insufficient stock: {body.from_branch} holds {have} × {body.sku}.")
-    tid = f"TR-{int(datetime.utcnow().timestamp())}"
+    tid = counters.next_number(db, counters.TRANSFER)   # per-company TR-000001 (Phase 4)
     db.add(models.Transfer(id=tid, sku=body.sku, from_branch=body.from_branch, to_branch=body.to_branch, qty=body.qty, status="pending"))
-    db.add(models.Approval(id=f"AP-{tid}", kind="transfer", ref=tid, branch=body.from_branch, amount=0,
+    db.add(models.Approval(id=counters.next_number(db, counters.APPROVAL), kind="transfer", ref=tid, branch=body.from_branch, amount=0,
                            requested_by=user.name, summary=f"Transfer {body.qty}× {body.sku} · {body.from_branch}→{body.to_branch}"))
     db.commit()
     S.audit(db, user, "create", "transfer", tid)
@@ -57,11 +58,13 @@ def _decide(db, user, aid, status, comment):
             if status == "approved":
                 if t.status != "pending":
                     raise HTTPException(409, f"Transfer already {t.status}.")
-                from .inventory import _write_movement
-                _write_movement(db, user, t.sku, t.from_branch, "transfer_out", -int(t.qty),
-                                notes=f"Transfer {t.id} -> {t.to_branch}")
-                _write_movement(db, user, t.sku, t.to_branch, "transfer_in", int(t.qty),
-                                notes=f"Transfer {t.id} <- {t.from_branch}")
+                # multi-row stock mutation → canonical lock order (Phase 6)
+                apply_ordered_movements(db, user, [
+                    {"sku": t.sku, "branch": t.from_branch, "mtype": "transfer_out",
+                     "change": -int(t.qty), "notes": f"Transfer {t.id} -> {t.to_branch}"},
+                    {"sku": t.sku, "branch": t.to_branch, "mtype": "transfer_in",
+                     "change": int(t.qty), "notes": f"Transfer {t.id} <- {t.from_branch}"},
+                ])
             t.status = status
     elif a.kind == "purchase":
         p = PR.get_purchase(db, a.ref)
