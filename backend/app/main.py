@@ -22,6 +22,14 @@ for r in (auth.router, core.router, inventory.router, ledger.router, hr.router,
           schedule.router):
     app.include_router(r)
 
+# PFS Control Center — mounted as a fully decoupled sub-application (its own
+# router, auth realm, permissions, service + data-access seam). This is the ONE
+# touchpoint between the ERP and the Control Center: the ERP never imports PFS
+# internals. Setting PFS_ENABLED=false removes it entirely; the same sub-app can
+# later be served as its own service/domain with no refactor (see app/pfs).
+from .pfs import mount_pfs
+mount_pfs(app)
+
 @app.get("/api/health")
 def health():
     return {"status": "ok", "service": "smokestack-erp-api", "version": "1.0.0"}
