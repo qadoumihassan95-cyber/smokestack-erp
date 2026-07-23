@@ -1,0 +1,4 @@
+# Test/CI-only dependencies (never installed on the production runtime).
+# Kept separate from requirements.txt so runtime deps stay minimal.
+pytest
+httpx        # required by starlette.testclient.TestClient (test-only)
