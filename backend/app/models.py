@@ -159,12 +159,13 @@ class Purchase(Base):
     purchase_date = Column(Date, server_default=func.current_date())
 
 class Transfer(Base):
-    # Wave B (B-B) — transfers: EXPAND keeps `id` PK + surrogate row_id + composite
-    # unique (company_id, id); CONTRACT moves PK to surrogate row_id.
+    # Wave B (B-B CONTRACT) — transfers: surrogate row_id PK + tenant-scoped
+    # UNIQUE(company_id, id). `id` is the visible per-company transfer number.
     __tablename__ = "transfers"
     __table_args__ = (UniqueConstraint("company_id", "id", name="uq_transfers_company_id"),)
-    company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
-    id = Column(String, primary_key=True); sku = Column(String)
+    row_id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    company_id = Column(Integer, index=True, nullable=False, server_default="1")  # tenant owner
+    id = Column(String, nullable=False); sku = Column(String)
     from_branch = Column(String); to_branch = Column(String)
     qty = Column(Integer); status = Column(String, default="pending")
 
