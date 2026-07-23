@@ -1,4 +1,10 @@
-# Test/CI-only dependencies (never installed on the production runtime).
-# Kept separate from requirements.txt so runtime deps stay minimal.
+# Test/CI-only dependencies (never installed on the production web runtime).
+# Kept separate from requirements.txt so runtime web deps stay minimal.
 pytest
-httpx        # required by starlette.testclient.TestClient (test-only)
+# starlette.testclient.TestClient needs httpx; the Telegram worker pins the same
+# httpx (0.27.2) below, so it is satisfied transitively — no separate pin needed.
+#
+# The backend test suite imports the Telegram worker (tests/test_tg_confirm.py),
+# so the worker's runtime deps must be present to collect/run the full suite.
+# Pull them from the worker's own pin file (single source of truth, no drift):
+-r telegram_worker/requirements.txt
