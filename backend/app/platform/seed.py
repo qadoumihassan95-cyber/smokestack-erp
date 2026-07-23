@@ -8,9 +8,20 @@ company, if any, is created by that application's own bootstrap.
 Safe to run on every startup against the live database (purely additive).
 """
 import json
+import logging
 
 from .. import models
 from . import registry
+
+log = logging.getLogger("pfs.seed")
+
+# Per-application bootstrap failures — one company's failed provisioning must not
+# abort the others or crash startup. Surfaced in /api/health.
+_BOOTSTRAP_FAILURES = []
+
+
+def bootstrap_failures():
+    return list(_BOOTSTRAP_FAILURES)
 
 
 def seed_applications(db):
@@ -37,10 +48,23 @@ def seed_modules(db):
 
 
 def run_bootstraps(db):
-    """Let each application seed/adopt its own data (idempotent)."""
+    """Let each application seed/adopt its own data (idempotent). Each app's
+    bootstrap is ISOLATED: a failure is recorded and skipped so one application's
+    (or company's) broken provisioning cannot abort the others or crash startup."""
+    _BOOTSTRAP_FAILURES.clear()
     for a in registry.applications():
-        if a.bootstrap:
+        if not a.bootstrap:
+            continue
+        try:
             a.bootstrap(db)
+        except Exception as e:  # noqa: BLE001
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            _BOOTSTRAP_FAILURES.append({"app": a.key, "error": repr(e)})
+            log.error("bootstrap for application '%s' failed and was skipped: %r", a.key, e)
+    return list(_BOOTSTRAP_FAILURES)
 
 
 def seed_platform(db):
