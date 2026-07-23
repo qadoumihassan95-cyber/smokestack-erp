@@ -192,12 +192,14 @@ class Supplier(Base):
     name = Column(String); balance = Column(Numeric(12, 2), default=0)
 
 class Approval(Base):
-    # Wave B (B-B) — approvals: EXPAND keeps `id` PK + surrogate row_id + composite
-    # unique (company_id, id); CONTRACT moves PK to surrogate row_id.
+    # Wave B (B-B CONTRACT) — approvals: surrogate row_id PK + tenant-scoped
+    # UNIQUE(company_id, id). `id` is the visible per-company approval number
+    # (e.g. AP-PO-…); `ref` stays the business number of the referenced entity.
     __tablename__ = "approvals"
     __table_args__ = (UniqueConstraint("company_id", "id", name="uq_approvals_company_id"),)
-    company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
-    id = Column(String, primary_key=True); kind = Column(String); ref = Column(String)
+    row_id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    company_id = Column(Integer, index=True, nullable=False, server_default="1")  # tenant owner
+    id = Column(String, nullable=False); kind = Column(String); ref = Column(String)
     branch = Column(String, index=True); amount = Column(Numeric(12, 2))
     requested_by = Column(String); summary = Column(String); status = Column(String, default="pending")
     decided_by = Column(String); comment = Column(String)
