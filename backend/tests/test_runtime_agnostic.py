@@ -90,5 +90,6 @@ def test_the_loader_is_the_only_generic_seam_into_apps():
     apps_imports = [t for t in targets if "apps" in t.split("::")[0].replace(".", "")]
     for t in apps_imports:
         _mod, _, name = t.partition("::")
-        assert name in ("load_apps", "validate_registry", "discovered_app_modules", ""), \
+        assert name in ("load_apps", "validate_registry", "discovered_app_modules",
+                        "load_failures", ""), \
             f"main.py reaches into apps beyond the generic loader: {t}"
