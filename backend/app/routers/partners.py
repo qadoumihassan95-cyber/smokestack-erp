@@ -1,17 +1,18 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from ..database import get_db
-from .. import models, security as S
+from .. import models, security as S, partners_repo as PR
 
 router = APIRouter(prefix="/api", tags=["partners"])
 
 @router.get("/customers")
 def customers(db: Session = Depends(get_db), user: models.User = Depends(S.require("view"))):
-    return [{"id": c.id, "name": c.name, "balance": float(c.balance or 0)} for c in db.query(models.Customer).all()]
+    return [{"id": c.id, "name": c.name, "balance": float(c.balance or 0)} for c in PR.list_customers(db)]
 
 @router.get("/customers/{cid}")
 def customer(cid: str, db: Session = Depends(get_db), user: models.User = Depends(S.require("view"))):
-    c = db.get(models.Customer, cid)
+    # tenant-scoped lookup by (company_id, business id) — works in both B-B phases
+    c = PR.get_customer(db, cid)
     if not c:
         raise HTTPException(404, "Not found")
     return {"id": c.id, "name": c.name, "balance": float(c.balance or 0)}
