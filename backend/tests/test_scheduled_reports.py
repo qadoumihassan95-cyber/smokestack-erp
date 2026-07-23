@@ -273,13 +273,18 @@ def test_timezone_change_requires_privilege_and_is_audited():
 
 def test_business_date_follows_the_configured_timezone():
     """Near UTC midnight the business date must be the LOCAL date."""
+    with TestClient(app):     # ensure schema exists regardless of collection order
+        pass
     db = SessionLocal()
     try:
         R.set_company_tz(db, "Pacific/Kiritimati")     # UTC+14
         ahead = R.business_date(db)
         R.set_company_tz(db, "Pacific/Midway")         # UTC-11
         behind = R.business_date(db)
-        assert (ahead - behind).days in (0, 1)
+        # UTC+14 and UTC-11 are 25 hours apart, so the local calendar dates are
+        # the same or up to TWO days apart depending on the current UTC time
+        # (never negative — the ahead tz is never behind).
+        assert 0 <= (ahead - behind).days <= 2
         R.set_company_tz(db, "Asia/Hebron")
     finally:
         db.close()
