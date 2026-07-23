@@ -163,14 +163,15 @@ class Transfer(Base):
     qty = Column(Integer); status = Column(String, default="pending")
 
 class Customer(Base):
-    # Wave B (B-B) — customers: business number `id` is per-company. EXPAND phase
-    # keeps `id` as the PK and adds the surrogate `row_id` (DB-side) plus a
-    # composite unique (company_id, id). CONTRACT (B-B-C1-contract) moves the PK to
-    # the surrogate `row_id`, leaving `id` a tenant-scoped visible business number.
+    # Wave B (B-B CONTRACT) — customers: the immutable surrogate `row_id` is the
+    # primary key (platform-wide Option B). `id` is the tenant-scoped visible
+    # business number, unique per company via `uq_customers_company_id`.
     __tablename__ = "customers"
     __table_args__ = (UniqueConstraint("company_id", "id", name="uq_customers_company_id"),)
-    company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
-    id = Column(String, primary_key=True); name = Column(String); balance = Column(Numeric(12, 2), default=0)
+    row_id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    company_id = Column(Integer, index=True, nullable=False, server_default="1")  # tenant owner
+    id = Column(String, nullable=False)   # visible business number, tenant-scoped
+    name = Column(String); balance = Column(Numeric(12, 2), default=0)
 
 class Supplier(Base):
     __tablename__ = "suppliers"
