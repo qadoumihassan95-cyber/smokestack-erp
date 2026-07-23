@@ -630,6 +630,9 @@ class CompanyModule(Base):
     company_id = Column(Integer, index=True)
     module_key = Column(String, index=True)
     enabled = Column(Boolean, default=True)
+    # Richer per-company module lifecycle (enforced server-side by app.policy):
+    # enabled | disabled | hidden | maintenance | deprecated.
+    state = Column(String, default="enabled")
     source = Column(String, default="global")              # global | local
     updated_by = Column(String)
     updated_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -668,3 +671,33 @@ class PlatformAudit(Base):
     new_value = Column(Text)
     ip = Column(String)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class FeatureFlag(Base):
+    """A feature toggle, independent of modules. Resolved most-specific-first by
+    app.policy: user > company > subscription > industry > application > platform.
+    Platform-owned (company_id is a pointer via scope_ref, not tenant ownership)."""
+    __tablename__ = "feature_flags"
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    key = Column(String, index=True)
+    scope = Column(String, default="platform")   # platform|application|company|industry|subscription|user
+    scope_ref = Column(String)                    # e.g. company id / user id / app key / industry
+    enabled = Column(Boolean, default=True)
+    description = Column(Text)
+    updated_by = Column(String)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class PolicyOverride(Base):
+    """A temporary, auto-expiring, audited PFS emergency override that can ALLOW a
+    normally-blocked action for one company. Never bypasses financial integrity."""
+    __tablename__ = "policy_overrides"
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    company_id = Column(Integer, index=True)
+    action = Column(String)                       # read|write|export|jobs|all
+    allow = Column(Boolean, default=True)
+    reason = Column(Text)
+    created_by = Column(String)                   # super_admin_id
+    active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    expires_at = Column(DateTime(timezone=True))

@@ -88,6 +88,11 @@ def get_current_user(request: Request = None, token: str = Depends(oauth2),
             request.state.impersonation = bool(user._impersonation)
         except Exception:
             pass
+    # POLICY PIPELINE (layers 2-3 + read-only): evaluated ONCE here, the single ERP
+    # auth chokepoint. Blocks suspended/archived/provisioning/maintenance, enforces
+    # read-only + expired-subscription write-blocking. No-op for active companies.
+    from . import policy
+    policy.enforce_request(request, user, db)
     return user
 
 def require(*perms):
