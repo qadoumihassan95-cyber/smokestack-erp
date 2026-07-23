@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime
 from ..database import get_db
-from .. import models, security as S
+from .. import models, security as S, partners_repo as PR
 from ..schemas import TransferIn, ApprovalDecision, ClockIn
 
 router = APIRouter(prefix="/api", tags=["workflow"])
@@ -42,7 +42,7 @@ def approvals(db: Session = Depends(get_db), user: models.User = Depends(S.requi
              "by": a.requested_by, "summary": a.summary} for a in q.all()]
 
 def _decide(db, user, aid, status, comment):
-    a = db.get(models.Approval, aid)
+    a = PR.get_approval(db, aid)
     if not a:
         raise HTTPException(404, "Not found")
     if a.status != "pending":
@@ -52,7 +52,7 @@ def _decide(db, user, aid, status, comment):
     # approval row flipped to "approved" but the transfer never moved stock and
     # the purchase stayed pending forever.
     if a.kind == "transfer":
-        t = db.get(models.Transfer, a.ref)
+        t = PR.get_transfer(db, a.ref)
         if t:
             if status == "approved":
                 if t.status != "pending":
@@ -64,7 +64,7 @@ def _decide(db, user, aid, status, comment):
                                 notes=f"Transfer {t.id} <- {t.from_branch}")
             t.status = status
     elif a.kind == "purchase":
-        p = db.get(models.Purchase, a.ref)
+        p = PR.get_purchase(db, a.ref)
         if p:
             p.status = status
     a.status = status; a.decided_by = user.name; a.comment = comment
