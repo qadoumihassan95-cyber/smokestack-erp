@@ -39,6 +39,10 @@ def health():
 def on_startup():
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
+    # Startup seeding + platform bootstrap is deliberate privileged global
+    # maintenance — mark the session as an explicit system context so it is an
+    # audited bypass of tenant scoping, not an accidental untagged one.
+    tenancy.use_system_context(db)
     try:
         if settings.seed_on_start:
             from .seed import seed
