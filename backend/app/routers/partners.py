@@ -19,11 +19,12 @@ def customer(cid: str, db: Session = Depends(get_db), user: models.User = Depend
 
 @router.get("/suppliers")
 def suppliers(db: Session = Depends(get_db), user: models.User = Depends(S.require("view"))):
-    return [{"id": s.id, "name": s.name, "balance": float(s.balance or 0)} for s in db.query(models.Supplier).all()]
+    return [{"id": s.id, "name": s.name, "balance": float(s.balance or 0)} for s in PR.list_suppliers(db)]
 
 @router.get("/suppliers/{sid}")
 def supplier(sid: str, db: Session = Depends(get_db), user: models.User = Depends(S.require("view"))):
-    s = db.get(models.Supplier, sid)
+    # tenant-scoped lookup by (company_id, business id) — works in both B-B phases
+    s = PR.get_supplier(db, sid)
     if not s:
         raise HTTPException(404, "Not found")
     pos = db.query(models.Purchase).filter(models.Purchase.vendor == s.name).order_by(models.Purchase.purchase_date.desc()).all()
