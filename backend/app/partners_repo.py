@@ -52,3 +52,16 @@ def get_supplier(db, business_id, company_id=None):
 
 def list_suppliers(db, company_id=None):
     return list_for_company(db, models.Supplier, company_id)
+
+
+# ------------------------------------- transfers / purchases / approvals (B-B)
+def get_transfer(db, business_id, company_id=None):
+    return get_by_business_id(db, models.Transfer, business_id, company_id)
+
+
+def get_purchase(db, business_id, company_id=None):
+    return get_by_business_id(db, models.Purchase, business_id, company_id)
+
+
+def get_approval(db, business_id, company_id=None):
+    return get_by_business_id(db, models.Approval, business_id, company_id)

@@ -149,14 +149,20 @@ class License(Base):
     created_by = Column(String); created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class Purchase(Base):
+    # Wave B (B-B) — purchases: EXPAND keeps `id` PK + surrogate row_id + composite
+    # unique (company_id, id); CONTRACT moves PK to surrogate row_id.
     __tablename__ = "purchases"
+    __table_args__ = (UniqueConstraint("company_id", "id", name="uq_purchases_company_id"),)
     company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     id = Column(String, primary_key=True); vendor = Column(String); branch = Column(String, index=True)
     amount = Column(Numeric(12, 2)); status = Column(String, default="pending_approval")
     purchase_date = Column(Date, server_default=func.current_date())
 
 class Transfer(Base):
+    # Wave B (B-B) — transfers: EXPAND keeps `id` PK + surrogate row_id + composite
+    # unique (company_id, id); CONTRACT moves PK to surrogate row_id.
     __tablename__ = "transfers"
+    __table_args__ = (UniqueConstraint("company_id", "id", name="uq_transfers_company_id"),)
     company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     id = Column(String, primary_key=True); sku = Column(String)
     from_branch = Column(String); to_branch = Column(String)
@@ -184,7 +190,10 @@ class Supplier(Base):
     name = Column(String); balance = Column(Numeric(12, 2), default=0)
 
 class Approval(Base):
+    # Wave B (B-B) — approvals: EXPAND keeps `id` PK + surrogate row_id + composite
+    # unique (company_id, id); CONTRACT moves PK to surrogate row_id.
     __tablename__ = "approvals"
+    __table_args__ = (UniqueConstraint("company_id", "id", name="uq_approvals_company_id"),)
     company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     id = Column(String, primary_key=True); kind = Column(String); ref = Column(String)
     branch = Column(String, index=True); amount = Column(Numeric(12, 2))
