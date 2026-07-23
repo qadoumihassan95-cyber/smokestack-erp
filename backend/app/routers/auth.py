@@ -23,6 +23,12 @@ def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get
     if u.status != "active":
         S.audit(db, None, "failed_login", "user", form.username, result="denied")
         raise HTTPException(403, "This account is not active.")
+    # Policy layer 2 at login: block sign-in for suspended/archived/provisioning/
+    # maintenance companies (active/trial/read-only allow login). No-op for Company #1.
+    from .. import policy
+    if not policy.can_login(db, getattr(u, "company_id", None)):
+        S.audit(db, u, "failed_login", "user", u.id, result="denied")
+        raise HTTPException(403, "This company is not currently available for sign-in.")
     S.audit(db, u, "login", "user", u.id)
     return {"access_token": S.make_token(u), "token_type": "bearer", "user": _user_dict(u),
             "must_change_password": bool(getattr(u, "must_change_password", False))}
