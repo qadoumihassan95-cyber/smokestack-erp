@@ -23,7 +23,7 @@ from app import apps as loader
 
 # Files that must be COMPLETELY free of business identity today.
 _CLEAN_RUNTIME = (
-    ["database.py", "security.py", "tenancy.py", "observability.py",
+    ["database.py", "security.py", "tenancy.py", "observability.py", "policy.py",
      os.path.join("apps", "__init__.py")]
     + [os.path.join("platform", f) for f in os.listdir(os.path.join(_APP_DIR, "platform"))
        if f.endswith(".py")]
