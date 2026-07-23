@@ -16,18 +16,49 @@ After importing, it validates the registry:
 Any violation raises at load time, so a broken application can never deploy.
 """
 import importlib
+import logging
 import pkgutil
 
 from ..platform import registry
 
+log = logging.getLogger("pfs.apps")
+
+# Applications that failed to load are QUARANTINED (skipped) rather than crashing
+# the whole platform. Recorded here and surfaced in /api/health.
+_LOAD_FAILURES = []
+
+
+def load_failures():
+    """Application plugins that failed to load and were quarantined."""
+    return list(_LOAD_FAILURES)
+
+
+def _load_one(name):
+    """Import one application module atomically: on any failure, roll back
+    anything it partially registered and quarantine it. Returns True on success."""
+    before = set(registry._REGISTRY.keys())
+    try:
+        importlib.import_module(f"{__name__}.{name}")
+        return True
+    except Exception as e:  # noqa: BLE001 — a broken optional plugin must not crash boot
+        # undo any partial registration so the registry stays consistent
+        for k in set(registry._REGISTRY.keys()) - before:
+            registry._REGISTRY.pop(k, None)
+        _LOAD_FAILURES.append({"module": name, "error": repr(e)})
+        log.error("app plugin '%s' failed to load and was quarantined: %r", name, e)
+        return False
+
 
 def load_apps():
-    """Discover and import every application module here (self-registration),
-    then validate the resulting registry. Returns the registered applications."""
+    """Discover and import every application module here (self-registration).
+    A broken OPTIONAL application is quarantined (recorded, skipped) so it cannot
+    crash the platform; the registry is then validated over whatever loaded
+    cleanly. Returns the registered applications."""
+    _LOAD_FAILURES.clear()
     for mod in pkgutil.iter_modules(__path__):
         if mod.name.startswith("_"):
             continue
-        importlib.import_module(f"{__name__}.{mod.name}")
+        _load_one(mod.name)
     validate_registry()
     return registry.applications()
 
