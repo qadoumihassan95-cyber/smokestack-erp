@@ -150,4 +150,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: [lint-static, deps-audit, unit-tests, migration-pg, build-artifact]
     steps:
+      # This job does not check out the repo, so it must not inherit the
+      # workflow-level `working-directory: backend` default (that dir doesn't
+      # exist here). Pin to the runner workspace root.
       - run: echo "All required checks passed — safe to deploy."
+        working-directory: ${{ github.workspace }}
