@@ -100,10 +100,16 @@ def _write_movement(db, user, sku, branch, mtype, change, notes="", unit_cost=No
     # same "before" and one overwrote the other), leaving the stock table and
     # the movement ledger disagreeing. The arithmetic and the non-negative
     # guard are both evaluated by the database in a single statement.
+    # This is a Core UPDATE, which bypasses the SELECT-only tenant-scoping event —
+    # so it is scoped EXPLICITLY by company_id here. Correct today (global SKUs)
+    # and safe after composite keys land (Wave B): it can only ever mutate the
+    # acting company's own stock row.
+    cid = getattr(user, "_company_id", 1)
     res = db.execute(
         sa_update(models.Stock)
         .where(models.Stock.sku == sku,
                models.Stock.branch == branch,
+               models.Stock.company_id == cid,
                models.Stock.qty + change >= 0)
         .values(qty=models.Stock.qty + change)
     )
