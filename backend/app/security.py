@@ -39,9 +39,19 @@ def verify_pw(p: str, h: str) -> bool:
     except Exception:
         return False
 
-def make_token(user: models.User) -> str:
+# ERP is its own authentication realm (distinct from the PFS Control Center realm
+# "pfs"). Every ERP token carries the company it acts for; legacy tokens minted
+# before tenancy carry none and resolve to Company #1 during the migration.
+REALM = "erp"
+
+
+def make_token(user: models.User, company_id=None, realm: str = REALM, extra: dict = None) -> str:
     exp = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_expire_minutes)
-    return jwt.encode({"sub": user.id, "role": user.role, "exp": exp}, settings.jwt_secret, algorithm=settings.jwt_alg)
+    cid = company_id if company_id is not None else (getattr(user, "company_id", None) or 1)
+    claims = {"sub": user.id, "role": user.role, "realm": realm, "company_id": cid, "exp": exp}
+    if extra:
+        claims.update(extra)
+    return jwt.encode(claims, settings.jwt_secret, algorithm=settings.jwt_alg)
 
 def get_current_user(token: str = Depends(oauth2), db: Session = Depends(get_db)) -> models.User:
     cred = HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or expired token", {"WWW-Authenticate": "Bearer"})
@@ -50,9 +60,25 @@ def get_current_user(token: str = Depends(oauth2), db: Session = Depends(get_db)
         uid = payload.get("sub")
     except JWTError:
         raise cred
+    # A Control Center (PFS) token must never authenticate against the ERP.
+    if payload.get("realm") == "pfs":
+        raise cred
     user = db.get(models.User, uid)
     if not user or user.status != "active":
         raise cred
+    # Resolve the tenant: token claim wins (this is also how impersonation targets
+    # a company), else the user's own company, else Company #1 (legacy token).
+    cid = payload.get("company_id") or getattr(user, "company_id", None) or 1
+    user._company_id = cid
+    user._impersonation = ({"active": True, "by": payload.get("sa")}
+                           if payload.get("imp") else None)
+    # Tag the request-scoped session so tenant scoping applies to every ORM query
+    # in this request (FastAPI caches Depends(get_db), so this is the same session
+    # the endpoint uses).
+    try:
+        db.info["company_id"] = cid
+    except Exception:
+        pass
     return user
 
 def require(*perms):

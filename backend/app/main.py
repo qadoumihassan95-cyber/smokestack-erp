@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .config import settings
 from .database import Base, engine, SessionLocal
+from . import tenancy  # installs generic company-isolation scoping on import
 from .routers import (auth, inventory, ledger, hr, partners, workflow, core,
                       telegram, attendance, licenses, control, assistant, users, chat, schedule)
 

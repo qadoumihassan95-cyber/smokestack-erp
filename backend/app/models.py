@@ -7,6 +7,7 @@ from .database import Base
 
 class Branch(Base):
     __tablename__ = "branches"
+    company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     name = Column(String, primary_key=True)
     # attendance geofence settings
     lat = Column(Numeric(10, 6)); lng = Column(Numeric(10, 6))
@@ -20,6 +21,7 @@ class Branch(Base):
 
 class Attendance(Base):
     __tablename__ = "attendance"
+    company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     user_id = Column(String, index=True)
     employee_id = Column(String)
@@ -39,6 +41,7 @@ class Attendance(Base):
 
 class User(Base):
     __tablename__ = "users"
+    company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     id = Column(String, primary_key=True)
     name = Column(String, nullable=False)
     role = Column(String, nullable=False)
@@ -61,11 +64,13 @@ class User(Base):
 
 class UserBranch(Base):
     __tablename__ = "user_branches"
+    company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     branch = Column(String, ForeignKey("branches.name"), primary_key=True)
 
 class Product(Base):
     __tablename__ = "products"
+    company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     sku = Column(String, primary_key=True)
     barcode = Column(String, index=True)
     name = Column(String, nullable=False)
@@ -79,12 +84,14 @@ class Product(Base):
 
 class Stock(Base):
     __tablename__ = "stock"
+    company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     sku = Column(String, ForeignKey("products.sku", ondelete="CASCADE"), primary_key=True)
     branch = Column(String, ForeignKey("branches.name"), primary_key=True)
     qty = Column(Integer, default=0)
 
 class Movement(Base):
     __tablename__ = "movements"
+    company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     ref = Column(String); sku = Column(String, ForeignKey("products.sku"), index=True)
     branch = Column(String, index=True)
@@ -95,6 +102,7 @@ class Movement(Base):
 
 class Ledger(Base):
     __tablename__ = "ledger"
+    company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     branch = Column(String, index=True)
     type = Column(String)                 # sale|expense|purchase|payroll|deposit
@@ -107,6 +115,7 @@ class Ledger(Base):
 
 class Employee(Base):
     __tablename__ = "employees"
+    company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     id = Column(String, primary_key=True); name = Column(String, nullable=False)
     branch = Column(String, index=True); title = Column(String)
     pay_type = Column(String, default="salary")
@@ -124,6 +133,7 @@ class Employee(Base):
 
 class License(Base):
     __tablename__ = "licenses"
+    company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     name = Column(String, nullable=False)
     doc_type = Column(String)              # business_license | tobacco_license | sales_tax_permit | ...
@@ -140,26 +150,31 @@ class License(Base):
 
 class Purchase(Base):
     __tablename__ = "purchases"
+    company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     id = Column(String, primary_key=True); vendor = Column(String); branch = Column(String, index=True)
     amount = Column(Numeric(12, 2)); status = Column(String, default="pending_approval")
     purchase_date = Column(Date, server_default=func.current_date())
 
 class Transfer(Base):
     __tablename__ = "transfers"
+    company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     id = Column(String, primary_key=True); sku = Column(String)
     from_branch = Column(String); to_branch = Column(String)
     qty = Column(Integer); status = Column(String, default="pending")
 
 class Customer(Base):
     __tablename__ = "customers"
+    company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     id = Column(String, primary_key=True); name = Column(String); balance = Column(Numeric(12, 2), default=0)
 
 class Supplier(Base):
     __tablename__ = "suppliers"
+    company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     id = Column(String, primary_key=True); name = Column(String); balance = Column(Numeric(12, 2), default=0)
 
 class Approval(Base):
     __tablename__ = "approvals"
+    company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     id = Column(String, primary_key=True); kind = Column(String); ref = Column(String)
     branch = Column(String, index=True); amount = Column(Numeric(12, 2))
     requested_by = Column(String); summary = Column(String); status = Column(String, default="pending")
@@ -168,12 +183,14 @@ class Approval(Base):
 
 class ClockEvent(Base):
     __tablename__ = "clock_events"
+    company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     employee = Column(String); branch = Column(String); direction = Column(String)
     at_ts = Column(DateTime(timezone=True), server_default=func.now())
 
 class AuditLog(Base):
     __tablename__ = "audit_log"
+    company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     ts = Column(DateTime(timezone=True), server_default=func.now(), index=True)
     source = Column(String, default="WEB")
@@ -186,6 +203,7 @@ class AuditLog(Base):
 
 class TelegramLink(Base):
     __tablename__ = "telegram_links"
+    company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     tg_id = Column(String, primary_key=True); user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), index=True)
     username = Column(String); device = Column(String)
     linked_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -207,6 +225,7 @@ class LinkCode(Base):
     system multi-employee: previously the code carried only the signed-in user,
     so every code an owner generated pointed back at the owner."""
     __tablename__ = "link_codes"
+    company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     code = Column(String, primary_key=True); user_id = Column(String)
     expires_at = Column(DateTime(timezone=True)); used = Column(Boolean, default=False)
     employee_id = Column(String)     # the employee this invitation is for
@@ -217,6 +236,7 @@ class ValidationRun(Base):
     """Financial Control Center audit history. This is the ONLY table the
     control module writes to — every validation check itself is read-only."""
     __tablename__ = "validation_runs"
+    company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     ts = Column(DateTime(timezone=True), server_default=func.now(), index=True)
     user_id = Column(String)
@@ -239,6 +259,7 @@ class ReportRecipient(Base):
     manager can never be configured into another branch's data.
     """
     __tablename__ = "report_recipients"
+    company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     tg_id = Column(String, primary_key=True)
     enabled = Column(Boolean, default=True)
     morning = Column(Boolean, default=True)
@@ -261,6 +282,7 @@ class ReportDelivery(Base):
     report can never be sent twice for the same business date and slot.
     """
     __tablename__ = "report_deliveries"
+    company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     idem_key = Column(String, unique=True, index=True)
     report_type = Column(String)          # morning | evening | manual | test
@@ -286,6 +308,7 @@ class CompanySetting(Base):
     not require a schema change.
     """
     __tablename__ = "company_settings"
+    company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     key = Column(String, primary_key=True)
     value = Column(Text)
     updated_by = Column(String)
@@ -298,6 +321,7 @@ class CompanySetting(Base):
 # =========================================================================
 class ChatRoom(Base):
     __tablename__ = "chat_rooms"
+    company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     kind = Column(String, default="group")     # company|branch|department|management|private|group
     name = Column(String)
@@ -310,6 +334,7 @@ class ChatRoom(Base):
 
 class ChatMember(Base):
     __tablename__ = "chat_members"
+    company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     room_id = Column(BigInteger, index=True)
     user_id = Column(String, index=True)
@@ -321,6 +346,7 @@ class ChatMember(Base):
 
 class ChatMessage(Base):
     __tablename__ = "chat_messages"
+    company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     room_id = Column(BigInteger, index=True)
     user_id = Column(String, index=True)
@@ -338,6 +364,7 @@ class ChatMessage(Base):
 
 class ChatReaction(Base):
     __tablename__ = "chat_reactions"
+    company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     message_id = Column(BigInteger, index=True)
     user_id = Column(String)
@@ -346,6 +373,7 @@ class ChatReaction(Base):
 
 class ChatPresence(Base):
     __tablename__ = "chat_presence"
+    company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     user_id = Column(String, primary_key=True)
     last_seen = Column(DateTime(timezone=True))
     typing_room = Column(BigInteger)
@@ -354,6 +382,7 @@ class ChatPresence(Base):
 
 class ChatTask(Base):
     __tablename__ = "chat_tasks"
+    company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     room_id = Column(BigInteger, index=True)
     message_id = Column(BigInteger)
@@ -369,6 +398,7 @@ class ChatTask(Base):
 
 class ChatAnnouncement(Base):
     __tablename__ = "chat_announcements"
+    company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     scope = Column(String, default="company")      # company | branch
     branch = Column(String)
@@ -393,6 +423,7 @@ class ReminderSetting(Base):
     so two worker instances can never double-send.
     """
     __tablename__ = "reminder_settings"
+    company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     id = Column(Integer, primary_key=True, default=1)
     enabled = Column(Boolean, default=False)
     interval_hours = Column(Integer, default=12)          # every N hours
@@ -417,6 +448,7 @@ class ReminderDelivery(Base):
     hours / paused day) is recorded with tg_id '-'.
     """
     __tablename__ = "reminder_deliveries"
+    company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     idem_key = Column(String, unique=True, index=True)
     run_at = Column(DateTime(timezone=True), index=True)   # scheduled/queued time (UTC)
@@ -443,6 +475,7 @@ class EmployeeSchedule(Base):
     of the shift's ISO week) groups a week for publishing and delivery.
     """
     __tablename__ = "employee_schedules"
+    company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     employee_id = Column(String, index=True)
     branch = Column(String, index=True)
@@ -467,6 +500,7 @@ class ScheduleTemplate(Base):
     from alternate-week expansion; `every_other` marks the alternate cadence.
     """
     __tablename__ = "schedule_templates"
+    company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     name = Column(String)
     recurrence = Column(String, default="weekly")          # weekly|weekdays|weekends|alternate|custom
@@ -483,6 +517,7 @@ class ScheduleTemplate(Base):
 class ScheduleException(Base):
     """A one-off override for a specific date (time-off, swap, modified hours)."""
     __tablename__ = "schedule_exceptions"
+    company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     employee_id = Column(String, index=True)
     work_date = Column(Date, index=True)
@@ -503,6 +538,7 @@ class TelegramDeliveryLog(Base):
     same schedule twice for the same recipient.
     """
     __tablename__ = "telegram_delivery_log"
+    company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     idem_key = Column(String, unique=True, index=True)
     employee_id = Column(String, index=True)
