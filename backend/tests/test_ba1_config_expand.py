@@ -28,13 +28,19 @@ with TestClient(app):
     pass
 
 
-def test_composite_unique_exists_on_company_settings():
+def test_composite_uniqueness_on_company_settings():
+    # Phase-agnostic: (company_id, key) is enforced either by the interim
+    # composite unique index (EXPAND) or by the composite primary key (CONTRACT).
     insp = sa.inspect(SessionLocal().bind)
     uqs = insp.get_unique_constraints("company_settings")
     idx = insp.get_indexes("company_settings")
-    covered = any(set(u["column_names"]) == {"company_id", "key"} for u in uqs) or \
-              any(set(i["column_names"]) == {"company_id", "key"} and i.get("unique") for i in idx)
-    assert covered, "composite (company_id, key) uniqueness must exist after expand"
+    pk = set(insp.get_pk_constraint("company_settings").get("constrained_columns") or [])
+    covered = (
+        any(set(u["column_names"]) == {"company_id", "key"} for u in uqs)
+        or any(set(i["column_names"]) == {"company_id", "key"} and i.get("unique") for i in idx)
+        or pk == {"company_id", "key"}
+    )
+    assert covered, "composite (company_id, key) uniqueness must be enforced"
 
 
 def test_company_one_timezone_roundtrip_unchanged():
@@ -83,4 +89,6 @@ def test_full_alembic_chain_applies_with_ba1():
                         os.path.join(os.path.dirname(__file__), "..", "migrations"))
     command.upgrade(cfg, "head")
     insp = sa.inspect(sa.create_engine(url))
-    assert "uq_company_settings_company_key" in {i["name"] for i in insp.get_indexes("company_settings")}
+    # after the full chain (through CONTRACT) the composite is the primary key
+    pk = set(insp.get_pk_constraint("company_settings").get("constrained_columns") or [])
+    assert pk == {"company_id", "key"}
