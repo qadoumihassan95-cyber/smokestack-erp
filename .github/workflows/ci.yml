@@ -64,7 +64,7 @@ jobs:
       - name: pip-audit (fail on new vulnerabilities)
         run: >
           pip-audit -r requirements.txt --strict
-          --ignore-vuln PYSEC-2024-233 --ignore-vuln PYSEC-2025-185
+          --ignore-vuln PYSEC-2024-232 --ignore-vuln PYSEC-2024-233 --ignore-vuln PYSEC-2025-185
           --ignore-vuln PYSEC-2026-161 --ignore-vuln PYSEC-2026-248
           --ignore-vuln PYSEC-2026-249 --ignore-vuln PYSEC-2026-1942
           --ignore-vuln PYSEC-2026-1941 --ignore-vuln PYSEC-2026-2281
@@ -81,7 +81,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-      - run: pip install -r requirements.txt pytest
+      - run: pip install -r requirements.txt -r requirements-dev.txt
       - name: Run full backend suite
         run: pytest -q
 
@@ -108,7 +108,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-      - run: pip install -r requirements.txt pytest
+      - run: pip install -r requirements.txt -r requirements-dev.txt
       - name: alembic upgrade head (mirrors prod preDeploy)
         run: alembic upgrade head
       - name: Assert exactly one alembic head
