@@ -21,17 +21,34 @@ def _cid(db, company_id=None):
         return 1
 
 
-# ------------------------------------------------------------------ customers
-def get_customer(db, business_id, company_id=None):
+# ---------------------------------------------------------- generic (Option B)
+def get_by_business_id(db, model, business_id, company_id=None):
+    """Resolve a B-B entity by its tenant-scoped business number (company_id, id).
+    Works in both schema phases (EXPAND: id is the PK; CONTRACT: row_id is)."""
     cid = _cid(db, company_id)
-    return (db.query(models.Customer)
-            .filter(models.Customer.company_id == cid,
-                    models.Customer.id == business_id)
+    return (db.query(model)
+            .filter(model.company_id == cid, model.id == business_id)
             .first())
 
 
-def list_customers(db, company_id=None):
+def list_for_company(db, model, company_id=None):
     cid = _cid(db, company_id)
-    return (db.query(models.Customer)
-            .filter(models.Customer.company_id == cid)
-            .all())
+    return db.query(model).filter(model.company_id == cid).all()
+
+
+# ------------------------------------------------------------------ customers
+def get_customer(db, business_id, company_id=None):
+    return get_by_business_id(db, models.Customer, business_id, company_id)
+
+
+def list_customers(db, company_id=None):
+    return list_for_company(db, models.Customer, company_id)
+
+
+# ------------------------------------------------------------------ suppliers
+def get_supplier(db, business_id, company_id=None):
+    return get_by_business_id(db, models.Supplier, business_id, company_id)
+
+
+def list_suppliers(db, company_id=None):
+    return list_for_company(db, models.Supplier, company_id)

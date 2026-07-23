@@ -174,7 +174,10 @@ class Customer(Base):
     name = Column(String); balance = Column(Numeric(12, 2), default=0)
 
 class Supplier(Base):
+    # Wave B (B-B) — suppliers: EXPAND keeps `id` PK + adds surrogate row_id (DB) +
+    # composite unique (company_id, id); CONTRACT moves PK to surrogate row_id.
     __tablename__ = "suppliers"
+    __table_args__ = (UniqueConstraint("company_id", "id", name="uq_suppliers_company_id"),)
     company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     id = Column(String, primary_key=True); name = Column(String); balance = Column(Numeric(12, 2), default=0)
 
