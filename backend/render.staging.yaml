@@ -1,0 +1,59 @@
+# Render Blueprint — PFS STAGING (mirror of production).
+# Provision from the Render dashboard: New → Blueprint → point at this file.
+# Staging mirrors prod exactly except: isolated DB, seed enabled, distinct names/URLs.
+# ALL migrations run on staging first (Phase 2), then promote to production.
+databases:
+  - name: smokestack-db-staging
+    plan: basic-256mb            # same class as prod
+    postgresMajorVersion: "16"   # SAME PostgreSQL major version as prod
+
+services:
+  # --- API (same runtime, build, migration + deploy flow, health path as prod) ---
+  - type: web
+    name: smokestack-api-staging
+    runtime: python
+    plan: starter
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    preDeployCommand: alembic upgrade head       # identical migration process
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.10"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: smokestack-db-staging
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRE_MINUTES
+        value: "720"
+      - key: CORS_ORIGINS
+        value: https://smokestack-erp-staging.onrender.com
+      - key: SEED_ON_START
+        value: "true"            # staging starts from seed data (safe to reset)
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false              # set a STAGING bot token in the dashboard (never prod's)
+
+  # --- Worker (same architecture as prod: one background worker) ---
+  - type: worker
+    name: smokestack-telegram-staging
+    runtime: python
+    plan: starter
+    rootDir: backend/telegram_worker
+    buildCommand: pip install -r requirements.txt
+    startCommand: python worker.py
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.10"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: smokestack-db-staging
+          property: connectionString
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: API_BASE_URL
+        value: https://smokestack-api-staging.onrender.com
