@@ -67,6 +67,13 @@ _REGISTRY: dict = {}
 
 
 def register_application(app: AppDescriptor) -> AppDescriptor:
+    # Prevent two different application packages from claiming the same key.
+    # Re-registering the identical descriptor (module re-import) is a no-op.
+    existing = _REGISTRY.get(app.key)
+    if existing is not None and existing is not app:
+        raise ValueError(
+            f"duplicate application key '{app.key}' — already registered by "
+            f"another application package")
     _REGISTRY[app.key] = app
     return app
 
