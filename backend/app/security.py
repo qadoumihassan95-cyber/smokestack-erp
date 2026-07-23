@@ -1,7 +1,7 @@
 """Auth + RBAC: password hashing, JWT, current-user dependency, permission +
 branch guards, and an audit helper. Every protected route depends on these."""
 from datetime import datetime, timedelta, timezone
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from passlib.context import CryptContext
@@ -53,7 +53,8 @@ def make_token(user: models.User, company_id=None, realm: str = REALM, extra: di
         claims.update(extra)
     return jwt.encode(claims, settings.jwt_secret, algorithm=settings.jwt_alg)
 
-def get_current_user(token: str = Depends(oauth2), db: Session = Depends(get_db)) -> models.User:
+def get_current_user(request: Request = None, token: str = Depends(oauth2),
+                     db: Session = Depends(get_db)) -> models.User:
     cred = HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or expired token", {"WWW-Authenticate": "Bearer"})
     try:
         payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_alg])
@@ -79,6 +80,14 @@ def get_current_user(token: str = Depends(oauth2), db: Session = Depends(get_db)
         db.info["company_id"] = cid
     except Exception:
         pass
+    # expose resolved identity to the observability middleware (same request obj)
+    if request is not None:
+        try:
+            request.state.company_id = cid
+            request.state.user_id = user.id
+            request.state.impersonation = bool(user._impersonation)
+        except Exception:
+            pass
     return user
 
 def require(*perms):

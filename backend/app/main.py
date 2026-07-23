@@ -10,6 +10,7 @@ from sqlalchemy import text
 from .config import settings
 from .database import Base, engine, SessionLocal
 from . import tenancy  # installs generic company-isolation scoping on import
+from .observability import ObservabilityMiddleware, BUILD_VERSION
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -24,6 +25,8 @@ app.add_middleware(
     allow_origins=settings.cors_origins or ["*"],
     allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
 )
+# Structured per-request observability (request_id + tenant/user correlation).
+app.add_middleware(ObservabilityMiddleware)
 
 for r in (auth.router, core.router, inventory.router, ledger.router, hr.router,
           partners.router, workflow.router, telegram.router, attendance.router,
@@ -74,6 +77,7 @@ def health():
         checks["registry"] = f"error: {e.__class__.__name__}"
         healthy = False
 
+    checks["build"] = BUILD_VERSION
     body = {"status": "ok" if healthy else "degraded",
             "service": "smokestack-erp-api", "version": "1.0.0", "checks": checks}
     if not healthy:
