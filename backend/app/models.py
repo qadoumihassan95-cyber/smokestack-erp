@@ -1,7 +1,7 @@
 """SQLAlchemy models — one table per ERP module. The `movements` table is the
 immutable stock ledger used for history + as-of reporting."""
 from sqlalchemy import (Column, Integer, BigInteger, String, Numeric, Boolean,
-                        Date, DateTime, ForeignKey, Text, func)
+                        Date, DateTime, ForeignKey, Text, UniqueConstraint, func)
 from sqlalchemy.orm import relationship
 from .database import Base
 
@@ -163,7 +163,12 @@ class Transfer(Base):
     qty = Column(Integer); status = Column(String, default="pending")
 
 class Customer(Base):
+    # Wave B (B-B) — customers: business number `id` is per-company. EXPAND phase
+    # keeps `id` as the PK and adds the surrogate `row_id` (DB-side) plus a
+    # composite unique (company_id, id). CONTRACT (B-B-C1-contract) moves the PK to
+    # the surrogate `row_id`, leaving `id` a tenant-scoped visible business number.
     __tablename__ = "customers"
+    __table_args__ = (UniqueConstraint("company_id", "id", name="uq_customers_company_id"),)
     company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
     id = Column(String, primary_key=True); name = Column(String); balance = Column(Numeric(12, 2), default=0)
 
