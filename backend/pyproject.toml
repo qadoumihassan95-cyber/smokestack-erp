@@ -40,6 +40,9 @@ line-ending = "lf"
 [tool.pytest.ini_options]
 addopts = "-p no:cacheprovider"
 testpaths = ["tests"]
+# Put the backend root on sys.path so `import app...` resolves without an editable
+# install, in any environment (local shell, CI runner, fresh checkout).
+pythonpath = ["."]
 
 [tool.bandit]
 # Security static analysis; skip test scaffolding and parameterized-DDL migration helper.
