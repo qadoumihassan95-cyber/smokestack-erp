@@ -11,6 +11,7 @@ from .config import settings
 from .database import Base, engine, SessionLocal
 from . import tenancy  # installs generic company-isolation scoping on import
 from .observability import ObservabilityMiddleware, BUILD_VERSION
+from .idempotency import IdempotencyMiddleware
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -27,6 +28,9 @@ app.add_middleware(
 )
 # Structured per-request observability (request_id + tenant/user correlation).
 app.add_middleware(ObservabilityMiddleware)
+# Shared idempotency: replays the first response for a repeated Idempotency-Key
+# (Engineering Phase 5). Outermost, so a replay short-circuits before any handler.
+app.add_middleware(IdempotencyMiddleware)
 
 for r in (auth.router, core.router, inventory.router, ledger.router, hr.router,
           partners.router, workflow.router, telegram.router, attendance.router,

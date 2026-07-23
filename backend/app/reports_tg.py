@@ -113,8 +113,14 @@ def _sales_split(db, brs, d0, d1):
 
 
 def _inventory(db, brs):
+    # Phase 7 hardening: the join is scoped by company_id explicitly, not by the
+    # tenant event alone. Once two companies share a SKU this prevents any
+    # cross-company fan-out even if the query ever runs outside a scoped session.
+    # (At B-C this becomes a surrogate-FK join: Stock.product_row_id == Product.row_id.)
     rows = (db.query(models.Stock, models.Product)
-            .join(models.Product, models.Product.sku == models.Stock.sku)
+            .join(models.Product,
+                  (models.Product.sku == models.Stock.sku)
+                  & (models.Product.company_id == models.Stock.company_id))
             .filter(models.Stock.branch.in_(brs)).all())
     value = 0.0
     low = out = 0

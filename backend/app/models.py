@@ -614,6 +614,37 @@ class Application(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
+class DocumentCounter(Base):
+    """Per-company monotonic document-number counter (Engineering Phase 4).
+
+    Replaces timestamp-based ids (PO-<epoch>, TR-<epoch>, …) which could collide
+    on UNIQUE(company_id, id) under concurrency. Config/association table → composite
+    PK carve-out per PFS Architecture v1.0 (no surrogate needed).
+    """
+    __tablename__ = "document_counters"
+    company_id = Column(Integer, primary_key=True)
+    doc_type = Column(String, primary_key=True)   # PO|TR|AP|MV|SALE|INV|RCPT|RET|ADJ|...
+    next_val = Column(BigInteger().with_variant(Integer, "sqlite"), default=0)
+
+
+class IdempotencyKey(Base):
+    """Shared idempotency store (Engineering Phase 5).
+
+    A mutating request carrying an ``Idempotency-Key`` header is executed at most
+    once; the first response is cached and replayed on retries. Scoped per caller
+    (token hash) so keys never collide across tenants.
+    """
+    __tablename__ = "idempotency_keys"
+    scope = Column(String, primary_key=True)      # hash(Authorization) — per-caller/tenant
+    key = Column(String, primary_key=True)        # client-supplied Idempotency-Key
+    method = Column(String)
+    path = Column(String)
+    status_code = Column(Integer)
+    response_body = Column(Text)
+    content_type = Column(String)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class Company(Base):
     """A tenant. Company #1 is the existing SmokeStack business (created by the
     Phase 0 seed). status drives lifecycle: active|suspended|archived|deleted."""
