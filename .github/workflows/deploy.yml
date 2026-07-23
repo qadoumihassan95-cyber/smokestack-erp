@@ -1,0 +1,52 @@
+name: PFS Deploy (gated)
+
+# Safe, gated production/staging deploy. Manual dispatch only, so a deploy never
+# fires without intent. It (1) runs preflight, (2) triggers a Render deploy via a
+# deploy hook, (3) verifies the live service, (4) emits a deployment report.
+#
+# Enable by adding repository secrets:
+#   RENDER_DEPLOY_HOOK_STAGING   RENDER_DEPLOY_HOOK_PROD
+#   STAGING_URL                  PROD_URL
+# Recommended: also enable Render "Auto-Deploy: After CI checks pass" so ordinary
+# pushes only deploy when PFS CI is green.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        options: [staging, production]
+        default: staging
+
+defaults:
+  run:
+    working-directory: backend
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install alembic sqlalchemy
+      - name: Preflight gate
+        run: python scripts/deploy_safety.py preflight
+      - name: Trigger Render deploy
+        env:
+          HOOK: ${{ inputs.environment == 'production' && secrets.RENDER_DEPLOY_HOOK_PROD || secrets.RENDER_DEPLOY_HOOK_STAGING }}
+        run: |
+          test -n "$HOOK" || { echo "::error::deploy hook secret not set for ${{ inputs.environment }}"; exit 1; }
+          curl -fsS -X POST "$HOOK" > /dev/null && echo "deploy triggered"
+      - name: Wait for rollout
+        run: sleep 90
+      - name: Post-deploy verify
+        env:
+          URL: ${{ inputs.environment == 'production' && secrets.PROD_URL || secrets.STAGING_URL }}
+        run: python scripts/deploy_safety.py verify "$URL"
+      - name: Deployment report
+        env:
+          URL: ${{ inputs.environment == 'production' && secrets.PROD_URL || secrets.STAGING_URL }}
+        run: python scripts/deploy_safety.py report "$URL"
