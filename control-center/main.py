@@ -135,11 +135,20 @@ def _license(lic):
 
 
 def _effective_session_status(s):
-    """Compute the live status without mutating the row (expiry is time-derived)."""
+    """Compute the live status without mutating the row (expiry is time-derived).
+
+    Timezone-safe: `DateTime(timezone=True)` columns come back tz-aware on PostgreSQL but
+    naive on SQLite, so we build `now` with the SAME awareness as `expires_at` before
+    comparing (avoids 'can't compare offset-naive and offset-aware datetimes').
+    """
     if s.status in ("revoked",):
         return "revoked"
-    if s.expires_at and datetime.datetime.utcnow() >= s.expires_at:
-        return "expired"
+    exp = s.expires_at
+    if exp is not None:
+        now = (datetime.datetime.now(exp.tzinfo) if exp.tzinfo is not None
+               else datetime.datetime.utcnow())
+        if now >= exp:
+            return "expired"
     return s.status
 
 
