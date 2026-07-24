@@ -346,3 +346,18 @@ def test_global_search_empty_query_returns_empty_buckets():
 
 def test_global_search_requires_auth():
     assert client.get("/api/search?q=x").status_code == 401
+
+
+def test_effective_session_status_timezone_safe():
+    """Regression: PostgreSQL returns tz-AWARE datetimes for DateTime(timezone=True);
+    the status calc must not raise 'can't compare offset-naive and offset-aware datetimes'."""
+    import datetime as _dt
+    from types import SimpleNamespace
+    import main as M
+    aware_future = _dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(minutes=30)
+    aware_past = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(minutes=30)
+    naive_future = _dt.datetime.utcnow() + _dt.timedelta(minutes=30)
+    assert M._effective_session_status(SimpleNamespace(status="pending_erp_integration", expires_at=aware_future)) == "pending_erp_integration"
+    assert M._effective_session_status(SimpleNamespace(status="pending_erp_integration", expires_at=aware_past)) == "expired"
+    assert M._effective_session_status(SimpleNamespace(status="active", expires_at=naive_future)) == "active"
+    assert M._effective_session_status(SimpleNamespace(status="revoked", expires_at=aware_past)) == "revoked"
