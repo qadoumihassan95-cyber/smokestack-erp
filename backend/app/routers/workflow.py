@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import update as sa_update
 from datetime import datetime
 from ..database import get_db
 from .. import models, security as S, partners_repo as PR, counters
@@ -49,6 +50,19 @@ def _decide(db, user, aid, status, comment):
     if a.status != "pending":
         raise HTTPException(409, f"This request was already {a.status}.")
     S.assert_branch(user, db, a.branch)
+    # Atomic decision claim (compare-and-swap): approve AND reject use the SAME
+    # primitive and succeed only while the approval is still pending, so exactly one
+    # decision can ever win; the loser gets the existing conflict response. The Core
+    # UPDATE bypasses the SELECT-only scoping event, so it is scoped by company_id.
+    claimed = db.execute(
+        sa_update(models.Approval)
+        .where(models.Approval.row_id == a.row_id,
+               models.Approval.company_id == getattr(user, "_company_id", 1),
+               models.Approval.status == "pending")
+        .values(status=status, decided_by=user.name, comment=comment)
+    ).rowcount
+    if claimed != 1:
+        raise HTTPException(409, "This request was already decided.")
     # Approving must actually complete the underlying work. Previously the
     # approval row flipped to "approved" but the transfer never moved stock and
     # the purchase stayed pending forever.
