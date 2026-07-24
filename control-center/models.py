@@ -1,9 +1,19 @@
-"""PFS Control Center — fleet & platform metadata model (Milestone 1).
+"""PFS Control Center — platform metadata model (Milestone 1.1, accountant model).
 
 Metadata ONLY. This service never stores customer transactional/business data; the
 authoritative customer record is owned by the ERP application (ADR-021, ADR-028).
+
+Product mental model (QuickBooks-Accountant + App Store Connect + GitHub Orgs):
+    PFS  ->  ERP Product  ->  Customers  ->  Support Session ("Open ERP")
+Supporting workspace objects per ERP: Versions (Release), Updates (CustomerDeployment/
+Deployment), Licenses, Health, Audit, Settings.
+
 Two-lane lifecycle (ADR-028): platform-owned Master environments (dev/test/prod) publish
-immutable Releases that are deployed to customer-facing Customer-Production runtimes.
+immutable Releases ("Versions") that are rolled out ("Updates") to customer runtimes.
+`Runtime` remains a *backend* technical entity — it is not a primary navigation destination
+in the owner UI; owners think in ERP Products and Customers.
+
+First-class additions in this milestone: `License` and `SupportSession` (both metadata-only).
 """
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, func
 
@@ -117,6 +127,54 @@ class Deployment(Base):
     status = Column(String, default="observed")
     health_at_observe = Column(String)
     observed_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class License(Base):
+    """A first-class licence granting a Customer the right to run an ERP Product.
+
+    Metadata only — no billing or payment processing. Statuses: trial | active |
+    suspended | expired | cancelled.
+    """
+    __tablename__ = "licenses"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    erp_product_id = Column(String, ForeignKey("erp_products.id"), index=True)
+    customer_ref_id = Column(Integer, ForeignKey("customer_refs.id"), index=True)
+    plan = Column(String, nullable=False, default="standard")   # e.g. trial | standard | pro | enterprise
+    status = Column(String, nullable=False, default="trial")    # trial|active|suspended|expired|cancelled
+    start_date = Column(DateTime(timezone=True))
+    expiry_date = Column(DateTime(timezone=True))
+    seat_limit = Column(Integer)
+    branch_limit = Column(Integer)
+    notes = Column(Text)
+    created_by = Column(String)                                 # operator id
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class SupportSession(Base):
+    """A first-class, short-lived, capability-scoped, auditable, revocable support grant.
+
+    The "Open ERP" action. It NEVER uses a customer password (ADR-025). Because ERP-side
+    session consumption is not yet implemented, a new session is created in the
+    `pending_erp_integration` state: the Control Center records the grant, exposes the
+    registered customer ERP URL, and audits it — but does not (and must not) authenticate
+    into the ERP. Restricted by default: capabilities are minimal unless explicitly widened.
+    """
+    __tablename__ = "support_sessions"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_ref = Column(String, unique=True, index=True)      # opaque, non-authenticating handle
+    erp_product_id = Column(String, ForeignKey("erp_products.id"), index=True)
+    customer_ref_id = Column(Integer, ForeignKey("customer_refs.id"), index=True)
+    operator_id = Column(String)                               # who opened it
+    reason = Column(Text)
+    capabilities = Column(Text, default="support:read")        # comma-list; restricted by default
+    # pending_erp_integration | active | expired | revoked
+    status = Column(String, nullable=False, default="pending_erp_integration")
+    target_url = Column(String)                                # registered customer ERP URL (metadata)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    expires_at = Column(DateTime(timezone=True))
+    revoked_at = Column(DateTime(timezone=True))
+    revoked_by = Column(String)
 
 
 class PlatformAuditLog(Base):

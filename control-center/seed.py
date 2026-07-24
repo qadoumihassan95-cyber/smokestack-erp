@@ -19,7 +19,7 @@ from security import hash_pw
 
 def seed(db):
     if not db.get(models.Operator, "OP-owner"):
-        db.add(models.Operator(id="OP-owner", name="Platform Owner", email="owner@pfs.local",
+        db.add(models.Operator(id="OP-owner", name="Platform Owner", email=settings.seed_email,
                                password_hash=hash_pw(settings.seed_password),
                                platform_role="owner", status="active"))
 
@@ -76,4 +76,14 @@ def seed(db):
     if not db.query(models.Deployment).filter_by(runtime_id=rt.id, release_id=rel.id).first():
         db.add(models.Deployment(runtime_id=rt.id, release_id=rel.id, kind="customer_deployment",
                                  status="observed", health_at_observe="unknown"))
+        db.commit()
+
+    # A first-class Licence for Company #1 (metadata only; no billing). Marks the origin
+    # customer as an active production licence so the accountant UI has a real row to show.
+    if not db.query(models.License).filter_by(customer_ref_id=cust.id).first():
+        db.add(models.License(
+            erp_product_id="smokestack", customer_ref_id=cust.id, plan="enterprise",
+            status="active", start_date=datetime.utcnow(), expiry_date=None,
+            seat_limit=None, branch_limit=None, created_by="OP-owner",
+            notes="Origin customer licence (metadata only; no billing/payment)."))
         db.commit()

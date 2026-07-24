@@ -7,6 +7,7 @@ Master runtimes, access customer transactional data, or consume Enter-ERP grants
 import datetime
 import json
 import os
+import secrets
 import urllib.request
 
 import sqlalchemy as sa
@@ -118,6 +119,79 @@ def _dep(d, db):
             "release_id": d.release_id, "release_version": rel.version if rel else None,
             "kind": d.kind, "status": d.status, "health_at_observe": d.health_at_observe,
             "observed_at": d.observed_at.isoformat() if d.observed_at else None}
+
+
+def _iso(dt):
+    return dt.isoformat() if dt else None
+
+
+def _license(lic):
+    return {"id": lic.id, "erp_product_id": lic.erp_product_id,
+            "customer_ref_id": lic.customer_ref_id, "plan": lic.plan, "status": lic.status,
+            "start_date": _iso(lic.start_date), "expiry_date": _iso(lic.expiry_date),
+            "seat_limit": lic.seat_limit, "branch_limit": lic.branch_limit,
+            "notes": lic.notes, "created_by": lic.created_by,
+            "created_at": _iso(lic.created_at), "updated_at": _iso(lic.updated_at)}
+
+
+def _effective_session_status(s):
+    """Compute the live status without mutating the row (expiry is time-derived)."""
+    if s.status in ("revoked",):
+        return "revoked"
+    if s.expires_at and datetime.datetime.utcnow() >= s.expires_at:
+        return "expired"
+    return s.status
+
+
+def _session(s, db):
+    cust = db.get(models.CustomerRef, s.customer_ref_id) if s.customer_ref_id else None
+    return {"id": s.id, "session_ref": s.session_ref, "erp_product_id": s.erp_product_id,
+            "customer_ref_id": s.customer_ref_id,
+            "customer_name": cust.name if cust else None,
+            "operator_id": s.operator_id, "reason": s.reason,
+            "capabilities": s.capabilities, "status": _effective_session_status(s),
+            "stored_status": s.status, "target_url": s.target_url,
+            "created_at": _iso(s.created_at), "expires_at": _iso(s.expires_at),
+            "revoked_at": _iso(s.revoked_at), "revoked_by": s.revoked_by}
+
+
+def _customer_runtime(db, pid):
+    """The shared Customer-Production runtime for a product (deployment_type = shared)."""
+    return (db.query(models.Runtime)
+            .filter_by(erp_product_id=pid, tier="customer",
+                       environment_kind="customer_production")
+            .order_by(models.Runtime.id).first())
+
+
+def _enriched_customer(c, db, product_runtime=None):
+    """Accountant customer row. Health/last-sync are HONEST: per-customer telemetry is not
+    yet integrated (no ERP heartbeat), so health is inherited from the shared runtime and
+    last-sync is explicitly 'not_yet_integrated' — never fabricated (per product spec)."""
+    dep = (db.query(models.CustomerDeployment)
+           .filter_by(customer_ref_id=c.id).order_by(models.CustomerDeployment.id.desc()).first())
+    rel = db.get(models.Release, dep.release_id) if (dep and dep.release_id) else None
+    rt = db.get(models.Runtime, dep.runtime_id) if (dep and dep.runtime_id) else product_runtime
+    lic = (db.query(models.License).filter_by(customer_ref_id=c.id)
+           .order_by(models.License.id.desc()).first())
+    inherited = (rt.last_health_state if rt else None)
+    return {
+        "id": c.id, "erp_product_id": c.erp_product_id, "name": c.name,
+        "external_ref": c.external_ref, "status": c.status, "notes": c.notes,
+        "license_plan": lic.plan if lic else None,
+        "license_status": lic.status if lic else "unlicensed",
+        "license_id": lic.id if lic else None,
+        "current_version": rel.version if rel else None,
+        "current_version_is_legacy": bool(rel.is_legacy_import) if rel else False,
+        # honest health/sync: inherited from runtime; per-customer not integrated
+        "health_source": "inherited_from_runtime" if rt else "unknown",
+        "health": inherited or "unknown",
+        "last_sync_state": "not_yet_integrated",
+        "last_sync_at": None,
+        "deployment_type": ("customer_production_shared" if rt else "unassigned"),
+        "runtime_id": rt.id if rt else None,
+        "runtime_name": rt.name if rt else None,
+        "target_url": (rt.url if rt else None),
+    }
 
 
 # ----------------------------- ERP products & master environments -----------------------------
@@ -289,6 +363,187 @@ def list_deployments(db: Session = Depends(get_db), op=Depends(current_operator)
             db.query(models.Deployment).order_by(models.Deployment.id.desc()).all()]
 
 
+@app.get("/api/products/{pid}/customers")
+def list_product_customers(pid: str, q: str = "", status: str = "",
+                           db: Session = Depends(get_db), op=Depends(current_operator)):
+    """The heart of the ERP workspace: enriched customer rows (search + status filter)."""
+    if not db.get(models.ErpProduct, pid):
+        raise HTTPException(404, "ERP product not found")
+    prt = _customer_runtime(db, pid)
+    rows = [_enriched_customer(c, db, prt) for c in
+            db.query(models.CustomerRef).filter_by(erp_product_id=pid)
+            .order_by(models.CustomerRef.name).all()]
+    if q:
+        ql = q.lower()
+        rows = [r for r in rows if ql in (r["name"] or "").lower()
+                or ql in (r["external_ref"] or "").lower()]
+    if status:
+        rows = [r for r in rows if r["status"] == status]
+    return rows
+
+
+# ----------------------------- licenses (first-class metadata) -----------------------------
+_LICENSE_STATUSES = {"trial", "active", "suspended", "expired", "cancelled"}
+
+
+class LicenseIn(BaseModel):
+    erp_product_id: str
+    customer_ref_id: int
+    plan: str = "standard"
+    status: str = "trial"
+    start_date: str | None = None
+    expiry_date: str | None = None
+    seat_limit: int | None = None
+    branch_limit: int | None = None
+    notes: str = ""
+
+
+class LicensePatch(BaseModel):
+    plan: str | None = None
+    status: str | None = None
+    start_date: str | None = None
+    expiry_date: str | None = None
+    seat_limit: int | None = None
+    branch_limit: int | None = None
+    notes: str | None = None
+
+
+def _parse_dt(v):
+    if not v:
+        return None
+    try:
+        return datetime.datetime.fromisoformat(v.replace("Z", "+00:00")).replace(tzinfo=None)
+    except Exception:
+        raise HTTPException(422, f"Invalid ISO date: {v}")
+
+
+@app.get("/api/licenses")
+def list_licenses(erp_product_id: str = "", customer_ref_id: int | None = None,
+                  db: Session = Depends(get_db), op=Depends(current_operator)):
+    qy = db.query(models.License)
+    if erp_product_id:
+        qy = qy.filter_by(erp_product_id=erp_product_id)
+    if customer_ref_id is not None:
+        qy = qy.filter_by(customer_ref_id=customer_ref_id)
+    return [_license(x) for x in qy.order_by(models.License.id.desc()).all()]
+
+
+@app.post("/api/licenses", status_code=201)
+def create_license(body: LicenseIn, db: Session = Depends(get_db), op=Depends(current_operator)):
+    if not db.get(models.ErpProduct, body.erp_product_id):
+        raise HTTPException(404, "ERP product not found")
+    if not db.get(models.CustomerRef, body.customer_ref_id):
+        raise HTTPException(404, "Customer not found")
+    if body.status not in _LICENSE_STATUSES:
+        raise HTTPException(422, f"status must be one of {sorted(_LICENSE_STATUSES)}")
+    lic = models.License(
+        erp_product_id=body.erp_product_id, customer_ref_id=body.customer_ref_id,
+        plan=body.plan, status=body.status, start_date=_parse_dt(body.start_date),
+        expiry_date=_parse_dt(body.expiry_date), seat_limit=body.seat_limit,
+        branch_limit=body.branch_limit, notes=body.notes, created_by=op.id)
+    db.add(lic)
+    db.commit()
+    audit(db, op, "create", "license", lic.id, f"{body.erp_product_id}/{body.plan}/{body.status}")
+    return {"ok": True, "id": lic.id, "license": _license(lic)}
+
+
+@app.patch("/api/licenses/{lid}")
+def update_license(lid: int, body: LicensePatch,
+                   db: Session = Depends(get_db), op=Depends(current_operator)):
+    lic = db.get(models.License, lid)
+    if not lic:
+        raise HTTPException(404, "License not found")
+    if body.status is not None:
+        if body.status not in _LICENSE_STATUSES:
+            raise HTTPException(422, f"status must be one of {sorted(_LICENSE_STATUSES)}")
+        lic.status = body.status
+    if body.plan is not None:
+        lic.plan = body.plan
+    if body.start_date is not None:
+        lic.start_date = _parse_dt(body.start_date)
+    if body.expiry_date is not None:
+        lic.expiry_date = _parse_dt(body.expiry_date)
+    if body.seat_limit is not None:
+        lic.seat_limit = body.seat_limit
+    if body.branch_limit is not None:
+        lic.branch_limit = body.branch_limit
+    if body.notes is not None:
+        lic.notes = body.notes
+    db.commit()
+    audit(db, op, "update", "license", lic.id, f"{lic.plan}/{lic.status}")
+    return {"ok": True, "license": _license(lic)}
+
+
+# ----------------------------- support sessions ("Open ERP") -----------------------------
+class SupportSessionIn(BaseModel):
+    erp_product_id: str
+    customer_ref_id: int
+    reason: str = ""
+    capabilities: str = "support:read"     # restricted by default
+    minutes: int | None = None             # optional override of default lifetime
+
+
+@app.get("/api/support-sessions")
+def list_support_sessions(erp_product_id: str = "", active_only: bool = False,
+                          db: Session = Depends(get_db), op=Depends(current_operator)):
+    qy = db.query(models.SupportSession)
+    if erp_product_id:
+        qy = qy.filter_by(erp_product_id=erp_product_id)
+    rows = [_session(s, db) for s in qy.order_by(models.SupportSession.id.desc()).all()]
+    if active_only:
+        rows = [r for r in rows if r["status"] in ("active", "pending_erp_integration")]
+    return rows
+
+
+@app.post("/api/support-sessions", status_code=201)
+def open_support_session(body: SupportSessionIn,
+                         db: Session = Depends(get_db), op=Depends(current_operator)):
+    """Open ERP: mint a short-lived, capability-scoped, auditable, revocable support grant.
+
+    NEVER uses a customer password (ADR-025). ERP-side consumption is not implemented yet,
+    so the session is created 'pending_erp_integration': we record the grant and expose the
+    registered customer ERP URL as metadata — we do NOT authenticate into the ERP.
+    """
+    if not db.get(models.ErpProduct, body.erp_product_id):
+        raise HTTPException(404, "ERP product not found")
+    cust = db.get(models.CustomerRef, body.customer_ref_id)
+    if not cust or cust.erp_product_id != body.erp_product_id:
+        raise HTTPException(404, "Customer not found for this ERP product")
+    prt = _customer_runtime(db, body.erp_product_id)
+    dep = (db.query(models.CustomerDeployment)
+           .filter_by(customer_ref_id=cust.id).order_by(models.CustomerDeployment.id.desc()).first())
+    rt = db.get(models.Runtime, dep.runtime_id) if (dep and dep.runtime_id) else prt
+    minutes = body.minutes or settings.support_session_minutes
+    minutes = max(1, min(minutes, 240))     # clamp: short-lived by design
+    s = models.SupportSession(
+        session_ref="sess_" + secrets.token_urlsafe(16),
+        erp_product_id=body.erp_product_id, customer_ref_id=cust.id, operator_id=op.id,
+        reason=body.reason, capabilities=(body.capabilities or "support:read"),
+        status="pending_erp_integration", target_url=(rt.url if rt else None),
+        expires_at=datetime.datetime.utcnow() + datetime.timedelta(minutes=minutes))
+    db.add(s)
+    db.commit()
+    audit(db, op, "open_support_session", "support_session", s.id,
+          f"{body.erp_product_id}/customer:{cust.external_ref}/caps:{s.capabilities}")
+    return {"ok": True, "id": s.id, "session": _session(s, db),
+            "note": "Pending ERP Integration — session recorded and audited; the Control Center "
+                    "does not authenticate into the ERP (ERP-side consumption deferred)."}
+
+
+@app.post("/api/support-sessions/{sid}/revoke")
+def revoke_support_session(sid: int, db: Session = Depends(get_db), op=Depends(current_operator)):
+    s = db.get(models.SupportSession, sid)
+    if not s:
+        raise HTTPException(404, "Support session not found")
+    if s.status != "revoked":
+        s.status = "revoked"
+        s.revoked_at = datetime.datetime.utcnow()
+        s.revoked_by = op.id
+        db.commit()
+        audit(db, op, "revoke_support_session", "support_session", s.id)
+    return {"ok": True, "session": _session(s, db)}
+
+
 # ----------------------------- fleet & audit -----------------------------
 @app.get("/api/fleet")
 def fleet(db: Session = Depends(get_db), op=Depends(current_operator)):
@@ -348,5 +603,57 @@ def product_overview(pid: str, db: Session = Depends(get_db), op=Depends(current
     audit = [_audit_row(a) for a in db.query(models.PlatformAuditLog)
              .filter(models.PlatformAuditLog.target_id.in_(target_ids or {"__none__"}))
              .order_by(models.PlatformAuditLog.id.desc()).limit(50).all()]
-    return {"product": _product(p), "environments": envs, "runtimes": runtimes,
-            "releases": releases, "customer_deployments": cdeps, "deployments": deps, "audit": audit}
+    prt = _customer_runtime(db, pid)
+    customers = [_enriched_customer(c, db, prt) for c in
+                 db.query(models.CustomerRef).filter_by(erp_product_id=pid)
+                 .order_by(models.CustomerRef.name).all()]
+    licenses = [_license(x) for x in db.query(models.License)
+                .filter_by(erp_product_id=pid).order_by(models.License.id.desc()).all()]
+    sessions = [_session(s, db) for s in db.query(models.SupportSession)
+                .filter_by(erp_product_id=pid).order_by(models.SupportSession.id.desc()).all()]
+    active_license_count = sum(1 for x in licenses if x["status"] in ("active", "trial"))
+    active_session_count = sum(1 for s in sessions if s["status"] in ("active", "pending_erp_integration"))
+    current_version = None
+    for r in runtimes:
+        if r["tier"] == "customer" and r.get("current_release_version"):
+            current_version = r["current_release_version"]
+            break
+    summary = {
+        "customers": len(customers),
+        "active_licenses": active_license_count,
+        "versions": len(releases),
+        "current_version": current_version,
+        "open_sessions": active_session_count,
+        "erp_health": (prt.last_health_state if prt else "unknown"),
+        "health_url": (prt.health_url if prt else None),
+        "customer_url": (prt.url if prt else None),
+    }
+    return {"product": _product(p), "summary": summary, "environments": envs, "runtimes": runtimes,
+            "releases": releases, "customers": customers, "licenses": licenses,
+            "support_sessions": sessions, "customer_deployments": cdeps,
+            "deployments": deps, "audit": audit}
+
+
+@app.get("/api/home")
+def home(db: Session = Depends(get_db), op=Depends(current_operator)):
+    """Platform Home: one card per ERP Product for the 'My ERP Products' grid."""
+    cards = []
+    for p in db.query(models.ErpProduct).order_by(models.ErpProduct.name).all():
+        prt = _customer_runtime(db, p.id)
+        n_cust = db.query(models.CustomerRef).filter_by(erp_product_id=p.id).count()
+        active_lic = (db.query(models.License).filter_by(erp_product_id=p.id)
+                      .filter(models.License.status.in_(["active", "trial"])).count())
+        cur = None
+        if prt and prt.current_release_id:
+            rel = db.get(models.Release, prt.current_release_id)
+            cur = rel.version if rel else None
+        last_audit = (db.query(models.PlatformAuditLog)
+                      .filter(models.PlatformAuditLog.target_id == p.id)
+                      .order_by(models.PlatformAuditLog.id.desc()).first())
+        cards.append({
+            "id": p.id, "name": p.name, "description": p.description, "status": p.status,
+            "customers": n_cust, "active_licenses": active_lic,
+            "current_version": cur, "erp_health": (prt.last_health_state if prt else "unknown"),
+            "last_activity": _iso(last_audit.at) if last_audit else _iso(p.created_at),
+        })
+    return {"products": cards, "operator": {"id": op.id, "name": op.name, "role": op.platform_role}}
