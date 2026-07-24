@@ -311,3 +311,38 @@ def test_control_center_exposes_no_erp_transactional_tables():
     assert tables.isdisjoint(forbidden), f"leak: {tables & forbidden}"
     # sanity: the metadata-only tables we DO expect are present
     assert {"licenses", "support_sessions", "customer_refs", "erp_products"} <= tables
+
+
+# =========================================================================================
+#                    Premium UI backing endpoints (dashboard + global search)
+# =========================================================================================
+def test_dashboard_widgets_shape():
+    d = client.get("/api/dashboard", headers=_h()).json()
+    assert {"fleet", "newest_products", "newest_customers", "recent_sessions",
+            "latest_updates", "license_summary", "recent_activity"} <= set(d)
+    assert {"products", "customers", "active_licenses", "open_sessions", "by_health"} <= set(d["fleet"])
+    assert d["fleet"]["products"] >= 1
+    assert isinstance(d["license_summary"]["by_status"], dict)
+
+
+def test_dashboard_requires_auth():
+    assert client.get("/api/dashboard").status_code == 401
+
+
+def test_global_search_finds_across_entities():
+    # seed data guarantees a SmokeStack product + Company #1 + an active licence
+    r = client.get("/api/search?q=smoke", headers=_h()).json()
+    assert any(p["id"] == "smokestack" for p in r["products"])
+    r2 = client.get("/api/search?q=company", headers=_h()).json()
+    assert any("company" in (c["name"] or "").lower() for c in r2["customers"])
+    r3 = client.get("/api/search?q=legacy", headers=_h()).json()
+    assert any("legacy" in (v["version"] or "").lower() for v in r3["versions"])
+
+
+def test_global_search_empty_query_returns_empty_buckets():
+    r = client.get("/api/search?q=", headers=_h()).json()
+    assert r["products"] == [] and r["customers"] == [] and r["versions"] == []
+
+
+def test_global_search_requires_auth():
+    assert client.get("/api/search?q=x").status_code == 401
