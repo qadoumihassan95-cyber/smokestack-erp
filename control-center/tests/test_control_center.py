@@ -146,3 +146,168 @@ def test_customer_deployments_and_deployments_are_enriched():
     assert cds and {"customer_name", "release_version", "runtime_name", "erp_product_id"} <= set(cds[0])
     deps = client.get("/api/deployments", headers=_h()).json()
     assert deps and {"runtime_name", "release_version"} <= set(deps[0])
+
+
+# =========================================================================================
+#                    Milestone 1.1 — accountant model (Licenses, Sessions, Home)
+# =========================================================================================
+
+# ------------------------------- Home grid (My ERP Products) -------------------------------
+def test_home_grid_cards_shape():
+    h = client.get("/api/home", headers=_h()).json()
+    assert h["operator"]["id"] == "OP-owner" and h["operator"]["role"] == "owner"
+    sm = [p for p in h["products"] if p["id"] == "smokestack"]
+    assert sm and {"customers", "active_licenses", "current_version", "erp_health",
+                   "last_activity"} <= set(sm[0])
+    assert sm[0]["customers"] >= 1
+
+
+def test_home_requires_auth():
+    assert client.get("/api/home").status_code == 401
+
+
+# ------------------------------- enriched customers (the heart) -------------------------------
+def test_product_customers_enriched_and_honest_health():
+    rows = client.get("/api/products/smokestack/customers", headers=_h()).json()
+    assert rows
+    r = rows[0]
+    assert {"name", "external_ref", "license_plan", "license_status", "current_version",
+            "health", "health_source", "last_sync_state", "deployment_type"} <= set(r)
+    # honesty: per-customer sync is explicitly NOT fabricated
+    assert r["last_sync_state"] == "not_yet_integrated" and r["last_sync_at"] is None
+    assert r["health_source"] in ("inherited_from_runtime", "unknown")
+
+
+def test_product_customers_search_and_status_filter():
+    all_rows = client.get("/api/products/smokestack/customers", headers=_h()).json()
+    hit = client.get("/api/products/smokestack/customers?q=company", headers=_h()).json()
+    assert len(hit) >= 1 and len(hit) <= len(all_rows)
+    miss = client.get("/api/products/smokestack/customers?q=zzz-no-match", headers=_h()).json()
+    assert miss == []
+    active = client.get("/api/products/smokestack/customers?status=active", headers=_h()).json()
+    assert all(x["status"] == "active" for x in active)
+
+
+def test_customers_endpoint_404_unknown_product():
+    assert client.get("/api/products/nope/customers", headers=_h()).status_code == 404
+
+
+# ------------------------------- Licenses (first-class CRUD) -------------------------------
+def _a_customer_id():
+    return client.get("/api/products/smokestack/customers", headers=_h()).json()[0]["id"]
+
+
+def test_license_seeded_for_company_one():
+    lics = client.get("/api/licenses?erp_product_id=smokestack", headers=_h()).json()
+    assert any(x["status"] == "active" for x in lics)
+
+
+def test_license_create_update_and_status_validation():
+    cid = _a_customer_id()
+    r = client.post("/api/licenses", headers=_h(), json={
+        "erp_product_id": "smokestack", "customer_ref_id": cid, "plan": "pro",
+        "status": "trial", "seat_limit": 5, "start_date": "2026-07-01"})
+    assert r.status_code == 201 and r.json()["license"]["plan"] == "pro"
+    lid = r.json()["id"]
+    # patch transitions status; audited
+    up = client.patch(f"/api/licenses/{lid}", headers=_h(), json={"status": "active", "seat_limit": 9})
+    assert up.status_code == 200 and up.json()["license"]["status"] == "active"
+    assert up.json()["license"]["seat_limit"] == 9
+    # invalid status rejected on both create and patch
+    assert client.post("/api/licenses", headers=_h(), json={
+        "erp_product_id": "smokestack", "customer_ref_id": cid, "status": "bogus"}).status_code == 422
+    assert client.patch(f"/api/licenses/{lid}", headers=_h(), json={"status": "bogus"}).status_code == 422
+
+
+def test_license_create_rejects_unknown_refs():
+    assert client.post("/api/licenses", headers=_h(), json={
+        "erp_product_id": "nope", "customer_ref_id": 1}).status_code == 404
+    assert client.post("/api/licenses", headers=_h(), json={
+        "erp_product_id": "smokestack", "customer_ref_id": 999999}).status_code == 404
+
+
+def test_license_patch_404_unknown():
+    assert client.patch("/api/licenses/999999", headers=_h(), json={"status": "active"}).status_code == 404
+
+
+def test_licenses_require_auth():
+    assert client.get("/api/licenses").status_code == 401
+    assert client.post("/api/licenses", json={"erp_product_id": "smokestack", "customer_ref_id": 1}).status_code == 401
+
+
+# ------------------------------- Support Sessions (Open ERP) -------------------------------
+def test_open_support_session_is_pending_and_never_authenticates():
+    cid = _a_customer_id()
+    r = client.post("/api/support-sessions", headers=_h(), json={
+        "erp_product_id": "smokestack", "customer_ref_id": cid, "reason": "help"})
+    assert r.status_code == 201
+    s = r.json()["session"]
+    assert s["status"] == "pending_erp_integration"          # ERP-side consumption deferred
+    assert s["session_ref"].startswith("sess_")               # opaque, non-authenticating
+    assert s["expires_at"] and s["capabilities"] == "support:read"   # short-lived + restricted default
+    assert "Pending ERP Integration" in r.json()["note"]
+
+
+def test_open_session_rejects_mismatched_customer():
+    # a customer that does not belong to the product
+    assert client.post("/api/support-sessions", headers=_h(), json={
+        "erp_product_id": "smokestack", "customer_ref_id": 999999}).status_code == 404
+
+
+def test_support_session_revoke_is_terminal_and_audited():
+    cid = _a_customer_id()
+    sid = client.post("/api/support-sessions", headers=_h(), json={
+        "erp_product_id": "smokestack", "customer_ref_id": cid}).json()["id"]
+    rv = client.post(f"/api/support-sessions/{sid}/revoke", headers=_h())
+    assert rv.status_code == 200 and rv.json()["session"]["status"] == "revoked"
+    # idempotent
+    assert client.post(f"/api/support-sessions/{sid}/revoke", headers=_h()).json()["session"]["status"] == "revoked"
+    acts = [a for a in client.get("/api/audit", headers=_h()).json()
+            if a["target_type"] == "support_session" and a["target_id"] == str(sid)]
+    assert any(a["action"] == "revoke_support_session" for a in acts)
+
+
+def test_support_session_expiry_is_time_derived():
+    cid = _a_customer_id()
+    sid = client.post("/api/support-sessions", headers=_h(), json={
+        "erp_product_id": "smokestack", "customer_ref_id": cid, "minutes": 1}).json()["id"]
+    # force expiry in the past and confirm the read model reports 'expired' without a writer job
+    with TestClient(app):
+        pass
+    from database import SessionLocal
+    import models as M
+    import datetime as _dt
+    db = SessionLocal()
+    row = db.get(M.SupportSession, sid)
+    row.expires_at = _dt.datetime.utcnow() - _dt.timedelta(minutes=5)
+    db.commit()
+    db.close()
+    got = [s for s in client.get("/api/support-sessions?erp_product_id=smokestack", headers=_h()).json()
+           if s["id"] == sid][0]
+    assert got["status"] == "expired"
+
+
+def test_sessions_require_auth():
+    assert client.get("/api/support-sessions").status_code == 401
+
+
+# ------------------------------- overview aggregate (accountant) -------------------------------
+def test_overview_includes_customers_licenses_sessions_and_summary():
+    o = client.get("/api/products/smokestack/overview", headers=_h()).json()
+    assert {"summary", "customers", "licenses", "support_sessions"} <= set(o)
+    s = o["summary"]
+    assert {"customers", "active_licenses", "versions", "current_version",
+            "open_sessions", "erp_health"} <= set(s)
+    assert s["customers"] == len(o["customers"])
+
+
+# ------------------------------- no transactional data leaks -------------------------------
+def test_control_center_exposes_no_erp_transactional_tables():
+    # The control plane must never model customer business data (invoices, stock, payroll, etc.)
+    import models as M
+    tables = set(M.Base.metadata.tables.keys())
+    forbidden = {"invoices", "stock", "payroll", "expenses", "customers_erp",
+                 "products", "orders", "transactions", "accounts"}
+    assert tables.isdisjoint(forbidden), f"leak: {tables & forbidden}"
+    # sanity: the metadata-only tables we DO expect are present
+    assert {"licenses", "support_sessions", "customer_refs", "erp_products"} <= tables
