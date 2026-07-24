@@ -99,6 +99,27 @@ def _customer(c):
             "external_ref": c.external_ref, "status": c.status, "notes": c.notes}
 
 
+def _cdep(d, db):
+    cust = db.get(models.CustomerRef, d.customer_ref_id)
+    rel = db.get(models.Release, d.release_id) if d.release_id else None
+    rt = db.get(models.Runtime, d.runtime_id) if d.runtime_id else None
+    return {"id": d.id, "customer_ref_id": d.customer_ref_id,
+            "customer_name": cust.name if cust else None,
+            "erp_product_id": cust.erp_product_id if cust else None,
+            "tenant_ref": d.tenant_ref, "release_id": d.release_id,
+            "release_version": rel.version if rel else None, "runtime_id": d.runtime_id,
+            "runtime_name": rt.name if rt else None, "status": d.status}
+
+
+def _dep(d, db):
+    rt = db.get(models.Runtime, d.runtime_id)
+    rel = db.get(models.Release, d.release_id) if d.release_id else None
+    return {"id": d.id, "runtime_id": d.runtime_id, "runtime_name": rt.name if rt else None,
+            "release_id": d.release_id, "release_version": rel.version if rel else None,
+            "kind": d.kind, "status": d.status, "health_at_observe": d.health_at_observe,
+            "observed_at": d.observed_at.isoformat() if d.observed_at else None}
+
+
 # ----------------------------- ERP products & master environments -----------------------------
 class ProductIn(BaseModel):
     id: str
@@ -258,17 +279,14 @@ def register_customer(body: CustomerIn, db: Session = Depends(get_db), op=Depend
 
 @app.get("/api/customer-deployments")
 def list_customer_deployments(db: Session = Depends(get_db), op=Depends(current_operator)):
-    return [{"id": d.id, "customer_ref_id": d.customer_ref_id, "release_id": d.release_id,
-             "runtime_id": d.runtime_id, "tenant_ref": d.tenant_ref, "status": d.status}
-            for d in db.query(models.CustomerDeployment).order_by(models.CustomerDeployment.id).all()]
+    return [_cdep(d, db) for d in
+            db.query(models.CustomerDeployment).order_by(models.CustomerDeployment.id).all()]
 
 
 @app.get("/api/deployments")
 def list_deployments(db: Session = Depends(get_db), op=Depends(current_operator)):
-    return [{"id": d.id, "runtime_id": d.runtime_id, "release_id": d.release_id, "kind": d.kind,
-             "status": d.status, "health_at_observe": d.health_at_observe,
-             "observed_at": d.observed_at.isoformat() if d.observed_at else None}
-            for d in db.query(models.Deployment).order_by(models.Deployment.id.desc()).all()]
+    return [_dep(d, db) for d in
+            db.query(models.Deployment).order_by(models.Deployment.id.desc()).all()]
 
 
 # ----------------------------- fleet & audit -----------------------------
@@ -292,6 +310,43 @@ def fleet(db: Session = Depends(get_db), op=Depends(current_operator)):
 def list_audit(limit: int = 200, db: Session = Depends(get_db), op=Depends(current_operator)):
     rows = (db.query(models.PlatformAuditLog)
             .order_by(models.PlatformAuditLog.id.desc()).limit(min(limit, 500)).all())
-    return [{"id": a.id, "actor": a.actor_operator_id, "action": a.action,
-             "target_type": a.target_type, "target_id": a.target_id, "detail": a.detail,
-             "result": a.result, "at": a.at.isoformat() if a.at else None} for a in rows]
+    return [_audit_row(a) for a in rows]
+
+
+def _audit_row(a):
+    return {"id": a.id, "actor": a.actor_operator_id, "action": a.action,
+            "target_type": a.target_type, "target_id": a.target_id, "detail": a.detail,
+            "result": a.result, "at": a.at.isoformat() if a.at else None}
+
+
+# ----------------------------- ERP details (aggregate for the details page) -----------------------------
+@app.get("/api/products/{pid}/overview")
+def product_overview(pid: str, db: Session = Depends(get_db), op=Depends(current_operator)):
+    p = db.get(models.ErpProduct, pid)
+    if not p:
+        raise HTTPException(404, "ERP product not found")
+    envs = [_env(e) for e in db.query(models.MasterEnvironment)
+            .filter_by(erp_product_id=pid).order_by(models.MasterEnvironment.id).all()]
+    runtimes = []
+    for r in db.query(models.Runtime).filter_by(erp_product_id=pid).order_by(models.Runtime.id).all():
+        row = _runtime(r)
+        rel = db.get(models.Release, r.current_release_id) if r.current_release_id else None
+        row["current_release_version"] = rel.version if rel else None
+        row["current_release_is_legacy"] = bool(rel.is_legacy_import) if rel else False
+        runtimes.append(row)
+    releases = [_release(r) for r in db.query(models.Release)
+                .filter_by(erp_product_id=pid).order_by(models.Release.id.desc()).all()]
+    cust_ids = [c.id for c in db.query(models.CustomerRef).filter_by(erp_product_id=pid).all()]
+    cdeps = [_cdep(d, db) for d in db.query(models.CustomerDeployment)
+             .filter(models.CustomerDeployment.customer_ref_id.in_(cust_ids or [-1])).all()]
+    rt_ids = [r["id"] for r in runtimes]
+    deps = [_dep(d, db) for d in db.query(models.Deployment)
+            .filter(models.Deployment.runtime_id.in_(rt_ids or [-1]))
+            .order_by(models.Deployment.id.desc()).all()]
+    target_ids = ({pid} | {str(i) for i in rt_ids}
+                  | {str(x["id"]) for x in releases} | {str(i) for i in cust_ids})
+    audit = [_audit_row(a) for a in db.query(models.PlatformAuditLog)
+             .filter(models.PlatformAuditLog.target_id.in_(target_ids or {"__none__"}))
+             .order_by(models.PlatformAuditLog.id.desc()).limit(50).all()]
+    return {"product": _product(p), "environments": envs, "runtimes": runtimes,
+            "releases": releases, "customer_deployments": cdeps, "deployments": deps, "audit": audit}

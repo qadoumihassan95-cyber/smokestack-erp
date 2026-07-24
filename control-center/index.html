@@ -4,95 +4,337 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PFS Control Center</title>
 <style>
-  :root{--bg:#0f1420;--panel:#171e2e;--line:#26304a;--tx:#e7ecf5;--mut:#93a0bd;--acc:#5b8cff;--ok:#3ecf8e;--bad:#ff6b6b;--warn:#ffce5b}
-  *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.5 system-ui,Segoe UI,Roboto,sans-serif}
-  header{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px}
-  header b{font-size:16px}.mut{color:var(--mut)}
-  .wrap{max-width:1100px;margin:0 auto;padding:20px}
-  .login{max-width:360px;margin:8vh auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:22px}
-  input,button{font:inherit}input{width:100%;padding:9px 11px;margin:6px 0 12px;background:#0d1220;border:1px solid var(--line);border-radius:8px;color:var(--tx)}
-  button{padding:9px 14px;background:var(--acc);color:#fff;border:0;border-radius:8px;cursor:pointer}
-  button.sec{background:#22304e}
-  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:14px 0}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
-  .card .n{font-size:26px;font-weight:700}.card .l{color:var(--mut);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
-  section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin:14px 0}
-  h3{margin:0 0 8px}table{width:100%;border-collapse:collapse;font-size:13px}
-  th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
-  th{color:var(--mut);font-weight:600}.pill{padding:2px 8px;border-radius:999px;font-size:12px;border:1px solid var(--line)}
-  .ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}.tag{background:#22304e;border-radius:6px;padding:1px 6px;font-size:12px}
-  .err{color:var(--bad);min-height:18px}
+  :root{
+    --bg:#0b0f19;--bg2:#0f1524;--panel:#141b2d;--panel2:#182034;--line:#242e46;--line2:#2f3a58;
+    --tx:#e8edf7;--mut:#8a97b8;--dim:#5f6d8f;--acc:#5b8cff;--acc2:#7aa2ff;
+    --ok:#3ecf8e;--okbg:#0e2b20;--bad:#ff6b6b;--badbg:#2c1618;--warn:#ffcf5c;--warnbg:#2c2410;
+    --rad:12px;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace
+  }
+  *{box-sizing:border-box}html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.55 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+  a{color:inherit;text-decoration:none}.mut{color:var(--mut)}.dim{color:var(--dim)}.mono{font-family:var(--mono)}
+  button{font:inherit;cursor:pointer;border:0}
+  input{font:inherit;background:#0a0e19;border:1px solid var(--line2);border-radius:8px;color:var(--tx);padding:10px 12px;width:100%}
+  input:focus{outline:0;border-color:var(--acc)}
+  /* ---------- login ---------- */
+  .login{max-width:380px;margin:12vh auto;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:26px;box-shadow:0 20px 60px rgba(0,0,0,.4)}
+  .brandrow{display:flex;align-items:center;gap:10px;margin-bottom:18px}
+  .logo{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--acc),#9b6bff);display:grid;place-items:center;color:#fff;font-weight:800}
+  .login label{display:block;color:var(--mut);font-size:12px;margin:12px 0 5px}
+  .btn{background:var(--acc);color:#fff;border-radius:9px;padding:10px 15px;font-weight:600}
+  .btn:hover{background:var(--acc2)}.btn.sec{background:#1d2740;color:var(--tx);border:1px solid var(--line2)}
+  .btn.sec:hover{background:#243154}.btn.sm{padding:5px 11px;font-size:13px;border-radius:8px}
+  .err{color:var(--bad);min-height:18px;font-size:13px;margin-top:10px}
+  /* ---------- app shell ---------- */
+  .app{display:grid;grid-template-columns:236px 1fr;min-height:100vh}
+  .side{background:var(--bg2);border-right:1px solid var(--line);display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
+  .side .brandrow{padding:16px 18px;margin:0;border-bottom:1px solid var(--line)}
+  .side b{font-size:15px;letter-spacing:.2px}.side .sub{font-size:11px;color:var(--dim)}
+  .nav{padding:10px 8px;flex:1;overflow:auto}
+  .nav a{display:flex;align-items:center;gap:11px;padding:9px 12px;border-radius:9px;color:var(--mut);font-weight:500;margin:2px 0}
+  .nav a:hover{background:var(--panel);color:var(--tx)}
+  .nav a.on{background:var(--panel2);color:var(--tx)}
+  .nav a.on svg{color:var(--acc)}
+  .nav .sep{color:var(--dim);font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;padding:14px 12px 6px}
+  .nav svg{width:17px;height:17px;color:var(--dim);flex:none}
+  .who{border-top:1px solid var(--line);padding:12px 14px;display:flex;align-items:center;gap:10px;font-size:13px}
+  .who .av{width:26px;height:26px;border-radius:50%;background:#22304e;display:grid;place-items:center;font-size:12px;color:var(--acc2);font-weight:700}
+  /* ---------- main ---------- */
+  .main{min-width:0;display:flex;flex-direction:column}
+  .top{position:sticky;top:0;z-index:5;background:rgba(11,15,25,.85);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);padding:14px 26px;display:flex;align-items:center;gap:12px}
+  .crumb{font-size:15px;font-weight:650}.crumb .mut{font-weight:400}
+  .content{padding:22px 26px;max-width:1180px;width:100%}
+  h2{margin:0 0 3px;font-size:19px}.lead{color:var(--mut);margin:0 0 18px;font-size:13px}
+  /* cards / grid */
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:13px;margin:6px 0 22px}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:var(--rad);padding:15px 16px}
+  .kpi .n{font-size:28px;font-weight:750;letter-spacing:-.5px}.kpi .l{color:var(--mut);font-size:12px;text-transform:uppercase;letter-spacing:.05em;margin-top:2px}
+  .kpi .n.ok{color:var(--ok)}.kpi .n.bad{color:var(--bad)}.kpi .n.warn{color:var(--warn)}
+  section{background:var(--panel);border:1px solid var(--line);border-radius:var(--rad);margin:16px 0;overflow:hidden}
+  .sh{display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid var(--line)}
+  .sh h3{margin:0;font-size:14px}.sh .grow{flex:1}
+  .body{padding:4px 4px 8px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:middle}
+  tr:last-child td{border-bottom:0}th{color:var(--mut);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em}
+  tbody tr:hover{background:var(--panel2)}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;font-size:12px;font-weight:600;border:1px solid var(--line2)}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--dim)}
+  .p-ok{color:var(--ok);background:var(--okbg);border-color:#1c4b39}.p-ok .dot{background:var(--ok)}
+  .p-bad{color:var(--bad);background:var(--badbg);border-color:#4a2226}.p-bad .dot{background:var(--bad)}
+  .p-warn{color:var(--warn);background:var(--warnbg);border-color:#4a3f18}.p-warn .dot{background:var(--warn)}
+  .tag{font-family:var(--mono);font-size:12px;background:#1a2338;border:1px solid var(--line2);border-radius:6px;padding:2px 7px;color:var(--acc2)}
+  .tag.legacy{color:var(--warn);border-color:#4a3f18;background:var(--warnbg)}
+  .tier{font-size:11px;text-transform:uppercase;letter-spacing:.05em;background:#1a2338;border:1px solid var(--line2);border-radius:6px;padding:2px 7px;color:var(--mut)}
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+  .pcard{background:var(--panel);border:1px solid var(--line);border-radius:var(--rad);padding:16px;cursor:pointer;transition:.12s}
+  .pcard:hover{border-color:var(--acc);transform:translateY(-1px)}
+  .pcard .t{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+  .pcard .ic{width:34px;height:34px;border-radius:9px;background:#1a2338;display:grid;place-items:center;color:var(--acc2)}
+  .pcard .meta{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+  .empty{padding:34px;text-align:center;color:var(--dim)}
+  .kv{display:grid;grid-template-columns:170px 1fr;gap:2px 16px;padding:14px 16px}
+  .kv dt{color:var(--mut);font-size:12px;padding:6px 0}.kv dd{margin:0;padding:6px 0;border-bottom:1px solid var(--line)}
+  .kv dt{border-bottom:1px solid var(--line)}
+  .back{color:var(--mut);font-size:13px;display:inline-flex;align-items:center;gap:6px;margin-bottom:12px}
+  .back:hover{color:var(--tx)}
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:16px}@media(max-width:860px){.split{grid-template-columns:1fr}.app{grid-template-columns:1fr}.side{display:none}}
+  .soon{padding:40px;text-align:center;color:var(--dim)}
+  .soon .big{font-size:15px;color:var(--mut);margin-bottom:6px}
 </style>
 </head>
 <body>
-<div id="app"></div>
+<div id="root"></div>
 <script>
-const S = { tok: null, op: null };
-const $ = (h)=>{const t=document.createElement('template');t.innerHTML=h.trim();return t.content.firstChild;};
-async function api(path, opts={}){
-  const r = await fetch(path, {...opts, headers:{...(opts.headers||{}), ...(S.tok?{Authorization:'Bearer '+S.tok}:{})}});
-  if(r.status===401){ S.tok=null; renderLogin('Session expired — sign in again.'); throw new Error('401'); }
-  return r;
+const S={tok:null,op:null,role:null};
+const I={
+ dashboard:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>',
+ box:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>',
+ deploy:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3 6 6 .5-4.5 4 1.5 6-6-3.5L6 18.5 7.5 12.5 3 8.5 9 8z"/></svg>',
+ server:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><circle cx="7" cy="7.5" r="1" fill="currentColor"/><circle cx="7" cy="16.5" r="1" fill="currentColor"/></svg>',
+ tag:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 12l-8 8-9-9V3h8z"/><circle cx="7.5" cy="7.5" r="1.4"/></svg>',
+ list:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>',
+ gear:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.4-2.3 1a7 7 0 0 0-1.7-1L14.5 2h-4L10 3.6a7 7 0 0 0-1.7 1l-2.3-1-2 3.4L6 8.9a7 7 0 0 0 0 2l-2 1.6 2 3.4 2.3-1a7 7 0 0 0 1.7 1L10 22h4l.5-2.6a7 7 0 0 0 1.7-1l2.3 1 2-3.4-2-1.5c.06-.33.1-.66.1-1z"/></svg>',
+};
+const el=(h)=>{const t=document.createElement('template');t.innerHTML=h.trim();return t.content.firstChild;};
+async function api(p,o={}){
+ const r=await fetch(p,{...o,headers:{...(o.headers||{}),...(S.tok?{Authorization:'Bearer '+S.tok}:{})}});
+ if(r.status===401){S.tok=null;renderLogin('Session expired — sign in again.');throw new Error('401');}
+ return r;
 }
+const esc=(s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function health(s){s=s||'unknown';const c=s==='ok'?'p-ok':(s==='unknown'?'p-warn':'p-bad');return `<span class="pill ${c}"><span class="dot"></span>${esc(s)}</span>`;}
+function fmt(t){return t?String(t).replace('T',' ').slice(0,19):'';}
+function tbl(head,arr,row,empty){
+ if(!arr||!arr.length) return `<div class="empty">${empty||'Nothing to show yet.'}</div>`;
+ return `<table><thead><tr>${head.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${arr.map(row).join('')}</tbody></table>`;
+}
+
+/* ---------------- login ---------------- */
 function renderLogin(msg=''){
-  document.getElementById('app').innerHTML='';
-  const box=$(`<div class="login"><b>PFS Control Center</b><div class="mut" style="margin:4px 0 14px">Platform Owner sign-in</div>
-    <label class="mut">Operator</label><input id="u" value="OP-owner">
-    <label class="mut">Password</label><input id="p" type="password" placeholder="password">
-    <button id="go">Sign in</button><div class="err" id="e">${msg}</div></div>`);
-  document.getElementById('app').appendChild(box);
-  box.querySelector('#go').onclick=async()=>{
-    const body=new URLSearchParams({username:box.querySelector('#u').value,password:box.querySelector('#p').value});
-    const r=await fetch('/auth/login',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});
-    if(!r.ok){ box.querySelector('#e').textContent='Invalid credentials'; return; }
-    const j=await r.json(); S.tok=j.access_token; S.op=j.operator; renderDash();
-  };
+ document.getElementById('root').innerHTML='';
+ const b=el(`<div class="login">
+   <div class="brandrow"><div class="logo">P</div><div><b>PFS Control Center</b><div class="sub mut">Platform Owner console</div></div></div>
+   <label>Operator</label><input id="u" value="OP-owner" autocomplete="username">
+   <label>Password</label><input id="p" type="password" placeholder="••••••••" autocomplete="current-password">
+   <div style="margin-top:16px"><button class="btn" id="go" style="width:100%">Sign in</button></div>
+   <div class="err" id="e">${esc(msg)}</div></div>`);
+ document.getElementById('root').appendChild(b);
+ const go=async()=>{
+   const body=new URLSearchParams({username:b.querySelector('#u').value,password:b.querySelector('#p').value});
+   const r=await fetch('/auth/login',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});
+   if(!r.ok){b.querySelector('#e').textContent='Invalid credentials';return;}
+   const j=await r.json();S.tok=j.access_token;S.op=j.operator;S.role=j.role;
+   if(!location.hash)location.hash='#/dashboard';renderApp();
+ };
+ b.querySelector('#go').onclick=go;
+ b.querySelector('#p').addEventListener('keydown',e=>{if(e.key==='Enter')go();});
 }
-function hcls(s){return s==='ok'?'ok':(s==='unreachable'||s==='error'||s==='degraded')?'bad':'warn';}
-function rows(arr, cols){ return arr.map(o=>'<tr>'+cols.map(c=>`<td>${c(o)??''}</td>`).join('')+'</tr>').join(''); }
-async function renderDash(){
-  const app=document.getElementById('app'); app.innerHTML='';
-  app.appendChild($(`<header><b>PFS Control Center</b><span class="mut">Fleet & Platform metadata (read-only)</span>
-    <span style="margin-left:auto" class="mut">${S.op}</span> <button class="sec" id="out">Sign out</button></header>`));
-  const wrap=$(`<div class="wrap"></div>`); app.appendChild(wrap);
-  document.getElementById('out').onclick=()=>{S.tok=null;renderLogin();};
-  const [fleet,prods,envs,rts,rels,custs,cdeps,audit]=await Promise.all([
-    api('/api/fleet').then(r=>r.json()),
-    api('/api/products').then(r=>r.json()),
-    api('/api/products/smokestack/environments').then(r=>r.json()).catch(()=>[]),
-    api('/api/runtimes').then(r=>r.json()),
-    api('/api/releases').then(r=>r.json()),
-    api('/api/customers').then(r=>r.json()),
-    api('/api/customer-deployments').then(r=>r.json()),
-    api('/api/audit').then(r=>r.json()),
-  ]);
-  wrap.appendChild($(`<div class="grid">
-    <div class="card"><div class="n">${fleet.products}</div><div class="l">ERP Products</div></div>
-    <div class="card"><div class="n">${fleet.runtimes}</div><div class="l">Runtimes</div></div>
-    <div class="card"><div class="n">${fleet.customer_runtimes}</div><div class="l">Customer Prod</div></div>
-    <div class="card"><div class="n">${fleet.customers}</div><div class="l">Customers</div></div>
-    <div class="card"><div class="n">${fleet.releases}</div><div class="l">Releases</div></div>
-  </div>`));
-  const S1=$(`<section><h3>Runtimes &nbsp;<button class="sec" id="ping">Check health</button></h3>
-    <table><thead><tr><th>Product</th><th>Tier</th><th>Environment</th><th>Name</th><th>Health</th><th>URL</th></tr></thead>
-    <tbody>${rows(rts,[r=>r.erp_product_id,r=>`<span class="tag">${r.tier}</span>`,r=>r.environment_kind,r=>r.name,
-      r=>`<span class="${hcls(r.last_health_state)}">${r.last_health_state}</span>`,r=>r.url||''])}</tbody></table></section>`);
-  wrap.appendChild(S1);
-  S1.querySelector('#ping').onclick=async()=>{ for(const r of rts){ try{await api(`/api/runtimes/${r.id}/health-check`,{method:'POST'});}catch(e){} } renderDash(); };
-  wrap.appendChild($(`<section><h3>ERP Products & Master environments</h3>
-    <table><thead><tr><th>Product</th><th>Status</th><th>Master environments</th></tr></thead><tbody>
-    ${rows(prods,[p=>`<b>${p.name}</b> <span class="mut">${p.id}</span>`,p=>p.status,
-      p=>p.id==='smokestack'?envs.map(e=>`<span class="tag">${e.kind.replace('master_','')}</span>`).join(' '):'<span class="mut">—</span>'])}
-    </tbody></table></section>`));
-  wrap.appendChild($(`<section><h3>Releases</h3><table><thead><tr><th>Product</th><th>Version</th><th>Status</th><th>SHA</th><th>Source</th></tr></thead>
-    <tbody>${rows(rels,[r=>r.erp_product_id,r=>r.version,
-      r=>`<span class="pill ${r.is_legacy_import?'warn':'ok'}">${r.status}</span>`,r=>r.source_sha||'',r=>r.source_master_runtime||(r.is_legacy_import?'legacy import':'')])}</tbody></table></section>`));
-  wrap.appendChild($(`<section><h3>Customers & deployments</h3><table><thead><tr><th>Customer</th><th>Product</th><th>Tenant (company_id)</th><th>Status</th></tr></thead>
-    <tbody>${rows(custs,[c=>c.name,c=>c.erp_product_id,c=>c.external_ref||'',c=>c.status])}</tbody></table></section>`));
-  wrap.appendChild($(`<section><h3>Platform audit</h3><table><thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Target</th><th>Detail</th></tr></thead>
-    <tbody>${rows(audit.slice(0,40),[a=>(a.at||'').replace('T',' ').slice(0,19),a=>a.actor,a=>a.action,a=>`${a.target_type}:${a.target_id}`,a=>a.detail||''])}</tbody></table></section>`));
+
+/* ---------------- shell ---------------- */
+const NAV=[
+ ['#/dashboard','Dashboard','dashboard'],['#/products','ERP Products','box'],
+ ['SEP','Fleet'],
+ ['#/deployments','Customer Deployments','deploy'],['#/runtimes','Runtimes','server'],['#/releases','Releases','tag'],
+ ['SEP','Platform'],
+ ['#/audit','Platform Audit','list'],['#/settings','Settings','gear'],
+];
+function renderApp(){
+ const root=document.getElementById('root');
+ root.innerHTML='';
+ const nav=NAV.map(n=>n[0]==='SEP'?`<div class="sep">${n[1]}</div>`:
+   `<a href="${n[0]}" data-r="${n[0]}">${I[n[2]]}<span>${n[1]}</span></a>`).join('');
+ root.appendChild(el(`<div class="app">
+   <aside class="side">
+     <div class="brandrow"><div class="logo">P</div><div><b>PFS</b><div class="sub">Control Center</div></div></div>
+     <nav class="nav">${nav}</nav>
+     <div class="who"><div class="av">${esc((S.op||'?').replace(/[^A-Za-z]/g,'').slice(-2).toUpperCase()||'OP')}</div>
+       <div style="flex:1"><div>${esc(S.op)}</div><div class="dim" style="font-size:11px">${esc(S.role||'operator')}</div></div>
+       <button class="btn sec sm" id="out">Sign out</button></div>
+   </aside>
+   <div class="main">
+     <div class="top"><div class="crumb" id="crumb"></div><div class="grow" style="flex:1"></div>
+       <button class="btn sec sm" id="refresh">Refresh</button></div>
+     <div class="content" id="main"></div>
+   </div></div>`));
+ document.getElementById('out').onclick=()=>{S.tok=null;renderLogin();};
+ document.getElementById('refresh').onclick=()=>route();
+ route();
 }
+function setActive(){
+ const h=location.hash||'#/dashboard';const base='#/'+(h.split('/')[1]||'dashboard');
+ document.querySelectorAll('.nav a').forEach(a=>a.classList.toggle('on',a.dataset.r===base));
+}
+function crumb(html){const c=document.getElementById('crumb');if(c)c.innerHTML=html;}
+
+/* ---------------- router ---------------- */
+async function route(){
+ if(!S.tok){renderLogin();return;}
+ if(!document.querySelector('.app')){renderApp();return;}
+ setActive();
+ const main=document.getElementById('main');main.innerHTML='<div class="empty">Loading…</div>';
+ const parts=(location.hash||'#/dashboard').replace(/^#\//,'').split('/');
+ try{
+   if(parts[0]==='products'&&parts[1]) return await viewProductDetails(parts[1]);
+   const v={dashboard:viewDashboard,products:viewProducts,deployments:viewDeployments,
+            runtimes:viewRuntimes,releases:viewReleases,audit:viewAudit,settings:viewSettings}[parts[0]]||viewDashboard;
+   await v();
+ }catch(e){ if(String(e).includes('401'))return; main.innerHTML='<div class="empty">Something went wrong loading this view.</div>'; }
+}
+window.addEventListener('hashchange',route);
+
+/* ---------------- views ---------------- */
+async function viewDashboard(){
+ crumb('Dashboard');
+ const [f,rts,audit]=await Promise.all([api('/api/fleet').then(r=>r.json()),api('/api/runtimes').then(r=>r.json()),api('/api/audit').then(r=>r.json())]);
+ const bh=f.by_health||{};const unhealthy=Object.entries(bh).filter(([k])=>k!=='ok').reduce((a,[,v])=>a+v,0);
+ document.getElementById('main').innerHTML=`
+  <h2>Fleet overview</h2><p class="lead">Every ERP product, environment, release and runtime on your platform — at a glance.</p>
+  <div class="kpis">
+    <div class="kpi"><div class="n">${f.products}</div><div class="l">ERP Products</div></div>
+    <div class="kpi"><div class="n">${f.runtimes}</div><div class="l">Runtimes</div></div>
+    <div class="kpi"><div class="n">${f.customer_runtimes}</div><div class="l">Customer Prod</div></div>
+    <div class="kpi"><div class="n">${f.customers}</div><div class="l">Customers</div></div>
+    <div class="kpi"><div class="n">${f.releases}</div><div class="l">Releases</div></div>
+    <div class="kpi"><div class="n ${unhealthy?'bad':'ok'}">${bh.ok||0}/${f.runtimes}</div><div class="l">Healthy</div></div>
+  </div>
+  <section><div class="sh"><h3>Runtimes</h3><div class="grow"></div><button class="btn sec sm" id="ping">Check all health</button></div>
+    <div class="body">${tbl(['Product','Tier','Environment','Name','Health','URL'],rts,r=>`<tr>
+       <td><a href="#/products/${esc(r.erp_product_id)}" style="color:var(--acc2)">${esc(r.erp_product_id)}</a></td>
+       <td><span class="tier">${esc(r.tier)}</span></td><td class="mut">${esc(r.environment_kind)}</td>
+       <td>${esc(r.name)}</td><td>${health(r.last_health_state)}</td>
+       <td class="mono dim" style="font-size:12px">${esc(r.url||'')}</td></tr>`,'No runtimes registered.')}</div></section>
+  <section><div class="sh"><h3>Recent platform activity</h3></div>
+    <div class="body">${tbl(['When','Actor','Action','Target','Detail'],audit.slice(0,10),a=>`<tr>
+       <td class="mono dim">${fmt(a.at)}</td><td>${esc(a.actor)}</td><td><span class="tag">${esc(a.action)}</span></td>
+       <td class="mut">${esc(a.target_type)}:${esc(a.target_id)}</td><td class="mut">${esc(a.detail)}</td></tr>`,'No activity yet.')}</div></section>`;
+ const pb=document.getElementById('ping');if(pb)pb.onclick=async()=>{pb.textContent='Checking…';pb.disabled=true;for(const r of rts){try{await api(`/api/runtimes/${r.id}/health-check`,{method:'POST'});}catch(e){}}route();};
+}
+
+async function viewProducts(){
+ crumb('ERP Products');
+ const [prods,rts]=await Promise.all([api('/api/products').then(r=>r.json()),api('/api/runtimes').then(r=>r.json())]);
+ const cnt=(id)=>rts.filter(r=>r.erp_product_id===id);
+ document.getElementById('main').innerHTML=`
+  <h2>ERP Products</h2><p class="lead">The vertical ERP applications running on the platform. Click a product to manage it.</p>
+  ${prods.length?`<div class="cards">${prods.map(p=>{const rs=cnt(p.id);const cp=rs.filter(r=>r.tier==='customer');
+     const worst=rs.some(r=>r.last_health_state&&r.last_health_state!=='ok'&&r.last_health_state!=='unknown')?'bad':(rs.some(r=>r.last_health_state==='ok')?'ok':'unknown');
+     return `<div class="pcard" onclick="location.hash='#/products/${esc(p.id)}'">
+       <div class="t"><div class="ic">${I.box}</div><div><div style="font-weight:650">${esc(p.name)}</div><div class="mono dim" style="font-size:12px">${esc(p.id)}</div></div></div>
+       <div class="mut" style="font-size:13px;min-height:20px">${esc(p.description||'')}</div>
+       <div class="meta"><span class="pill ${worst==='ok'?'p-ok':worst==='bad'?'p-bad':'p-warn'}"><span class="dot"></span>${rs.length} runtime${rs.length!==1?'s':''}</span>
+         <span class="tier">${cp.length} customer prod</span><span class="tier">${esc(p.status)}</span></div></div>`;}).join('')}</div>`
+   :`<div class="empty">No ERP products registered.</div>`}`;
+}
+
+async function viewProductDetails(pid){
+ crumb(`<a href="#/products" class="mut">ERP Products</a> <span class="mut">/</span> ${esc(pid)}`);
+ const o=await api(`/api/products/${encodeURIComponent(pid)}/overview`).then(r=>{if(r.status===404)throw'nf';return r.json();}).catch(()=>null);
+ const main=document.getElementById('main');
+ if(!o){main.innerHTML='<div class="empty">Product not found.</div>';return;}
+ const cp=o.runtimes.find(r=>r.tier==='customer')||o.runtimes[0]||null;
+ const curRel=cp?o.releases.find(r=>r.id===cp.current_release_id):null;
+ main.innerHTML=`
+  <a class="back" href="#/products">${I.box}<span>All products</span></a>
+  <h2>${esc(o.product.name)} <span class="tag" style="vertical-align:middle">${esc(o.product.id)}</span></h2>
+  <p class="lead">${esc(o.product.description||'')}</p>
+  <div class="kpis">
+    <div class="kpi"><div class="n">${cp?health(cp.last_health_state):'<span class="dim">—</span>'}</div><div class="l">Current health</div></div>
+    <div class="kpi"><div class="n" style="font-size:16px">${cp?esc(cp.name):'—'}</div><div class="l">Current runtime</div></div>
+    <div class="kpi"><div class="n" style="font-size:16px">${curRel?esc(curRel.version):'—'} ${curRel&&curRel.is_legacy_import?'<span class="tag legacy">legacy</span>':''}</div><div class="l">Current release</div></div>
+    <div class="kpi"><div class="n">${o.customer_deployments.length}</div><div class="l">Customer deployments</div></div>
+  </div>
+  <div class="split">
+    <section><div class="sh"><h3>Product information</h3></div>
+      <dl class="kv"><dt>Product ID</dt><dd class="mono">${esc(o.product.id)}</dd>
+        <dt>Status</dt><dd><span class="tier">${esc(o.product.status)}</span></dd>
+        <dt>Current runtime</dt><dd>${cp?esc(cp.name):'—'}</dd>
+        <dt>Runtime URL</dt><dd class="mono dim">${cp&&cp.url?esc(cp.url):'—'}</dd>
+        <dt>Current release</dt><dd>${curRel?esc(curRel.version):'—'} ${curRel&&curRel.is_legacy_import?'<span class="tag legacy">imported legacy</span>':''}</dd>
+        <dt>Health</dt><dd>${cp?health(cp.last_health_state):'—'} <span class="dim mono" style="font-size:11px">${cp?fmt(cp.last_health_at):''}</span></dd></dl></section>
+    <section><div class="sh"><h3>Master environments</h3></div>
+      <div class="body">${tbl(['Environment','Status'],o.environments,e=>`<tr><td><span class="tier">${esc(e.kind.replace('master_',''))}</span> <span class="mut">${esc(e.display_name)}</span></td><td class="mut">${esc(e.status)}</td></tr>`,'No environments.')}</div></section>
+  </div>
+  <section><div class="sh"><h3>Registered customer deployments</h3><div class="grow"></div><span class="dim" style="font-size:12px">metadata only — no customer data</span></div>
+    <div class="body">${tbl(['Customer','Tenant (company_id)','Release','Runtime','Status'],o.customer_deployments,d=>`<tr>
+      <td>${esc(d.customer_name)}</td><td class="mono">${esc(d.tenant_ref)}</td><td><span class="tag">${esc(d.release_version)}</span></td>
+      <td class="mut">${esc(d.runtime_name)}</td><td>${esc(d.status)}</td></tr>`,'No customer deployments.')}</div></section>
+  <section><div class="sh"><h3>Releases</h3></div>
+    <div class="body">${tbl(['Version','Status','SHA','Source'],o.releases,r=>`<tr>
+      <td class="mono">${esc(r.version)}</td><td>${r.is_legacy_import?'<span class="tag legacy">imported legacy</span>':`<span class="tag">${esc(r.status)}</span>`}</td>
+      <td class="mono dim">${esc(r.source_sha||'')}</td><td class="mut">${esc(r.source_master_runtime||(r.is_legacy_import?'legacy import':'master production'))}</td></tr>`,'No releases.')}</div></section>
+  <section><div class="sh"><h3>Deployment history</h3></div>
+    <div class="body">${tbl(['When','Runtime','Release','Kind','Health'],o.deployments,d=>`<tr>
+      <td class="mono dim">${fmt(d.observed_at)}</td><td>${esc(d.runtime_name)}</td><td><span class="tag">${esc(d.release_version)}</span></td>
+      <td class="mut">${esc(d.kind)}</td><td>${health(d.health_at_observe)}</td></tr>`,'No deployments recorded.')}</div></section>
+  <section><div class="sh"><h3>Platform audit</h3></div>
+    <div class="body">${tbl(['When','Actor','Action','Target','Detail'],o.audit,a=>`<tr>
+      <td class="mono dim">${fmt(a.at)}</td><td>${esc(a.actor)}</td><td><span class="tag">${esc(a.action)}</span></td>
+      <td class="mut">${esc(a.target_type)}:${esc(a.target_id)}</td><td class="mut">${esc(a.detail)}</td></tr>`,'No audit for this product.')}</div></section>`;
+}
+
+async function viewDeployments(){
+ crumb('Customer Deployments');
+ const d=await api('/api/customer-deployments').then(r=>r.json());
+ document.getElementById('main').innerHTML=`<h2>Customer Deployments</h2>
+  <p class="lead">Which customer runs which published release, on which runtime. The ERP application owns the customer's data — this is metadata only.</p>
+  <section><div class="body">${tbl(['Customer','Product','Tenant (company_id)','Release','Runtime','Status'],d,x=>`<tr>
+     <td>${esc(x.customer_name)}</td><td><a href="#/products/${esc(x.erp_product_id)}" style="color:var(--acc2)">${esc(x.erp_product_id)}</a></td>
+     <td class="mono">${esc(x.tenant_ref)}</td><td><span class="tag">${esc(x.release_version)}</span></td>
+     <td class="mut">${esc(x.runtime_name)}</td><td>${esc(x.status)}</td></tr>`,'No customer deployments.')}</div></section>`;
+}
+
+async function viewRuntimes(){
+ crumb('Runtimes');
+ const rts=await api('/api/runtimes').then(r=>r.json());
+ document.getElementById('main').innerHTML=`<h2>Runtimes</h2>
+  <p class="lead">Registered running instances across the fleet. Health is polled read-only.</p>
+  <section><div class="sh"><h3>${rts.length} runtime${rts.length!==1?'s':''}</h3><div class="grow"></div><button class="btn sec sm" id="ping">Check all health</button></div>
+   <div class="body">${tbl(['Product','Tier','Environment','Name','Health','Last checked','URL'],rts,r=>`<tr>
+     <td><a href="#/products/${esc(r.erp_product_id)}" style="color:var(--acc2)">${esc(r.erp_product_id)}</a></td>
+     <td><span class="tier">${esc(r.tier)}</span></td><td class="mut">${esc(r.environment_kind)}</td><td>${esc(r.name)}</td>
+     <td>${health(r.last_health_state)}</td><td class="mono dim">${fmt(r.last_health_at)}</td>
+     <td class="mono dim" style="font-size:12px">${esc(r.url||'')}</td></tr>`,'No runtimes registered.')}</div></section>`;
+ const pb=document.getElementById('ping');if(pb)pb.onclick=async()=>{pb.textContent='Checking…';pb.disabled=true;for(const r of rts){try{await api(`/api/runtimes/${r.id}/health-check`,{method:'POST'});}catch(e){}}route();};
+}
+
+async function viewReleases(){
+ crumb('Releases');
+ const [rels,prods]=await Promise.all([api('/api/releases').then(r=>r.json()),api('/api/products').then(r=>r.json())]);
+ const nm=Object.fromEntries(prods.map(p=>[p.id,p.name]));
+ document.getElementById('main').innerHTML=`<h2>Releases</h2>
+  <p class="lead">Immutable, versioned builds. Only Master Production may publish; legacy imports are marked.</p>
+  <section><div class="body">${tbl(['Product','Version','Status','SHA','Source','Published'],rels,r=>`<tr>
+     <td><a href="#/products/${esc(r.erp_product_id)}" style="color:var(--acc2)">${esc(nm[r.erp_product_id]||r.erp_product_id)}</a></td>
+     <td class="mono">${esc(r.version)}</td><td>${r.is_legacy_import?'<span class="tag legacy">imported legacy</span>':`<span class="tag">${esc(r.status)}</span>`}</td>
+     <td class="mono dim">${esc(r.source_sha||'')}</td><td class="mut">${esc(r.source_master_runtime||(r.is_legacy_import?'legacy import':'master production'))}</td>
+     <td class="mono dim">${fmt(r.published_at)}</td></tr>`,'No releases.')}</div></section>`;
+}
+
+async function viewAudit(){
+ crumb('Platform Audit');
+ const a=await api('/api/audit').then(r=>r.json());
+ document.getElementById('main').innerHTML=`<h2>Platform Audit</h2>
+  <p class="lead">Every action taken in the Control Plane. Immutable and separate from each ERP's own audit trail.</p>
+  <section><div class="body">${tbl(['When','Actor','Action','Target','Detail','Result'],a,x=>`<tr>
+     <td class="mono dim">${fmt(x.at)}</td><td>${esc(x.actor)}</td><td><span class="tag">${esc(x.action)}</span></td>
+     <td class="mut">${esc(x.target_type)}:${esc(x.target_id)}</td><td class="mut">${esc(x.detail)}</td>
+     <td>${x.result==='ok'?'<span class="pill p-ok"><span class="dot"></span>ok</span>':health(x.result)}</td></tr>`,'No audit entries yet.')}</div></section>`;
+}
+
+async function viewSettings(){
+ crumb('Settings');
+ document.getElementById('main').innerHTML=`<h2>Settings</h2><p class="lead">Control Center configuration.</p>
+  <section><div class="sh"><h3>Operator</h3></div>
+    <dl class="kv"><dt>Signed in as</dt><dd class="mono">${esc(S.op)}</dd><dt>Platform role</dt><dd>${esc(S.role||'operator')}</dd>
+      <dt>Auth realm</dt><dd>Control Plane (separate from every ERP realm)</dd></dl></section>
+  <section><div class="soon"><div class="big">More settings coming in a later milestone</div>
+    Operator management, environment provisioning, deploy orchestration, licensing and preferences will live here.</div></section>`;
+}
+
+/* ---------------- boot ---------------- */
 renderLogin();
+if(location.hash&&location.hash!=='#/'){/* wait for login before routing */}
 </script>
 </body>
 </html>
