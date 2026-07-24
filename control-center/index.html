@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PFS Control Center</title>
+<style>
+  :root{--bg:#0f1420;--panel:#171e2e;--line:#26304a;--tx:#e7ecf5;--mut:#93a0bd;--acc:#5b8cff;--ok:#3ecf8e;--bad:#ff6b6b;--warn:#ffce5b}
+  *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.5 system-ui,Segoe UI,Roboto,sans-serif}
+  header{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px}
+  header b{font-size:16px}.mut{color:var(--mut)}
+  .wrap{max-width:1100px;margin:0 auto;padding:20px}
+  .login{max-width:360px;margin:8vh auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:22px}
+  input,button{font:inherit}input{width:100%;padding:9px 11px;margin:6px 0 12px;background:#0d1220;border:1px solid var(--line);border-radius:8px;color:var(--tx)}
+  button{padding:9px 14px;background:var(--acc);color:#fff;border:0;border-radius:8px;cursor:pointer}
+  button.sec{background:#22304e}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:14px 0}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .card .n{font-size:26px;font-weight:700}.card .l{color:var(--mut);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+  section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin:14px 0}
+  h3{margin:0 0 8px}table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--mut);font-weight:600}.pill{padding:2px 8px;border-radius:999px;font-size:12px;border:1px solid var(--line)}
+  .ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}.tag{background:#22304e;border-radius:6px;padding:1px 6px;font-size:12px}
+  .err{color:var(--bad);min-height:18px}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+const S = { tok: null, op: null };
+const $ = (h)=>{const t=document.createElement('template');t.innerHTML=h.trim();return t.content.firstChild;};
+async function api(path, opts={}){
+  const r = await fetch(path, {...opts, headers:{...(opts.headers||{}), ...(S.tok?{Authorization:'Bearer '+S.tok}:{})}});
+  if(r.status===401){ S.tok=null; renderLogin('Session expired — sign in again.'); throw new Error('401'); }
+  return r;
+}
+function renderLogin(msg=''){
+  document.getElementById('app').innerHTML='';
+  const box=$(`<div class="login"><b>PFS Control Center</b><div class="mut" style="margin:4px 0 14px">Platform Owner sign-in</div>
+    <label class="mut">Operator</label><input id="u" value="OP-owner">
+    <label class="mut">Password</label><input id="p" type="password" placeholder="password">
+    <button id="go">Sign in</button><div class="err" id="e">${msg}</div></div>`);
+  document.getElementById('app').appendChild(box);
+  box.querySelector('#go').onclick=async()=>{
+    const body=new URLSearchParams({username:box.querySelector('#u').value,password:box.querySelector('#p').value});
+    const r=await fetch('/auth/login',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});
+    if(!r.ok){ box.querySelector('#e').textContent='Invalid credentials'; return; }
+    const j=await r.json(); S.tok=j.access_token; S.op=j.operator; renderDash();
+  };
+}
+function hcls(s){return s==='ok'?'ok':(s==='unreachable'||s==='error'||s==='degraded')?'bad':'warn';}
+function rows(arr, cols){ return arr.map(o=>'<tr>'+cols.map(c=>`<td>${c(o)??''}</td>`).join('')+'</tr>').join(''); }
+async function renderDash(){
+  const app=document.getElementById('app'); app.innerHTML='';
+  app.appendChild($(`<header><b>PFS Control Center</b><span class="mut">Fleet & Platform metadata (read-only)</span>
+    <span style="margin-left:auto" class="mut">${S.op}</span> <button class="sec" id="out">Sign out</button></header>`));
+  const wrap=$(`<div class="wrap"></div>`); app.appendChild(wrap);
+  document.getElementById('out').onclick=()=>{S.tok=null;renderLogin();};
+  const [fleet,prods,envs,rts,rels,custs,cdeps,audit]=await Promise.all([
+    api('/api/fleet').then(r=>r.json()),
+    api('/api/products').then(r=>r.json()),
+    api('/api/products/smokestack/environments').then(r=>r.json()).catch(()=>[]),
+    api('/api/runtimes').then(r=>r.json()),
+    api('/api/releases').then(r=>r.json()),
+    api('/api/customers').then(r=>r.json()),
+    api('/api/customer-deployments').then(r=>r.json()),
+    api('/api/audit').then(r=>r.json()),
+  ]);
+  wrap.appendChild($(`<div class="grid">
+    <div class="card"><div class="n">${fleet.products}</div><div class="l">ERP Products</div></div>
+    <div class="card"><div class="n">${fleet.runtimes}</div><div class="l">Runtimes</div></div>
+    <div class="card"><div class="n">${fleet.customer_runtimes}</div><div class="l">Customer Prod</div></div>
+    <div class="card"><div class="n">${fleet.customers}</div><div class="l">Customers</div></div>
+    <div class="card"><div class="n">${fleet.releases}</div><div class="l">Releases</div></div>
+  </div>`));
+  const S1=$(`<section><h3>Runtimes &nbsp;<button class="sec" id="ping">Check health</button></h3>
+    <table><thead><tr><th>Product</th><th>Tier</th><th>Environment</th><th>Name</th><th>Health</th><th>URL</th></tr></thead>
+    <tbody>${rows(rts,[r=>r.erp_product_id,r=>`<span class="tag">${r.tier}</span>`,r=>r.environment_kind,r=>r.name,
+      r=>`<span class="${hcls(r.last_health_state)}">${r.last_health_state}</span>`,r=>r.url||''])}</tbody></table></section>`);
+  wrap.appendChild(S1);
+  S1.querySelector('#ping').onclick=async()=>{ for(const r of rts){ try{await api(`/api/runtimes/${r.id}/health-check`,{method:'POST'});}catch(e){} } renderDash(); };
+  wrap.appendChild($(`<section><h3>ERP Products & Master environments</h3>
+    <table><thead><tr><th>Product</th><th>Status</th><th>Master environments</th></tr></thead><tbody>
+    ${rows(prods,[p=>`<b>${p.name}</b> <span class="mut">${p.id}</span>`,p=>p.status,
+      p=>p.id==='smokestack'?envs.map(e=>`<span class="tag">${e.kind.replace('master_','')}</span>`).join(' '):'<span class="mut">—</span>'])}
+    </tbody></table></section>`));
+  wrap.appendChild($(`<section><h3>Releases</h3><table><thead><tr><th>Product</th><th>Version</th><th>Status</th><th>SHA</th><th>Source</th></tr></thead>
+    <tbody>${rows(rels,[r=>r.erp_product_id,r=>r.version,
+      r=>`<span class="pill ${r.is_legacy_import?'warn':'ok'}">${r.status}</span>`,r=>r.source_sha||'',r=>r.source_master_runtime||(r.is_legacy_import?'legacy import':'')])}</tbody></table></section>`));
+  wrap.appendChild($(`<section><h3>Customers & deployments</h3><table><thead><tr><th>Customer</th><th>Product</th><th>Tenant (company_id)</th><th>Status</th></tr></thead>
+    <tbody>${rows(custs,[c=>c.name,c=>c.erp_product_id,c=>c.external_ref||'',c=>c.status])}</tbody></table></section>`));
+  wrap.appendChild($(`<section><h3>Platform audit</h3><table><thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Target</th><th>Detail</th></tr></thead>
+    <tbody>${rows(audit.slice(0,40),[a=>(a.at||'').replace('T',' ').slice(0,19),a=>a.actor,a=>a.action,a=>`${a.target_type}:${a.target_id}`,a=>a.detail||''])}</tbody></table></section>`));
+}
+renderLogin();
+</script>
+</body>
+</html>
