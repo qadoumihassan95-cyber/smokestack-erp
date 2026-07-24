@@ -657,3 +657,78 @@ def home(db: Session = Depends(get_db), op=Depends(current_operator)):
             "last_activity": _iso(last_audit.at) if last_audit else _iso(p.created_at),
         })
     return {"products": cards, "operator": {"id": op.id, "name": op.name, "role": op.platform_role}}
+
+
+@app.get("/api/dashboard")
+def dashboard_data(db: Session = Depends(get_db), op=Depends(current_operator)):
+    """One call powering the Platform Dashboard widgets (API efficiency)."""
+    products = home(db, op)["products"]
+    rts = db.query(models.Runtime).all()
+    by_health = {}
+    for r in rts:
+        s = r.last_health_state or "unknown"
+        by_health[s] = by_health.get(s, 0) + 1
+    lics = db.query(models.License).all()
+    lic_by_status = {}
+    for x in lics:
+        lic_by_status[x.status] = lic_by_status.get(x.status, 0) + 1
+    newest_customers = [_customer(c) for c in
+                        db.query(models.CustomerRef).order_by(models.CustomerRef.id.desc()).limit(6).all()]
+    recent_sessions = [_session(s, db) for s in
+                       db.query(models.SupportSession).order_by(models.SupportSession.id.desc()).limit(6).all()]
+    latest_updates = [_dep(d, db) for d in
+                      db.query(models.Deployment).order_by(models.Deployment.id.desc()).limit(6).all()]
+    recent_activity = [_audit_row(a) for a in
+                       db.query(models.PlatformAuditLog).order_by(models.PlatformAuditLog.id.desc()).limit(8).all()]
+    return {
+        "fleet": {"products": len(products),
+                  "customers": db.query(models.CustomerRef).count(),
+                  "active_licenses": sum(1 for x in lics if x.status in ("active", "trial")),
+                  "open_sessions": sum(1 for s in db.query(models.SupportSession).all()
+                                       if _effective_session_status(s) in ("active", "pending_erp_integration")),
+                  "by_health": by_health},
+        "newest_products": products[:6],
+        "newest_customers": newest_customers,
+        "recent_sessions": recent_sessions,
+        "latest_updates": latest_updates,
+        "license_summary": {"total": len(lics), "by_status": lic_by_status},
+        "recent_activity": recent_activity,
+    }
+
+
+@app.get("/api/search")
+def search(q: str = "", db: Session = Depends(get_db), op=Depends(current_operator)):
+    """Global search across platform metadata (products, customers, licenses, sessions, versions).
+
+    Read-only and case-insensitive. Returns compact, categorised matches for the top-nav search.
+    """
+    ql = (q or "").strip().lower()
+    if not ql:
+        return {"query": q, "products": [], "customers": [], "licenses": [],
+                "sessions": [], "versions": []}
+
+    def _match(*vals):
+        return any(ql in (str(v).lower()) for v in vals if v is not None)
+
+    products = [{"id": p.id, "name": p.name}
+                for p in db.query(models.ErpProduct).order_by(models.ErpProduct.name).all()
+                if _match(p.id, p.name, p.description)][:8]
+    cust_rows = db.query(models.CustomerRef).order_by(models.CustomerRef.name).all()
+    customers = [{"id": c.id, "erp_product_id": c.erp_product_id, "name": c.name,
+                  "external_ref": c.external_ref}
+                 for c in cust_rows if _match(c.name, c.external_ref)][:8]
+    cust_name = {c.id: c.name for c in cust_rows}
+    licenses = [{"id": x.id, "erp_product_id": x.erp_product_id, "customer_ref_id": x.customer_ref_id,
+                 "customer_name": cust_name.get(x.customer_ref_id), "plan": x.plan, "status": x.status}
+                for x in db.query(models.License).order_by(models.License.id.desc()).all()
+                if _match(x.plan, x.status, cust_name.get(x.customer_ref_id))][:8]
+    sessions = [{"id": s.id, "erp_product_id": s.erp_product_id,
+                 "customer_name": cust_name.get(s.customer_ref_id),
+                 "status": _effective_session_status(s), "session_ref": s.session_ref}
+                for s in db.query(models.SupportSession).order_by(models.SupportSession.id.desc()).all()
+                if _match(s.session_ref, cust_name.get(s.customer_ref_id), s.capabilities)][:8]
+    versions = [{"id": r.id, "erp_product_id": r.erp_product_id, "version": r.version, "status": r.status}
+                for r in db.query(models.Release).order_by(models.Release.id.desc()).all()
+                if _match(r.version, r.status, r.source_sha)][:8]
+    return {"query": q, "products": products, "customers": customers,
+            "licenses": licenses, "sessions": sessions, "versions": versions}

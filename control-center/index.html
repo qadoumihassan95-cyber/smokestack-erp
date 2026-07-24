@@ -1,172 +1,267 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>PFS Control Center</title>
 <style>
   :root{
-    --bg:#f4f6f8; --surface:#ffffff; --ink:#1b2733; --muted:#5b6b7b; --faint:#8a99a8;
-    --line:#e3e8ee; --line2:#eef2f6; --brand:#2ca01c; --brand-d:#1f7a15; --brand-t:#e9f6e6;
-    --blue:#2f6fed; --blue-t:#e8f0fe; --amber:#b7791f; --amber-t:#fdf3e2; --red:#c23b3b;
-    --red-t:#fbe9e9; --gray-t:#eef1f4; --shadow:0 1px 2px rgba(16,32,48,.06),0 2px 8px rgba(16,32,48,.05);
-    --radius:12px;
+    --bg:#f6f8fa; --surface:#ffffff; --surface-2:#fbfcfd; --ink:#111827; --muted:#5b6472;
+    --faint:#8b94a3; --line:#e7ebf0; --line-2:#f0f3f6; --brand:#2ca01c; --brand-d:#1f7a15;
+    --brand-t:#e9f6e6; --blue:#2f6fed; --blue-t:#eaf1fe; --amber:#b7791f; --amber-t:#fdf3e2;
+    --red:#d64545; --red-t:#fce9e9; --violet:#7c5cff; --violet-t:#efeaff; --gray-t:#eef1f5;
+    --shadow-sm:0 1px 2px rgba(16,24,40,.05); --shadow:0 2px 8px rgba(16,24,40,.06);
+    --shadow-lg:0 12px 32px rgba(16,24,40,.12); --radius:12px; --radius-sm:8px;
+    --topbar:56px; --sidebar:236px;
+  }
+  html[data-theme="dark"]{
+    --bg:#0e1117; --surface:#161b22; --surface-2:#1b212b; --ink:#e6edf3; --muted:#9aa4b2;
+    --faint:#6e7781; --line:#252c37; --line-2:#1e242e; --brand:#3fb950; --brand-d:#2ea043;
+    --brand-t:#132b17; --blue:#4b8bff; --blue-t:#12233f; --amber:#d9a441; --amber-t:#33280f;
+    --red:#f0616d; --red-t:#3a1a1d; --violet:#a892ff; --violet-t:#221a3d; --gray-t:#222834;
+    --shadow-sm:0 1px 2px rgba(0,0,0,.3); --shadow:0 2px 10px rgba(0,0,0,.35);
+    --shadow-lg:0 16px 40px rgba(0,0,0,.5);
   }
   *{box-sizing:border-box}
   html,body{margin:0;height:100%}
   body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-    background:var(--bg);color:var(--ink);font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased}
+    background:var(--bg);color:var(--ink);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
   a{color:inherit;text-decoration:none}
-  button{font-family:inherit;font-size:14px;cursor:pointer}
-  .muted{color:var(--muted)} .faint{color:var(--faint)} .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  button{font-family:inherit;font-size:14px;cursor:pointer;color:inherit}
+  svg{display:block}
+  .muted{color:var(--muted)} .faint{color:var(--faint)}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
   .hidden{display:none!important}
+  ::-webkit-scrollbar{width:10px;height:10px} ::-webkit-scrollbar-thumb{background:var(--line);border-radius:8px}
 
   /* buttons */
-  .btn{border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:8px 14px;
-    border-radius:8px;font-weight:600;display:inline-flex;align-items:center;gap:7px;transition:.12s}
-  .btn:hover{background:#f7f9fb;border-color:#d5dde5}
+  .btn{border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:8px 13px;
+    border-radius:var(--radius-sm);font-weight:600;display:inline-flex;align-items:center;gap:7px;
+    transition:background .13s,border-color .13s,transform .06s,box-shadow .13s;white-space:nowrap}
+  .btn:hover{background:var(--surface-2);border-color:#d2dae3}
+  .btn:active{transform:translateY(1px)}
   .btn.primary{background:var(--brand);border-color:var(--brand);color:#fff}
   .btn.primary:hover{background:var(--brand-d);border-color:var(--brand-d)}
   .btn.ghost{border-color:transparent;background:transparent;color:var(--muted)}
   .btn.ghost:hover{background:var(--gray-t);color:var(--ink)}
-  .btn.danger{color:var(--red);border-color:#f0cccc;background:#fff}
+  .btn.danger{color:var(--red);border-color:transparent;background:transparent}
   .btn.danger:hover{background:var(--red-t)}
-  .btn.sm{padding:5px 10px;font-size:13px;border-radius:7px}
+  .btn.sm{padding:5px 10px;font-size:13px}
+  .btn.icon{padding:8px;border-color:transparent;background:transparent;color:var(--muted);border-radius:9px}
+  .btn.icon:hover{background:var(--gray-t);color:var(--ink)}
   .btn:disabled{opacity:.5;cursor:not-allowed}
 
   /* badges */
   .badge{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;
-    font-size:12px;font-weight:600;background:var(--gray-t);color:var(--muted);white-space:nowrap}
+    font-size:12px;font-weight:600;background:var(--gray-t);color:var(--muted);white-space:nowrap;line-height:1.5}
   .badge .dot{width:7px;height:7px;border-radius:50%;background:currentColor}
-  .b-green{background:var(--brand-t);color:var(--brand-d)}
-  .b-blue{background:var(--blue-t);color:var(--blue)}
-  .b-amber{background:var(--amber-t);color:var(--amber)}
-  .b-red{background:var(--red-t);color:var(--red)}
-  .b-gray{background:var(--gray-t);color:var(--muted)}
+  .b-green{background:var(--brand-t);color:var(--brand-d)} .b-blue{background:var(--blue-t);color:var(--blue)}
+  .b-amber{background:var(--amber-t);color:var(--amber)} .b-red{background:var(--red-t);color:var(--red)}
+  .b-violet{background:var(--violet-t);color:var(--violet)} .b-gray{background:var(--gray-t);color:var(--muted)}
 
-  /* shell */
-  #app{min-height:100%}
-  .topbar{position:sticky;top:0;z-index:30;height:56px;background:var(--surface);border-bottom:1px solid var(--line);
-    display:flex;align-items:center;gap:14px;padding:0 18px}
-  .brand{display:flex;align-items:center;gap:9px;font-weight:800;letter-spacing:.2px}
-  .brand .logo{width:28px;height:28px;border-radius:7px;background:linear-gradient(135deg,var(--brand),#38b24a);
+  /* top bar */
+  .topbar{position:sticky;top:0;z-index:50;height:var(--topbar);background:var(--surface);
+    border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;padding:0 14px}
+  .brand{display:flex;align-items:center;gap:9px;font-weight:800;letter-spacing:.2px;flex:none}
+  .brand .logo{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--brand),#40c256);
     color:#fff;display:grid;place-items:center;font-size:13px;font-weight:800}
-  .crumbs{display:flex;align-items:center;gap:7px;color:var(--muted);font-weight:600;min-width:0;overflow:hidden}
-  .crumbs a:hover{color:var(--ink)}
-  .crumbs .sep{color:var(--faint)}
-  .crumbs .cur{color:var(--ink)}
+  .hamburger{display:none}
+  .crumbs{display:flex;align-items:center;gap:6px;color:var(--muted);font-weight:600;min-width:0;overflow:hidden;flex:none}
+  .crumbs a:hover{color:var(--ink)} .crumbs .sep{color:var(--faint)} .crumbs .cur{color:var(--ink)}
   .spacer{flex:1}
-  .opmenu{position:relative}
-  .menu{position:absolute;right:0;top:42px;background:var(--surface);border:1px solid var(--line);border-radius:10px;
-    box-shadow:var(--shadow);min-width:210px;padding:6px;z-index:40}
-  .menu button{display:flex;width:100%;text-align:left;border:none;background:none;padding:9px 10px;border-radius:7px;
-    color:var(--ink);align-items:center;gap:9px}
-  .menu button:hover{background:var(--gray-t)}
-  .menu .hd{padding:7px 10px 4px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--faint);font-weight:700}
+  .topbar-actions{display:flex;align-items:center;gap:6px;flex:none}
 
-  .layout{display:flex;min-height:calc(100vh - 56px)}
-  .rail{width:224px;flex:none;background:var(--surface);border-right:1px solid var(--line);padding:14px 12px;
-    display:flex;flex-direction:column;gap:2px}
-  .rail a{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;color:var(--muted);font-weight:600}
-  .rail a:hover{background:var(--gray-t);color:var(--ink)}
-  .rail a.active{background:var(--brand-t);color:var(--brand-d)}
-  .rail a .ic{width:17px;text-align:center;opacity:.9}
-  .rail a .ct{margin-left:auto;font-size:11px;background:var(--gray-t);color:var(--muted);border-radius:999px;padding:0 7px;font-weight:700}
-  .rail a.active .ct{background:#d6efd0;color:var(--brand-d)}
-  .content{flex:1;min-width:0;padding:22px 26px 60px}
+  /* global search */
+  .gsearch{position:relative;flex:1;max-width:520px;min-width:120px}
+  .gsearch .field{display:flex;align-items:center;gap:8px;background:var(--surface-2);border:1px solid var(--line);
+    border-radius:10px;padding:7px 11px;transition:border-color .13s,box-shadow .13s}
+  .gsearch .field:focus-within{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-t)}
+  .gsearch input{border:none;background:none;outline:none;flex:1;color:var(--ink);font-size:13.5px;min-width:0}
+  .gsearch .kbd{font-size:11px;color:var(--faint);border:1px solid var(--line);border-radius:5px;padding:1px 5px}
+  .gs-panel{position:absolute;top:44px;left:0;right:0;background:var(--surface);border:1px solid var(--line);
+    border-radius:12px;box-shadow:var(--shadow-lg);max-height:64vh;overflow:auto;z-index:60;padding:6px}
+  .gs-cat{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--faint);font-weight:700;padding:9px 10px 4px}
+  .gs-item{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer}
+  .gs-item:hover,.gs-item.active{background:var(--gray-t)}
+  .gs-item .ic{color:var(--muted);flex:none} .gs-item .t{font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .gs-empty{padding:22px;text-align:center;color:var(--muted)}
 
-  .page-h{display:flex;align-items:flex-start;gap:14px;margin-bottom:18px;flex-wrap:wrap}
-  .page-h h1{font-size:21px;margin:0;font-weight:800;letter-spacing:-.2px}
-  .page-h p{margin:3px 0 0;color:var(--muted)}
+  /* dropdown menus */
+  .pop{position:relative}
+  .menu{position:absolute;right:0;top:44px;background:var(--surface);border:1px solid var(--line);border-radius:12px;
+    box-shadow:var(--shadow-lg);min-width:230px;padding:6px;z-index:60;animation:pop .12s ease}
+  @keyframes pop{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+  .menu .hd{padding:9px 11px 5px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--faint);font-weight:700}
+  .menu button.item{display:flex;width:100%;text-align:left;border:none;background:none;padding:9px 11px;border-radius:8px;
+    align-items:center;gap:10px;color:var(--ink);font-weight:500}
+  .menu button.item:hover{background:var(--gray-t)}
+  .menu .sepline{height:1px;background:var(--line);margin:5px 4px}
+  .bell-wrap{position:relative}
+  .bell-badge{position:absolute;top:3px;right:3px;min-width:16px;height:16px;padding:0 4px;border-radius:9px;
+    background:var(--red);color:#fff;font-size:10px;font-weight:800;display:grid;place-items:center;border:2px solid var(--surface)}
+  .avatar{width:28px;height:28px;border-radius:50%;background:var(--brand-t);color:var(--brand-d);
+    display:grid;place-items:center;font-weight:800;font-size:12px}
+  .notif{display:flex;gap:10px;padding:9px 10px;border-radius:8px}
+  .notif:hover{background:var(--gray-t)} .notif .ic{color:var(--muted);flex:none;margin-top:1px}
+  .notif .t{font-weight:600;font-size:13px} .notif .s{color:var(--faint);font-size:12px}
+
+  /* layout */
+  .layout{display:flex;min-height:calc(100vh - var(--topbar))}
+  .sidebar{width:var(--sidebar);flex:none;background:var(--surface);border-right:1px solid var(--line);
+    padding:12px 10px;display:flex;flex-direction:column;gap:2px;position:sticky;top:var(--topbar);
+    height:calc(100vh - var(--topbar));overflow:auto}
+  .sidebar .switch{display:flex;align-items:center;gap:9px;padding:9px 10px;border:1px solid var(--line);
+    border-radius:10px;margin-bottom:8px;cursor:pointer;font-weight:700}
+  .sidebar .switch:hover{background:var(--gray-t)}
+  .sidebar a.nav{display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:9px;color:var(--muted);font-weight:600}
+  .sidebar a.nav:hover{background:var(--gray-t);color:var(--ink)}
+  .sidebar a.nav.active{background:var(--brand-t);color:var(--brand-d)}
+  .sidebar a.nav .ic{flex:none} .sidebar a.nav .ct{margin-left:auto;font-size:11px;background:var(--gray-t);
+    color:var(--muted);border-radius:999px;padding:0 7px;font-weight:700}
+  .sidebar a.nav.active .ct{background:#d6efd0;color:var(--brand-d)}
+  html[data-theme="dark"] .sidebar a.nav.active .ct{background:#18351d}
+  .content{flex:1;min-width:0;padding:22px 26px 64px;max-width:1360px;margin:0 auto;width:100%}
+  .scrim{display:none}
+
+  /* page header */
+  .page-h{display:flex;align-items:flex-start;gap:14px;margin-bottom:20px;flex-wrap:wrap}
+  .page-h h1{font-size:22px;margin:0;font-weight:800;letter-spacing:-.3px}
+  .page-h p{margin:4px 0 0;color:var(--muted)}
   .page-h .actions{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+  .section-h{display:flex;align-items:center;gap:10px;margin:0 0 12px}
+  .section-h h2{font-size:15px;margin:0;font-weight:700} .section-h .more{margin-left:auto}
 
-  /* cards / grid */
-  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
-  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
-  .erpcard{padding:18px;display:flex;flex-direction:column;gap:14px;cursor:pointer;transition:.12s}
-  .erpcard:hover{border-color:#cfe6c8;box-shadow:0 4px 16px rgba(20,60,20,.10);transform:translateY(-1px)}
+  /* cards & grids */
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow-sm)}
+  .pad{padding:16px}
+  .grid{display:grid;gap:16px}
+  .cols-auto{grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
+  .dash{display:grid;grid-template-columns:repeat(12,1fr);gap:16px}
+  .col-4{grid-column:span 4} .col-6{grid-column:span 6} .col-8{grid-column:span 8} .col-12{grid-column:span 12}
+  @media(max-width:1080px){.col-4,.col-6,.col-8{grid-column:span 12}}
+
+  .erpcard{padding:18px;display:flex;flex-direction:column;gap:13px;cursor:pointer;position:relative;
+    transition:border-color .14s,box-shadow .14s,transform .14s}
+  .erpcard:hover{border-color:#cfe6c8;box-shadow:var(--shadow-lg);transform:translateY(-2px)}
+  .erpcard:hover .go{opacity:1;transform:none}
+  .erpcard .go{position:absolute;top:16px;right:16px;color:var(--brand-d);opacity:0;transform:translateX(-4px);transition:.14s}
   .erpcard .top{display:flex;align-items:center;gap:12px}
-  .erpcard .icon{width:42px;height:42px;border-radius:10px;background:linear-gradient(135deg,#eaf6e6,#dff0da);
+  .erpcard .icon{width:44px;height:44px;border-radius:11px;background:linear-gradient(135deg,#eaf6e6,#dcefd5);
     color:var(--brand-d);display:grid;place-items:center;font-weight:800;font-size:16px;flex:none}
+  html[data-theme="dark"] .erpcard .icon{background:linear-gradient(135deg,#14301a,#102615)}
   .erpcard h3{margin:0;font-size:16px;font-weight:800}
-  .erpcard .desc{color:var(--muted);font-size:13px;min-height:18px}
-  .statrow{display:flex;gap:18px;flex-wrap:wrap;border-top:1px solid var(--line2);margin-top:2px;padding-top:12px}
-  .stat b{display:block;font-size:17px;font-weight:800}
-  .stat span{font-size:11.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.4px;font-weight:700}
+  .erpcard .desc{color:var(--muted);font-size:13px;min-height:19px}
+  .statrow{display:flex;gap:20px;flex-wrap:wrap;border-top:1px solid var(--line-2);padding-top:13px}
+  .stat b{display:block;font-size:17px;font-weight:800} .stat span{font-size:11px;color:var(--faint);
+    text-transform:uppercase;letter-spacing:.4px;font-weight:700}
 
-  /* summary tiles */
-  .tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:13px;margin-bottom:20px}
-  .tile{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px 15px;box-shadow:var(--shadow)}
-  .tile b{display:block;font-size:22px;font-weight:800;letter-spacing:-.3px}
-  .tile span{font-size:12px;color:var(--faint);text-transform:uppercase;letter-spacing:.4px;font-weight:700}
+  /* stat tiles */
+  .tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px}
+  .tile{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:15px 16px;
+    box-shadow:var(--shadow-sm);display:flex;flex-direction:column;gap:6px}
+  .tile .lab{display:flex;align-items:center;gap:8px;color:var(--faint);font-size:12px;text-transform:uppercase;
+    letter-spacing:.4px;font-weight:700}
+  .tile b{font-size:24px;font-weight:800;letter-spacing:-.4px}
+
+  /* list rows (widgets) */
+  .lrow{display:flex;align-items:center;gap:11px;padding:10px 4px;border-bottom:1px solid var(--line-2)}
+  .lrow:last-child{border-bottom:none}
+  .lrow .ic{color:var(--muted);flex:none} .lrow .m{flex:1;min-width:0}
+  .lrow .m .t{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lrow .m .s{color:var(--faint);font-size:12px}
+  .lrow a.t:hover{color:var(--brand-d)}
 
   /* tables */
   .toolbar{display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
-  .search{position:relative;flex:1;min-width:200px;max-width:360px}
-  .search input,.field input,.field select,.field textarea{width:100%;padding:9px 11px;border:1px solid var(--line);
-    border-radius:8px;font-size:14px;background:var(--surface);color:var(--ink)}
-  .search input{padding-left:32px}
+  .search{position:relative;flex:1;min-width:180px;max-width:340px}
+  .search input,.field-in{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:14px;
+    background:var(--surface);color:var(--ink);transition:border-color .13s,box-shadow .13s}
+  .search input{padding-left:33px}
+  .search input:focus,.field-in:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-t)}
   .search .mag{position:absolute;left:10px;top:9px;color:var(--faint)}
-  select.filter{padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:var(--surface);font-weight:600;color:var(--ink)}
-  .tablewrap{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+  select.filter{padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:var(--surface);font-weight:600;color:var(--ink)}
+  .tablewrap{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow-sm);overflow:hidden}
   .scroll{overflow-x:auto}
   table{width:100%;border-collapse:collapse;font-size:13.5px}
-  thead th{text-align:left;padding:11px 14px;background:#fafbfc;border-bottom:1px solid var(--line);
-    font-size:11.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--faint);font-weight:700;white-space:nowrap}
-  tbody td{padding:11px 14px;border-bottom:1px solid var(--line2);vertical-align:middle}
-  tbody tr:last-child td{border-bottom:none}
-  tbody tr:hover{background:#fafcfb}
+  thead th{text-align:left;padding:11px 14px;background:var(--surface-2);border-bottom:1px solid var(--line);
+    font-size:11.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--faint);font-weight:700;white-space:nowrap;user-select:none}
+  thead th.sortable{cursor:pointer} thead th.sortable:hover{color:var(--ink)}
+  thead th .sortarrow{opacity:.5;margin-left:4px}
+  tbody td{padding:11px 14px;border-bottom:1px solid var(--line-2);vertical-align:middle}
+  tbody tr:last-child td{border-bottom:none} tbody tr:hover{background:var(--surface-2)}
+  tbody tr.sel{background:var(--brand-t)}
   td .co{font-weight:700} td .ref{font-size:12px;color:var(--faint)}
   .rowact{display:flex;gap:6px;justify-content:flex-end}
-  .pager{display:flex;align-items:center;gap:10px;justify-content:flex-end;padding:11px 14px;border-top:1px solid var(--line2);color:var(--muted)}
+  .pager{display:flex;align-items:center;gap:10px;justify-content:flex-end;padding:11px 14px;border-top:1px solid var(--line-2);color:var(--muted);flex-wrap:wrap}
+  .bulkbar{display:flex;align-items:center;gap:12px;padding:9px 14px;background:var(--brand-t);border-bottom:1px solid var(--line);
+    color:var(--brand-d);font-weight:600}
+  input[type=checkbox]{accent-color:var(--brand);width:15px;height:15px}
 
   /* states */
-  .empty{padding:46px 20px;text-align:center;color:var(--muted)}
-  .empty .ei{font-size:30px;margin-bottom:8px;opacity:.5}
+  .empty{padding:44px 20px;text-align:center;color:var(--muted)}
+  .empty .ei{color:var(--faint);margin-bottom:10px;display:flex;justify-content:center}
   .empty h4{margin:0 0 4px;color:var(--ink);font-size:15px}
-  .skel{background:linear-gradient(90deg,#eef2f6 25%,#e5eaf0 37%,#eef2f6 63%);background-size:400% 100%;
-    animation:sh 1.3s infinite;border-radius:8px}
+  .skel{background:linear-gradient(90deg,var(--line-2) 25%,var(--line) 37%,var(--line-2) 63%);
+    background-size:400% 100%;animation:sh 1.3s infinite;border-radius:8px}
   @keyframes sh{0%{background-position:100% 0}100%{background-position:-100% 0}}
-  .errbox{background:var(--red-t);border:1px solid #f0cccc;color:#8a2b2b;padding:14px 16px;border-radius:10px;font-weight:600}
+  .errbox{background:var(--red-t);border:1px solid var(--red);color:var(--red);padding:14px 16px;border-radius:10px;font-weight:600}
 
-  /* modal */
-  .overlay{position:fixed;inset:0;background:rgba(20,32,44,.44);display:grid;place-items:center;z-index:60;padding:18px}
-  .modal{background:var(--surface);border-radius:14px;box-shadow:0 20px 60px rgba(10,20,30,.3);width:100%;max-width:520px;
-    max-height:90vh;overflow:auto}
-  .modal .mh{padding:18px 20px 6px} .modal .mh h3{margin:0;font-size:17px;font-weight:800}
-  .modal .mb{padding:8px 20px 4px} .modal .mf{padding:14px 20px 18px;display:flex;gap:9px;justify-content:flex-end;border-top:1px solid var(--line2);margin-top:12px}
-  .field{margin:12px 0} .field label{display:block;font-weight:700;font-size:12.5px;margin-bottom:5px;color:var(--muted)}
-  .field .hint{font-weight:500;color:var(--faint);font-size:12px;margin-top:4px}
-  .note{background:#f6f8fa;border:1px solid var(--line);border-radius:9px;padding:11px 13px;color:var(--muted);font-size:13px}
-  .note.warn{background:var(--amber-t);border-color:#f0dcae;color:#7a5a12}
+  /* modal / wizard */
+  .overlay{position:fixed;inset:0;background:rgba(15,22,32,.5);display:grid;place-items:center;z-index:80;padding:18px;
+    animation:fade .12s ease}
+  @keyframes fade{from{opacity:0}to{opacity:1}}
+  .modal{background:var(--surface);border-radius:16px;box-shadow:var(--shadow-lg);width:100%;max-width:560px;
+    max-height:92vh;overflow:auto;animation:pop .14s ease}
+  .modal .mh{padding:18px 22px 8px} .modal .mh h3{margin:0;font-size:17px;font-weight:800}
+  .modal .mh p{margin:4px 0 0;color:var(--muted);font-size:13px}
+  .modal .mb{padding:6px 22px} .modal .mf{padding:16px 22px 20px;display:flex;gap:9px;justify-content:flex-end;
+    border-top:1px solid var(--line-2);margin-top:14px;flex-wrap:wrap}
+  .field{margin:13px 0} .field label{display:block;font-weight:700;font-size:12.5px;margin-bottom:6px;color:var(--muted)}
+  .field textarea{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:14px;
+    background:var(--surface);color:var(--ink);font-family:inherit;resize:vertical}
+  .field .hint{font-weight:500;color:var(--faint);font-size:12px;margin-top:5px}
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .note{background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:11px 13px;color:var(--muted);font-size:13px}
+  .note.warn{background:var(--amber-t);border-color:var(--amber);color:var(--amber)}
+  .steps{display:flex;gap:6px;padding:14px 22px 0}
+  .step{flex:1;height:4px;border-radius:3px;background:var(--line)} .step.on{background:var(--brand)}
+  .steplabels{display:flex;gap:6px;padding:8px 22px 0;font-size:12px;color:var(--faint);font-weight:600;flex-wrap:wrap}
 
   /* toast */
-  #toasts{position:fixed;right:18px;bottom:18px;z-index:80;display:flex;flex-direction:column;gap:9px}
-  .toast{background:#12232f;color:#fff;padding:11px 15px;border-radius:9px;box-shadow:0 8px 24px rgba(0,0,0,.22);
-    font-weight:600;display:flex;gap:9px;align-items:center;animation:tin .18s ease}
-  .toast.ok{background:#1f7a15} .toast.err{background:#b3302f}
-  @keyframes tin{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  #toasts{position:fixed;right:18px;bottom:18px;z-index:100;display:flex;flex-direction:column;gap:9px}
+  .toast{background:#11202c;color:#fff;padding:11px 15px;border-radius:10px;box-shadow:var(--shadow-lg);
+    font-weight:600;display:flex;gap:9px;align-items:center;animation:tin .18s ease;max-width:360px}
+  .toast.ok{background:var(--brand-d)} .toast.err{background:var(--red)}
+  @keyframes tin{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 
   /* login */
   .login{min-height:100vh;display:grid;place-items:center;padding:20px;
-    background:radial-gradient(1200px 500px at 50% -10%,#e9f6e6,transparent),var(--bg)}
-  .login .box{width:100%;max-width:380px}
-  .login .card{padding:26px}
-  .login .brand{justify-content:center;font-size:19px;margin-bottom:4px}
-  .login h2{margin:14px 0 2px;font-size:18px;text-align:center}
-  .login p.sub{margin:0 0 16px;text-align:center;color:var(--muted)}
+    background:radial-gradient(1200px 520px at 50% -12%,var(--brand-t),transparent),var(--bg)}
+  .login .box{width:100%;max-width:390px}
+  .login .card{padding:28px} .login .brand{justify-content:center;font-size:20px;margin-bottom:6px}
+  .login h2{margin:16px 0 2px;font-size:19px;text-align:center} .login p.sub{margin:0 0 18px;text-align:center;color:var(--muted)}
 
   .lifecycle{display:flex;gap:8px;flex-wrap:wrap}
-  .lc{border:1px solid var(--line);border-radius:8px;padding:8px 12px;background:#fafbfc;font-weight:600;color:var(--muted)}
+  .lc{border:1px solid var(--line);border-radius:9px;padding:8px 12px;background:var(--surface-2);font-weight:600;color:var(--muted)}
   .lc b{display:block;color:var(--ink);font-size:12px}
+  .hbar{height:8px;border-radius:6px;background:var(--gray-t);overflow:hidden;display:flex}
+  .hbar span{height:100%}
 
-  @media(max-width:820px){
-    .layout{flex-direction:column}
-    .rail{width:auto;flex-direction:row;overflow-x:auto;border-right:none;border-bottom:1px solid var(--line);padding:8px}
-    .rail a{white-space:nowrap} .rail a .ct{display:none}
-    .content{padding:16px 14px 50px}
-    .crumbs .hideM{display:none}
+  /* responsive */
+  @media(max-width:900px){
+    .hamburger{display:inline-flex}
+    .sidebar{position:fixed;left:0;top:var(--topbar);z-index:70;height:calc(100vh - var(--topbar));
+      transform:translateX(-105%);transition:transform .2s;box-shadow:var(--shadow-lg)}
+    .sidebar.open{transform:none}
+    .scrim.show{display:block;position:fixed;inset:var(--topbar) 0 0 0;background:rgba(0,0,0,.35);z-index:65}
+    .content{padding:16px 14px 56px}
+    .gsearch .kbd{display:none}
+    .crumbs .hideS{display:none}
+  }
+  @media(max-width:560px){
+    .gsearch{max-width:none}
+    .brand span{display:none}
+    .page-h h1{font-size:19px}
   }
 </style>
 </head>
@@ -177,539 +272,629 @@
 
 <script>
 "use strict";
-/* ---------------- state + api ---------------- */
-const S = { token: localStorage.getItem("cc_token")||"", op:null, erpName:{} };
-const el = document.getElementById("app");
-const modalRoot = document.getElementById("modalRoot");
+/* ============================ icons ============================ */
+const ICONS={
+ search:'<path d="M21 21l-4.3-4.3M11 19a8 8 0 110-16 8 8 0 010 16z"/>',
+ bell:'<path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0"/>',
+ grid:'<path d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z"/>',
+ users:'<path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8M23 21v-2a4 4 0 00-3-3.9M16 3.1a4 4 0 010 7.8"/>',
+ shield:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+ tag:'<path d="M20.6 13.4L12 22l-9-9V3h10l7.6 7.6a2 2 0 010 2.8zM7 7h.01"/>',
+ upload:'<path d="M4 17v3a1 1 0 001 1h14a1 1 0 001-1v-3M12 3v13M7 8l5-5 5 5"/>',
+ heart:'<path d="M20.8 4.6a5.5 5.5 0 00-7.8 0L12 5.6l-1-1a5.5 5.5 0 10-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 000-7.8z"/>',
+ list:'<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+ gear:'<path d="M12 15a3 3 0 100-6 3 3 0 000 6z"/><path d="M19.4 15a1.6 1.6 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.6 1.6 0 00-2.7.7 1.6 1.6 0 01-3.2 0 1.6 1.6 0 00-2.7-.7l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.6 1.6 0 00-.7-2.7 1.6 1.6 0 010-3.2 1.6 1.6 0 00.7-2.7l-.1-.1a2 2 0 112.8-2.8l.1.1a1.6 1.6 0 002.7-.7 1.6 1.6 0 013.2 0 1.6 1.6 0 002.7.7l.1-.1a2 2 0 112.8 2.8l-.1.1a1.6 1.6 0 00.7 2.7 1.6 1.6 0 010 3.2z"/>',
+ plus:'<path d="M12 5v14M5 12h14"/>',
+ box:'<path d="M21 8l-9-5-9 5 9 5 9-5zM3 8v8l9 5 9-5V8M3 8l9 5 9-5"/>',
+ sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+ moon:'<path d="M21 12.8A9 9 0 1111.2 3 7 7 0 0021 12.8z"/>',
+ logout:'<path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/>',
+ user:'<path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z"/>',
+ key:'<path d="M21 2l-2 2m-7.6 7.6a5 5 0 11-7 7 5 5 0 017-7zm0 0L15 8l3 3 3-3-3-3"/>',
+ activity:'<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+ arrow:'<path d="M5 12h14M13 5l7 7-7 7"/>',
+ chevron:'<path d="M9 18l6-6-6-6"/>',
+ external:'<path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/>',
+ refresh:'<path d="M23 4v6h-6M1 20v-6h6M3.5 9a9 9 0 0114.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0020.5 15"/>',
+ filter:'<path d="M22 3H2l8 9.5V19l4 2v-8.5L22 3z"/>',
+ menu:'<path d="M3 12h18M3 6h18M3 18h18"/>',
+ check:'<path d="M20 6L9 17l-5-5"/>',
+ dot:'<circle cx="12" cy="12" r="3"/>',
+};
+function ic(name,size){size=size||16;return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]||''}</svg>`;}
+
+/* ============================ state + helpers ============================ */
+const S={token:localStorage.getItem("cc_token")||"",op:null,erpName:{},theme:localStorage.getItem("cc_theme")||"light"};
+document.documentElement.setAttribute("data-theme",S.theme);
+const el=document.getElementById("app"), modalRoot=document.getElementById("modalRoot");
+const TABS=[["overview","Overview","grid"],["customers","Customers","users"],["sessions","Support Sessions","shield"],
+ ["versions","Versions","tag"],["updates","Updates","upload"],["licenses","Licenses","key"],
+ ["health","Health","heart"],["audit","Audit","list"],["settings","Settings","gear"]];
 
 function esc(s){return (s==null?"":String(s)).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
-function fmtDate(s){ if(!s) return "—"; const d=new Date(s); if(isNaN(d)) return "—";
-  return d.toLocaleString(undefined,{year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});}
-function fmtDay(s){ if(!s) return "—"; const d=new Date(s); if(isNaN(d)) return "—";
-  return d.toLocaleDateString(undefined,{year:"numeric",month:"short",day:"numeric"});}
-function timeAgo(s){ if(!s) return "—"; const d=new Date(s); const m=Math.floor((Date.now()-d)/60000);
-  if(m<1) return "just now"; if(m<60) return m+"m ago"; const h=Math.floor(m/60); if(h<24) return h+"h ago";
-  const dy=Math.floor(h/24); return dy+"d ago";}
+function fmtDate(s){if(!s)return "—";const d=new Date(s);return isNaN(d)?"—":d.toLocaleString(undefined,{year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});}
+function fmtDay(s){if(!s)return "—";const d=new Date(s);return isNaN(d)?"—":d.toLocaleDateString(undefined,{year:"numeric",month:"short",day:"numeric"});}
+function timeAgo(s){if(!s)return "—";const d=new Date(s),m=Math.floor((Date.now()-d)/60000);
+  if(m<1)return "just now";if(m<60)return m+"m ago";const h=Math.floor(m/60);if(h<24)return h+"h ago";return Math.floor(h/24)+"d ago";}
+function debounce(fn,ms){let t;return function(){clearTimeout(t);const a=arguments,c=this;t=setTimeout(()=>fn.apply(c,a),ms);};}
 
-async function api(path, opts={}){
-  const h = Object.assign({}, opts.headers||{});
-  if(S.token) h["Authorization"]="Bearer "+S.token;
-  if(opts.json!==undefined){ h["Content-Type"]="application/json"; opts.body=JSON.stringify(opts.json); }
-  const r = await fetch(path,{method:opts.method||"GET",headers:h,body:opts.body});
-  if(r.status===401){ logout(); throw new Error("Session expired — please sign in again."); }
-  let data=null; try{ data=await r.json(); }catch(e){}
-  if(!r.ok){ const m=(data&&(data.detail||data.message))||("HTTP "+r.status); throw new Error(typeof m==="string"?m:JSON.stringify(m)); }
-  return data;
+async function api(path,opts={}){
+  const h=Object.assign({},opts.headers||{});
+  if(S.token)h["Authorization"]="Bearer "+S.token;
+  if(opts.json!==undefined){h["Content-Type"]="application/json";opts.body=JSON.stringify(opts.json);}
+  const r=await fetch(path,{method:opts.method||"GET",headers:h,body:opts.body});
+  if(r.status===401){logout();throw new Error("Session expired — please sign in again.");}
+  let d=null;try{d=await r.json();}catch(e){}
+  if(!r.ok){const m=(d&&(d.detail||d.message))||("HTTP "+r.status);throw new Error(typeof m==="string"?m:JSON.stringify(m));}
+  return d;
 }
-async function login(u,p){
-  const body=new URLSearchParams({username:u,password:p});
-  const r=await fetch("/auth/login",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body});
-  if(!r.ok) throw new Error("Invalid credentials");
-  const d=await r.json(); S.token=d.access_token; localStorage.setItem("cc_token",S.token);
-}
-function logout(){ S.token=""; S.op=null; localStorage.removeItem("cc_token"); location.hash="#/"; renderLogin(); }
+async function login(u,p){const b=new URLSearchParams({username:u,password:p});
+  const r=await fetch("/auth/login",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:b});
+  if(!r.ok)throw new Error("Invalid credentials");const d=await r.json();S.token=d.access_token;localStorage.setItem("cc_token",S.token);}
+function logout(){S.token="";S.op=null;localStorage.removeItem("cc_token");location.hash="#/";renderLogin();}
+function setTheme(t){S.theme=t;localStorage.setItem("cc_theme",t);document.documentElement.setAttribute("data-theme",t);}
 
-/* ---------------- toast + confirm ---------------- */
-function toast(msg,kind){ const t=document.createElement("div"); t.className="toast "+(kind||"");
-  t.innerHTML=(kind==="ok"?"✓ ":kind==="err"?"✕ ":"")+esc(msg); document.getElementById("toasts").appendChild(t);
-  setTimeout(()=>{t.style.opacity="0";t.style.transition=".3s";setTimeout(()=>t.remove(),300);},3200); }
-function closeModal(){ modalRoot.innerHTML=""; }
-function modal(html){ modalRoot.innerHTML=`<div class="overlay" id="ov">${html}</div>`;
-  document.getElementById("ov").addEventListener("mousedown",e=>{ if(e.target.id==="ov") closeModal(); }); }
-function confirmDialog({title,body,ok="Confirm",danger=false}){ return new Promise(res=>{
-  modal(`<div class="modal" style="max-width:440px"><div class="mh"><h3>${esc(title)}</h3></div>
-    <div class="mb">${body}</div>
-    <div class="mf"><button class="btn" id="cX">Cancel</button>
-    <button class="btn ${danger?"danger":"primary"}" id="cO">${esc(ok)}</button></div></div>`);
+function toast(msg,kind){const t=document.createElement("div");t.className="toast "+(kind||"");
+  t.innerHTML=(kind==="ok"?ic("check",15):kind==="err"?ic("dot",15):"")+"<span>"+esc(msg)+"</span>";
+  document.getElementById("toasts").appendChild(t);
+  setTimeout(()=>{t.style.opacity="0";t.style.transition=".3s";setTimeout(()=>t.remove(),300);},3200);}
+function closeModal(){modalRoot.innerHTML="";}
+function modal(html){modalRoot.innerHTML=`<div class="overlay" id="ov">${html}</div>`;
+  document.getElementById("ov").addEventListener("mousedown",e=>{if(e.target.id==="ov")closeModal();});}
+function confirmDialog({title,body,ok="Confirm",danger=false}){return new Promise(res=>{
+  modal(`<div class="modal" style="max-width:440px"><div class="mh"><h3>${esc(title)}</h3></div><div class="mb">${body}</div>
+   <div class="mf"><button class="btn" id="cX">Cancel</button><button class="btn ${danger?"danger":"primary"}" id="cO">${esc(ok)}</button></div></div>`);
   document.getElementById("cX").onclick=()=>{closeModal();res(false);};
-  document.getElementById("cO").onclick=()=>{closeModal();res(true);}; });}
+  document.getElementById("cO").onclick=()=>{closeModal();res(true);};});}
 
-/* ---------------- badges ---------------- */
-function healthBadge(h){ const m={ok:["b-green","Healthy"],degraded:["b-amber","Degraded"],
-  unreachable:["b-red","Unreachable"],unknown:["b-gray","Unknown"]}; const x=m[h]||m.unknown;
-  return `<span class="badge ${x[0]}"><span class="dot"></span>${x[1]}</span>`; }
-function licBadge(s){ const m={active:"b-green",trial:"b-blue",suspended:"b-amber",expired:"b-gray",
-  cancelled:"b-red",unlicensed:"b-gray"}; return `<span class="badge ${m[s]||"b-gray"}">${esc(s||"—")}</span>`; }
-function custBadge(s){ const m={active:"b-green",suspended:"b-amber",inactive:"b-gray"};
-  return `<span class="badge ${m[s]||"b-gray"}">${esc(s||"—")}</span>`; }
-function sessBadge(s){ const m={active:"b-green",pending_erp_integration:"b-amber",expired:"b-gray",revoked:"b-red"};
-  const lbl={pending_erp_integration:"Pending ERP Integration"}[s]||s; return `<span class="badge ${m[s]||"b-gray"}">${esc(lbl)}</span>`; }
-function verBadge(r){ if(r.is_legacy_import) return `<span class="badge b-amber">Imported legacy</span>`;
-  const m={published:"b-green",draft:"b-gray",deprecated:"b-red"}; return `<span class="badge ${m[r.status]||"b-gray"}">${esc(r.status)}</span>`; }
+/* badges */
+function healthBadge(h){const m={ok:["b-green","Healthy"],degraded:["b-amber","Degraded"],unreachable:["b-red","Unreachable"],unknown:["b-gray","Unknown"]};
+  const x=m[h]||m.unknown;return `<span class="badge ${x[0]}"><span class="dot"></span>${x[1]}</span>`;}
+function licBadge(s){const m={active:"b-green",trial:"b-blue",suspended:"b-amber",expired:"b-gray",cancelled:"b-red",unlicensed:"b-gray"};
+  return `<span class="badge ${m[s]||"b-gray"}">${esc(s||"—")}</span>`;}
+function custBadge(s){const m={active:"b-green",suspended:"b-amber",inactive:"b-gray"};return `<span class="badge ${m[s]||"b-gray"}">${esc(s||"—")}</span>`;}
+function sessBadge(s){const m={active:"b-green",pending_erp_integration:"b-amber",expired:"b-gray",revoked:"b-red"};
+  const lbl={pending_erp_integration:"Pending ERP Integration"}[s]||s;return `<span class="badge ${m[s]||"b-gray"}">${esc(lbl)}</span>`;}
+function verBadge(r){if(r.is_legacy_import)return `<span class="badge b-amber">Imported legacy</span>`;
+  const m={published:"b-green",draft:"b-gray",deprecated:"b-red",imported_legacy:"b-amber"};return `<span class="badge ${m[r.status]||"b-gray"}">${esc(r.status)}</span>`;}
+function emptyState(title,sub,btnLabel,btnAction,icon){return `<div class="empty"><div class="ei">${ic(icon||"box",30)}</div><h4>${esc(title)}</h4>
+  <div>${esc(sub||"")}</div>${btnLabel?`<div style="margin-top:14px"><button class="btn primary" onclick="${btnAction}">${esc(btnLabel)}</button></div>`:""}</div>`;}
+function errMain(e){const m=document.getElementById("main")||el;
+  m.innerHTML=`<div class="errbox">${ic("dot",14)} Couldn't load: ${esc(e.message)} <button class="btn sm" style="margin-left:10px" onclick="route()">Retry</button></div>`;}
 
-/* ---------------- workspace nav ---------------- */
-const TABS=[["overview","Overview","▤"],["customers","Customers","👥"],["sessions","Support Sessions","🔑"],
-  ["versions","Versions","◷"],["updates","Updates","⤴"],["licenses","Licenses","▦"],
-  ["health","Health","♥"],["audit","Audit","≣"],["settings","Settings","⚙"]];
-
-/* ---------------- router ---------------- */
-function parseHash(){ const h=(location.hash||"#/").replace(/^#/,""); const p=h.split("/").filter(Boolean);
-  if(p[0]==="erp"&&p[1]) return {view:"erp",id:decodeURIComponent(p[1]),tab:p[2]||"overview"};
-  if(p[0]==="sessions") return {view:"sessions"};
-  if(p[0]==="audit") return {view:"paudit"};
-  if(p[0]==="settings") return {view:"psettings"};
-  return {view:"home"}; }
-
+/* ============================ router ============================ */
+function parseHash(){const h=(location.hash||"#/").replace(/^#/,""),p=h.split("/").filter(Boolean);
+  if(p[0]==="erp"&&p[1])return {view:"erp",id:decodeURIComponent(p[1]),tab:p[2]||"overview"};
+  if(["sessions","audit","settings","profile","apikeys"].includes(p[0]))return {view:p[0]};
+  return {view:"home"};}
 async function route(){
-  if(!S.token){ renderLogin(); return; }
-  if(!S.op){ try{ const h=await api("/api/home"); S.op=h.operator; window.__home=h;
-      h.products.forEach(p=>S.erpName[p.id]=p.name);}catch(e){ renderLogin(); return; } }
-  const r=parseHash();
-  if(r.view==="home") return renderHome();
-  if(r.view==="sessions") return renderPlatformSessions();
-  if(r.view==="paudit") return renderPlatformAudit();
-  if(r.view==="psettings") return renderPlatformSettings();
-  if(r.view==="erp") return renderErp(r.id,r.tab);
+  if(!S.token){renderLogin();return;}
+  if(!S.op){try{const h=await api("/api/home");S.op=h.operator;window.__home=h;h.products.forEach(p=>S.erpName[p.id]=p.name);}catch(e){renderLogin();return;}}
+  const r=parseHash();closeMenus();
+  if(r.view==="home")return renderDashboard();
+  if(r.view==="sessions")return renderPlatformSessions();
+  if(r.view==="audit")return renderPlatformAudit();
+  if(r.view==="settings")return renderPlatformSettings();
+  if(r.view==="profile")return renderProfile();
+  if(r.view==="apikeys")return renderApiKeys();
+  if(r.view==="erp")return renderErp(r.id,r.tab);
 }
 window.addEventListener("hashchange",route);
 
-/* ---------------- login ---------------- */
+/* ============================ login ============================ */
 function renderLogin(){
   el.innerHTML=`<div class="login"><div class="box"><div class="card login">
     <div class="brand"><div class="logo">PFS</div><span>Control Center</span></div>
-    <h2>Sign in</h2><p class="sub">Platform Owner access</p>
-    <div id="lerr"></div>
-    <div class="field"><label>Operator ID</label><input id="u" value="OP-owner" autocomplete="username"/></div>
-    <div class="field"><label>Password</label><input id="p" type="password" autocomplete="current-password" placeholder="••••••••"/></div>
+    <h2>Sign in</h2><p class="sub">Platform Owner access</p><div id="lerr"></div>
+    <div class="field"><label>Operator ID</label><input class="field-in" id="u" value="OP-owner" autocomplete="username"/></div>
+    <div class="field"><label>Password</label><input class="field-in" id="p" type="password" autocomplete="current-password" placeholder="••••••••"/></div>
     <button class="btn primary" id="go" style="width:100%;justify-content:center;margin-top:6px">Sign in</button>
-    <p class="hint faint" style="text-align:center;margin-top:14px;font-size:12px">One login · Many ERP products · Many customers</p>
+    <p class="faint" style="text-align:center;margin-top:16px;font-size:12px">One login · Many ERP products · Many customers</p>
   </div></div></div>`;
-  const go=async()=>{ const b=document.getElementById("go"); b.disabled=true; b.textContent="Signing in…";
-    try{ await login(document.getElementById("u").value.trim(),document.getElementById("p").value);
-      S.op=null; location.hash="#/"; await route(); }
-    catch(e){ document.getElementById("lerr").innerHTML=`<div class="errbox" style="margin-bottom:10px">${esc(e.message)}</div>`;
-      b.disabled=false; b.textContent="Sign in"; } };
+  const go=async()=>{const b=document.getElementById("go");b.disabled=true;b.textContent="Signing in…";
+    try{await login(document.getElementById("u").value.trim(),document.getElementById("p").value);S.op=null;location.hash="#/";await route();}
+    catch(e){document.getElementById("lerr").innerHTML=`<div class="errbox" style="margin-bottom:10px">${esc(e.message)}</div>`;b.disabled=false;b.textContent="Sign in";}};
   document.getElementById("go").onclick=go;
   document.getElementById("p").addEventListener("keydown",e=>{if(e.key==="Enter")go();});
 }
 
-/* ---------------- shell ---------------- */
-function opInitials(){ const n=(S.op&&S.op.name)||"OP"; return n.split(" ").map(x=>x[0]).join("").slice(0,2).toUpperCase(); }
-function shell({crumbs,rail,body}){
+/* ============================ shell ============================ */
+function opInitials(){const n=(S.op&&S.op.name)||"OP";return n.split(" ").map(x=>x[0]).join("").slice(0,2).toUpperCase();}
+function closeMenus(){document.querySelectorAll(".menu,.gs-panel").forEach(m=>m.remove());
+  const sb=document.querySelector(".sidebar");if(sb)sb.classList.remove("open");const sc=document.querySelector(".scrim");if(sc)sc.classList.remove("show");}
+
+function shell({crumbs,rail,body,notifCount}){
   el.innerHTML=`
   <div class="topbar">
-    <a class="brand" href="#/"><div class="logo">PFS</div><span class="hideM">Control Center</span></a>
-    <div class="crumbs">${crumbs}</div>
-    <div class="spacer"></div>
-    <div class="opmenu"><button class="btn ghost" id="opBtn"><span class="badge b-green" style="width:24px;height:24px;padding:0;justify-content:center">${opInitials()}</span><span class="hideM">${esc((S.op&&S.op.name)||"Operator")}</span> ▾</button>
-      <div class="menu hidden" id="opM">
-        <div class="hd">${esc((S.op&&S.op.id)||"")} · ${esc((S.op&&S.op.role)||"")}</div>
-        <button onclick="location.hash='#/sessions'">All support sessions</button>
-        <button onclick="location.hash='#/audit'">Platform audit</button>
-        <button onclick="location.hash='#/settings'">Platform settings</button>
-        <button onclick="logout()" style="color:var(--red)">Sign out</button>
-      </div></div>
-  </div>
-  <div class="layout">${rail?`<div class="rail">${rail}</div>`:""}<div class="content" id="main">${body}</div></div>`;
-  const ob=document.getElementById("opBtn"),om=document.getElementById("opM");
-  ob.onclick=(e)=>{e.stopPropagation();om.classList.toggle("hidden");};
-  document.addEventListener("click",()=>om.classList.add("hidden"),{once:true});
-}
-function crumbHome(){ return `<a href="#/">PFS</a>`; }
-
-/* ---------------- HOME: My ERP Products ---------------- */
-async function renderHome(){
-  shell({crumbs:`<span class="cur">My ERP Products</span>`, rail:"", body:skelCards()});
-  let h; try{ h=window.__home||await api("/api/home"); }catch(e){ return errMain(e); }
-  window.__home=h; S.op=h.operator; h.products.forEach(p=>S.erpName[p.id]=p.name);
-  const m=document.getElementById("main");
-  const cards=h.products.map(p=>{
-    const init=(p.name||p.id).split(" ").map(x=>x[0]).join("").slice(0,2).toUpperCase();
-    return `<div class="card erpcard" onclick="location.hash='#/erp/${encodeURIComponent(p.id)}/overview'">
-      <div class="top"><div class="icon">${esc(init)}</div>
-        <div style="min-width:0"><h3>${esc(p.name)}</h3><div class="faint mono" style="font-size:12px">${esc(p.id)}</div></div>
-        <div style="margin-left:auto">${healthBadge(p.erp_health)}</div></div>
-      <div class="desc">${esc(p.description||"")}</div>
-      <div class="statrow">
-        <div class="stat"><b>${p.customers}</b><span>Customers</span></div>
-        <div class="stat"><b>${p.active_licenses}</b><span>Licenses</span></div>
-        <div class="stat"><b>${esc(p.current_version||"—")}</b><span>Version</span></div>
-      </div>
-      <div class="faint" style="font-size:12px">Last activity ${esc(timeAgo(p.last_activity))}</div>
-      <button class="btn primary sm" style="align-self:flex-start" onclick="event.stopPropagation();location.hash='#/erp/${encodeURIComponent(p.id)}/overview'">Open workspace →</button>
-    </div>`;}).join("");
-  m.innerHTML=`<div class="page-h"><div><h1>My ERP Products</h1>
-      <p>Every ERP you run on PFS. Open a product to manage its customers, licenses and support.</p></div>
-      <div class="actions"><button class="btn primary" onclick="registerErpModal()">+ Register ERP</button></div></div>
-    ${h.products.length?`<div class="grid">${cards}</div>`:emptyState("No ERP products yet","Register an externally-built ERP to start managing its customers.","+ Register ERP","registerErpModal()")}`;
-}
-function skelCards(){ return `<div class="page-h"><div><h1>My ERP Products</h1></div></div>
-  <div class="grid">${Array(3).fill('<div class="card erpcard"><div class="skel" style="height:120px"></div></div>').join("")}</div>`; }
-
-function registerErpModal(){
-  modal(`<div class="modal"><div class="mh"><h3>Register ERP product</h3></div>
-    <div class="mb">
-      <div class="note">ERP systems are <b>built externally</b> and then registered into PFS. This records product
-        metadata only — it does not scaffold or deploy any code.</div>
-      <div class="field"><label>Product ID</label><input id="rid" placeholder="e.g. dairy"/><div class="hint">Lowercase, stable identifier.</div></div>
-      <div class="field"><label>Display name</label><input id="rname" placeholder="e.g. Dairy ERP"/></div>
-      <div class="field"><label>Description</label><textarea id="rdesc" rows="2" placeholder="What this ERP does"></textarea></div>
+    ${rail?`<button class="btn icon hamburger" id="hb" aria-label="Menu">${ic("menu",18)}</button>`:""}
+    <a class="brand" href="#/"><div class="logo">PFS</div><span class="hideS">Control Center</span></a>
+    <div class="crumbs hideS">${crumbs||""}</div>
+    <div class="gsearch" id="gs">
+      <div class="field">${ic("search",16)}<input id="gsi" placeholder="Search ERPs, customers, licenses, sessions…" autocomplete="off"/><span class="kbd">/</span></div>
     </div>
-    <div class="mf"><button class="btn" onclick="closeModal()">Cancel</button>
-      <button class="btn primary" id="rsub">Register</button></div></div>`);
-  document.getElementById("rsub").onclick=async()=>{
-    const id=document.getElementById("rid").value.trim(), name=document.getElementById("rname").value.trim();
-    if(!id||!name){ toast("ID and name are required","err"); return; }
-    const b=document.getElementById("rsub"); b.disabled=true; b.textContent="Registering…";
-    try{ await api("/api/products",{method:"POST",json:{id,name,description:document.getElementById("rdesc").value.trim()}});
-      window.__home=null; closeModal(); toast("ERP registered","ok"); location.hash="#/erp/"+encodeURIComponent(id)+"/overview"; route();
-    }catch(e){ toast(e.message,"err"); b.disabled=false; b.textContent="Register"; } };
+    <div class="topbar-actions">
+      <div class="pop bell-wrap"><button class="btn icon" id="bellBtn" aria-label="Notifications">${ic("bell",18)}${notifCount?`<span class="bell-badge">${notifCount>9?"9+":notifCount}</span>`:""}</button></div>
+      <div class="pop"><button class="btn ghost" id="opBtn" style="gap:8px"><span class="avatar">${opInitials()}</span><span class="hideS">${ic("chevron",14)}</span></button></div>
+    </div>
+  </div>
+  <div class="scrim" id="scrim"></div>
+  <div class="layout">${rail?`<div class="sidebar" id="sb">${rail}</div>`:""}<div class="content" id="main">${body||""}</div></div>`;
+
+  const gsi=document.getElementById("gsi");
+  gsi.addEventListener("input",debounce(e=>globalSearch(e.target.value),160));
+  gsi.addEventListener("focus",e=>{if(e.target.value.trim())globalSearch(e.target.value);});
+  document.getElementById("bellBtn").onclick=e=>{e.stopPropagation();toggleNotifs();};
+  document.getElementById("opBtn").onclick=e=>{e.stopPropagation();toggleUserMenu();};
+  const hb=document.getElementById("hb");
+  if(hb)hb.onclick=e=>{e.stopPropagation();const sb=document.getElementById("sb"),sc=document.getElementById("scrim");sb.classList.toggle("open");sc.classList.toggle("show");};
+  const sc=document.getElementById("scrim");if(sc)sc.onclick=closeMenus;
+  document.addEventListener("keydown",gKey);
+  document.addEventListener("click",closeMenus,{once:true});
+}
+function gKey(e){if(e.key==="/"&&document.activeElement.tagName!=="INPUT"&&document.activeElement.tagName!=="TEXTAREA"){e.preventDefault();const g=document.getElementById("gsi");if(g)g.focus();}
+  if(e.key==="Escape")closeMenus();}
+function crumbHome(){return `<a href="#/">PFS</a>`;}
+
+/* ---- global search ---- */
+let _gsData=window.__home?null:null;
+async function globalSearch(q){
+  document.querySelectorAll(".gs-panel").forEach(p=>p.remove());
+  q=(q||"").trim();const gs=document.getElementById("gs");if(!gs||!q)return;
+  const panel=document.createElement("div");panel.className="gs-panel";panel.innerHTML=`<div class="gs-empty">${ic("search",22)}<div style="margin-top:8px">Searching…</div></div>`;
+  gs.appendChild(panel);
+  let r;try{r=await api("/api/search?q="+encodeURIComponent(q));}catch(e){panel.innerHTML=`<div class="gs-empty">${esc(e.message)}</div>`;return;}
+  const secs=[];
+  const add=(cat,items,render)=>{if(items&&items.length)secs.push(`<div class="gs-cat">${cat}</div>`+items.map(render).join(""));};
+  add("ERP Products",r.products,p=>gsItem("box",esc(p.name),esc(p.id),`#/erp/${encodeURIComponent(p.id)}/overview`));
+  add("Customers",r.customers,c=>gsItem("users",esc(c.name),"ref "+esc(c.external_ref||"—"),`#/erp/${encodeURIComponent(c.erp_product_id)}/customers`));
+  add("Licenses",r.licenses,l=>gsItem("key",esc((l.customer_name||"Customer")+" · "+l.plan),esc(l.status),`#/erp/${encodeURIComponent(l.erp_product_id)}/licenses`));
+  add("Support Sessions",r.sessions,s=>gsItem("shield",esc(s.customer_name||s.session_ref),esc(s.status),`#/erp/${encodeURIComponent(s.erp_product_id)}/sessions`));
+  add("Versions",r.versions,v=>gsItem("tag",esc(v.version),esc(v.status),`#/erp/${encodeURIComponent(v.erp_product_id)}/versions`));
+  panel.innerHTML=secs.length?secs.join(""):`<div class="gs-empty">${ic("search",22)}<div style="margin-top:8px">No matches for “${esc(q)}”.</div></div>`;
+  panel.querySelectorAll(".gs-item").forEach(it=>it.onmousedown=ev=>{ev.preventDefault();location.hash=it.dataset.href;panel.remove();document.getElementById("gsi").blur();});
+}
+function gsItem(icon,title,sub,href){return `<div class="gs-item" data-href="${href}"><span class="ic">${ic(icon,16)}</span><div class="t">${title}</div><div class="faint" style="font-size:12px">${sub}</div></div>`;}
+
+/* ---- notifications ---- */
+async function toggleNotifs(){
+  const open=document.querySelector("#bellBtn ~ .menu")||document.getElementById("notifMenu");
+  closeMenus();if(open)return;
+  const wrap=document.getElementById("bellBtn").parentElement;
+  const menu=document.createElement("div");menu.className="menu";menu.id="notifMenu";menu.style.minWidth="320px";
+  menu.innerHTML=`<div class="hd">Notifications</div><div style="padding:16px" class="faint">Loading…</div>`;
+  wrap.appendChild(menu);menu.onclick=e=>e.stopPropagation();
+  let d;try{d=window.__dash||await api("/api/dashboard");window.__dash=d;}catch(e){menu.innerHTML=`<div class="hd">Notifications</div><div style="padding:14px">${esc(e.message)}</div>`;return;}
+  const items=(d.recent_activity||[]).slice(0,7);
+  menu.innerHTML=`<div class="hd">Notifications</div>`+
+    (items.length?items.map(a=>`<div class="notif"><span class="ic">${ic("activity",15)}</span><div><div class="t">${esc(a.action)} · ${esc(a.target_type)}</div><div class="s">${esc(a.detail||a.target_id||"")} — ${esc(timeAgo(a.at))}</div></div></div>`).join(""):
+     `<div class="empty" style="padding:26px">${ic("bell",26)}<h4 style="margin-top:8px">You're all caught up</h4><div>Platform notifications will appear here.</div></div>`)+
+    `<div class="sepline"></div><button class="item" onclick="location.hash='#/audit';closeMenus()">${ic("list",15)} View all platform audit</button>`;
+}
+/* ---- user menu ---- */
+function toggleUserMenu(){
+  if(document.getElementById("userMenu")){closeMenus();return;}closeMenus();
+  const wrap=document.getElementById("opBtn").parentElement;const menu=document.createElement("div");menu.className="menu";menu.id="userMenu";
+  menu.onclick=e=>e.stopPropagation();
+  menu.innerHTML=`<div class="hd">${esc((S.op&&S.op.name)||"Operator")} · ${esc((S.op&&S.op.role)||"")}</div>
+    <button class="item" onclick="location.hash='#/profile';closeMenus()">${ic("user",16)} Profile</button>
+    <button class="item" onclick="location.hash='#/apikeys';closeMenus()">${ic("key",16)} API Keys</button>
+    <button class="item" onclick="location.hash='#/settings';closeMenus()">${ic("gear",16)} Settings</button>
+    <div class="sepline"></div>
+    <button class="item" id="themeItem">${ic(S.theme==="dark"?"sun":"moon",16)} <span>${S.theme==="dark"?"Light theme":"Dark theme"}</span></button>
+    <div class="sepline"></div>
+    <button class="item" onclick="logout()" style="color:var(--red)">${ic("logout",16)} Sign out</button>`;
+  wrap.appendChild(menu);
+  document.getElementById("themeItem").onclick=e=>{e.stopPropagation();setTheme(S.theme==="dark"?"light":"dark");closeMenus();route();};
 }
 
-/* ---------------- ERP WORKSPACE ---------------- */
+/* ============================ PLATFORM DASHBOARD ============================ */
+function skelDash(){return `<div class="page-h"><div><h1>Platform</h1></div></div><div class="tiles">${Array(4).fill('<div class="tile"><div class="skel" style="height:52px"></div></div>').join("")}</div><div class="dash" style="margin-top:16px">${Array(3).fill('<div class="col-4 card pad"><div class="skel" style="height:150px"></div></div>').join("")}</div>`;}
+async function renderDashboard(){
+  shell({crumbs:`<span class="cur">Platform</span>`,rail:"",body:skelDash(),notifCount:(window.__dash&&window.__dash.recent_activity||[]).length});
+  let d;try{d=await api("/api/dashboard");}catch(e){return errMain(e);}
+  window.__dash=d;d.newest_products.forEach(p=>S.erpName[p.id]=p.name);
+  const f=d.fleet, m=document.getElementById("main");
+  const health=f.by_health||{}, order=["ok","degraded","unreachable","unknown"],
+    hcolors={ok:"var(--brand)",degraded:"var(--amber)",unreachable:"var(--red)",unknown:"var(--line)"},
+    htotal=Object.values(health).reduce((a,b)=>a+b,0)||1;
+  const hbar=order.filter(k=>health[k]).map(k=>`<span style="width:${(health[k]/htotal*100)}%;background:${hcolors[k]}"></span>`).join("");
+  const lic=d.license_summary.by_status||{};
+  const erpCards=d.newest_products.map(erpCardHTML).join("");
+  m.innerHTML=`
+   <div class="page-h"><div><h1>Platform</h1><p>Everything running on PFS at a glance.</p></div>
+     <div class="actions"><button class="btn primary" onclick="registerErpWizard()">${ic("plus",16)} Register ERP</button></div></div>
+   <div class="tiles" style="margin-bottom:18px">
+     ${tile("box","ERP Products",f.products)}${tile("users","Customers",f.customers)}
+     ${tile("key","Active Licenses",f.active_licenses)}${tile("shield","Open Sessions",f.open_sessions)}
+   </div>
+   <div class="dash">
+     <div class="col-8 card pad">
+       <div class="section-h"><h2>ERP Products</h2><a class="btn ghost sm more" onclick="registerErpWizard()">${ic("plus",15)} Register</a></div>
+       ${d.newest_products.length?`<div class="grid cols-auto">${erpCards}</div>`:emptyState("No ERP products yet","Register an externally-built ERP to begin.","+ Register ERP","registerErpWizard()")}
+     </div>
+     <div class="col-4 card pad">
+       <div class="section-h"><h2>Platform Health</h2></div>
+       <div style="font-size:26px;font-weight:800;margin-bottom:8px">${health.ok||0}/${htotal} ${ic("heart",18)}</div>
+       <div class="hbar">${hbar}</div>
+       <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:12px">
+         ${order.map(k=>health[k]?`<div class="faint" style="font-size:12px"><b style="color:var(--ink)">${health[k]}</b> ${k}</div>`:"").join("")}
+       </div>
+       <div class="section-h" style="margin-top:20px"><h2>License Summary</h2></div>
+       <div style="font-size:26px;font-weight:800;margin-bottom:10px">${d.license_summary.total}</div>
+       ${Object.keys(lic).length?Object.entries(lic).map(([k,v])=>`<div class="lrow" style="padding:6px 2px">${licBadge(k)}<div class="m"></div><b>${v}</b></div>`).join(""):`<div class="faint">No licenses yet.</div>`}
+     </div>
+     <div class="col-6 card pad">${widgetList("Recent Support Sessions","shield",d.recent_sessions,s=>({icon:"shield",t:esc(s.customer_name||s.session_ref||"session"),s:S.erpName[s.erp_product_id]||s.erp_product_id,badge:sessBadge(s.status),href:`#/erp/${encodeURIComponent(s.erp_product_id)}/sessions`}),"Open a support session from any customer.")}</div>
+     <div class="col-6 card pad">${widgetList("Latest Updates","upload",d.latest_updates,u=>({icon:"upload",t:esc((u.runtime_name||"runtime")),s:"→ "+esc(u.release_version||"—"),badge:`<span class="badge b-gray">${esc(u.status)}</span>`,href:"#/"}),"Version rollouts will show here.")}</div>
+     <div class="col-6 card pad">${widgetList("Newest Customers","users",d.newest_customers,c=>({icon:"users",t:esc(c.name),s:S.erpName[c.erp_product_id]||c.erp_product_id,badge:custBadge(c.status),href:`#/erp/${encodeURIComponent(c.erp_product_id)}/customers`}),"Registered customers appear here.")}</div>
+     <div class="col-6 card pad">${widgetList("Recent Activity","activity",d.recent_activity,a=>({icon:"activity",t:esc(a.action+" · "+a.target_type),s:esc(a.detail||a.target_id||""),badge:`<span class="faint" style="font-size:12px">${esc(timeAgo(a.at))}</span>`,href:"#/audit"}),"Platform actions are audited here.")}</div>
+   </div>`;
+}
+function tile(icon,label,val){return `<div class="tile"><div class="lab">${ic(icon,14)} ${label}</div><b>${val}</b></div>`;}
+function widgetList(title,icon,items,map,emptyMsg){
+  const rows=(items||[]).slice(0,6).map(x=>{const o=map(x);
+    return `<div class="lrow"><span class="ic">${ic(o.icon,16)}</span><div class="m"><a class="t" href="${o.href}">${o.t}</a><div class="s">${o.s||""}</div></div>${o.badge||""}</div>`;}).join("");
+  return `<div class="section-h"><h2>${title}</h2></div>${items&&items.length?rows:`<div class="empty" style="padding:26px">${ic(icon,26)}<h4 style="margin-top:8px">Nothing yet</h4><div>${esc(emptyMsg||"")}</div></div>`}`;
+}
+function erpCardHTML(p){const init=(p.name||p.id).split(" ").map(x=>x[0]).join("").slice(0,2).toUpperCase();
+  return `<div class="card erpcard" role="link" tabindex="0" onclick="location.hash='#/erp/${encodeURIComponent(p.id)}/overview'"
+    onkeydown="if(event.key==='Enter')location.hash='#/erp/${encodeURIComponent(p.id)}/overview'">
+    <div class="go">${ic("arrow",18)}</div>
+    <div class="top"><div class="icon">${esc(init)}</div>
+      <div style="min-width:0"><h3>${esc(p.name)}</h3><div class="faint mono" style="font-size:12px">${esc(p.id)}</div></div>
+      <div style="margin-left:auto">${healthBadge(p.erp_health)}</div></div>
+    <div class="desc">${esc(p.description||"")}</div>
+    <div class="statrow">
+      <div class="stat"><b>${p.customers}</b><span>Customers</span></div>
+      <div class="stat"><b>${p.active_licenses}</b><span>Licenses</span></div>
+      <div class="stat"><b>${esc(p.current_version||"—")}</b><span>Version</span></div>
+    </div>
+    <div class="faint" style="font-size:12px">Last activity ${esc(timeAgo(p.last_activity))}</div></div>`;
+}
+
+/* ============================ ERP WORKSPACE ============================ */
 function erpRail(id,tab,counts){
-  return TABS.map(([k,label,ic])=>{ const c=counts&&counts[k];
-    return `<a class="${tab===k?"active":""}" href="#/erp/${encodeURIComponent(id)}/${k}"><span class="ic">${ic}</span>${label}${c!=null?`<span class="ct">${c}</span>`:""}</a>`;
-  }).join("");
+  return `<div class="switch" onclick="erpSwitcher()"><span class="icon" style="width:26px;height:26px;border-radius:7px;background:var(--brand-t);color:var(--brand-d);display:grid;place-items:center;font-weight:800;font-size:11px">${esc((S.erpName[id]||id).slice(0,2).toUpperCase())}</span><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(S.erpName[id]||id)}</span>${ic("chevron",14)}</div>`+
+   TABS.map(([k,label,icon])=>{const c=counts&&counts[k];
+    return `<a class="nav ${tab===k?"active":""}" href="#/erp/${encodeURIComponent(id)}/${k}">${ic(icon,16)}<span>${label}</span>${c!=null?`<span class="ct">${c}</span>`:""}</a>`;}).join("")+
+   `<a class="nav" href="#/" style="margin-top:8px">${ic("grid",16)}<span>Back to Platform</span></a>`;
 }
-function erpCrumbs(id,tabLabel){ return `${crumbHome()}<span class="sep">▸</span>
-  <a href="#/erp/${encodeURIComponent(id)}/overview">${esc(S.erpName[id]||id)}</a>
-  <span class="sep">▸</span><span class="cur">${esc(tabLabel)}</span>`; }
-
+function erpCrumbs(id,tabLabel){return `${crumbHome()}<span class="sep">${ic("chevron",13)}</span><a href="#/erp/${encodeURIComponent(id)}/overview">${esc(S.erpName[id]||id)}</a><span class="sep">${ic("chevron",13)}</span><span class="cur">${esc(tabLabel)}</span>`;}
+function erpSwitcher(){
+  const prods=(window.__dash&&window.__dash.newest_products)||(window.__home&&window.__home.products)||[];
+  modal(`<div class="modal" style="max-width:460px"><div class="mh"><h3>Switch ERP product</h3></div><div class="mb">
+    ${prods.map(p=>`<div class="lrow" style="cursor:pointer;padding:12px 8px;border-radius:9px" onclick="closeModal();location.hash='#/erp/${encodeURIComponent(p.id)}/overview'"><span class="ic">${ic("box",18)}</span><div class="m"><div class="t">${esc(p.name)}</div><div class="s mono">${esc(p.id)}</div></div>${ic("arrow",16)}</div>`).join("")}
+    </div><div class="mf"><button class="btn" onclick="closeModal()">Close</button></div></div>`);
+}
 async function renderErp(id,tab){
   const tabDef=TABS.find(t=>t[0]===tab)||TABS[0];
-  shell({crumbs:erpCrumbs(id,tabDef[1]), rail:erpRail(id,tab,null),
-    body:`<div class="page-h"><div><h1>${esc(tabDef[1])}</h1></div></div><div class="skel" style="height:220px"></div>`});
-  let ov; try{ ov=await api("/api/products/"+encodeURIComponent(id)+"/overview"); }catch(e){ return errMain(e); }
-  S.erpName[id]=ov.product.name; window.__ov=ov;
-  const counts={customers:ov.customers.length,sessions:ov.support_sessions.filter(s=>["active","pending_erp_integration"].includes(s.status)).length,
-    versions:ov.releases.length,licenses:ov.licenses.length};
-  el.querySelector(".rail").innerHTML=erpRail(id,tab,counts);
-  el.querySelector(".crumbs").innerHTML=erpCrumbs(id,tabDef[1]);
-  const m=document.getElementById("main");
-  const R={overview:erpOverview,customers:erpCustomers,sessions:erpSessions,versions:erpVersions,
-    updates:erpUpdates,licenses:erpLicenses,health:erpHealth,audit:erpAudit,settings:erpSettings}[tab]||erpOverview;
-  R(id,ov,m);
+  shell({crumbs:erpCrumbs(id,tabDef[1]),rail:erpRail(id,tab,null),body:`<div class="page-h"><div><h1>${esc(tabDef[1])}</h1></div></div><div class="card pad"><div class="skel" style="height:240px"></div></div>`,notifCount:(window.__dash&&window.__dash.recent_activity||[]).length});
+  let ov;try{ov=await api("/api/products/"+encodeURIComponent(id)+"/overview");}catch(e){return errMain(e);}
+  S.erpName[id]=ov.product.name;window.__ov=ov;
+  const counts={customers:ov.customers.length,sessions:ov.support_sessions.filter(s=>["active","pending_erp_integration"].includes(s.status)).length,versions:ov.releases.length,licenses:ov.licenses.length,updates:ov.customer_deployments.length};
+  document.getElementById("sb").innerHTML=erpRail(id,tab,counts);
+  const cr=el.querySelector(".crumbs");if(cr)cr.innerHTML=erpCrumbs(id,tabDef[1]);
+  const R={overview:erpOverview,customers:erpCustomers,sessions:erpSessions,versions:erpVersions,updates:erpUpdates,licenses:erpLicenses,health:erpHealth,audit:erpAudit,settings:erpSettings}[tab]||erpOverview;
+  R(id,ov,document.getElementById("main"));
 }
 
 function erpOverview(id,ov,m){
   const s=ov.summary;
-  const life=ov.environments.map(e=>`<div class="lc"><b>${esc((e.display_name||e.kind))}</b><span class="faint">${esc(e.status)}</span></div>`).join("");
-  const recent=ov.audit.slice(0,8).map(a=>`<tr><td class="mono faint">${esc(a.at?timeAgo(a.at):"")}</td>
-    <td><b>${esc(a.action)}</b></td><td class="faint">${esc(a.target_type)} ${esc(a.target_id)}</td><td class="faint">${esc(a.detail||"")}</td></tr>`).join("");
+  const life=ov.environments.map(e=>`<div class="lc"><b>${esc(e.display_name||e.kind)}</b><span class="faint">${esc(e.status)}</span></div>`).join("");
+  const health={};ov.runtimes.forEach(r=>{const k=r.last_health_state||"unknown";health[k]=(health[k]||0)+1;});
+  const recent=(ov.audit||[]).slice(0,7);
   m.innerHTML=`<div class="page-h"><div><h1>Overview</h1><p>${esc(ov.product.description||"")}</p></div>
-    <div class="actions"><button class="btn primary" onclick="location.hash='#/erp/${encodeURIComponent(id)}/customers'">Go to customers →</button></div></div>
-    <div class="tiles">
-      <div class="tile"><b>${s.customers}</b><span>Customers</span></div>
-      <div class="tile"><b>${s.active_licenses}</b><span>Active licenses</span></div>
-      <div class="tile"><b>${esc(s.current_version||"—")}</b><span>Current version</span></div>
-      <div class="tile"><b>${s.open_sessions}</b><span>Open sessions</span></div>
-      <div class="tile"><b style="font-size:15px">${healthBadge(s.erp_health)}</b><span>ERP health</span></div>
-    </div>
-    <div class="grid" style="grid-template-columns:1.4fr 1fr">
-      <div class="card" style="padding:16px"><h3 style="margin:0 0 10px;font-size:14px">Recent platform activity</h3>
-        <div class="scroll"><table><tbody>${recent||`<tr><td class="faint">No activity yet</td></tr>`}</tbody></table></div></div>
-      <div class="card" style="padding:16px">
-        <h3 style="margin:0 0 10px;font-size:14px">Master lifecycle</h3>
-        <div class="lifecycle">${life}</div>
-        <div class="note" style="margin-top:12px">Registered customer URL:<br><span class="mono">${esc(s.customer_url||"—")}</span></div>
-      </div>
-    </div>`;
+     <div class="actions"><button class="btn" onclick="location.hash='#/erp/${encodeURIComponent(id)}/customers'">${ic("users",15)} Customers</button>
+     <button class="btn primary" onclick="location.hash='#/erp/${encodeURIComponent(id)}/customers'">${ic("shield",15)} Open ERP</button></div></div>
+   <div class="tiles" style="margin-bottom:18px">
+     ${tile("users","Customers",s.customers)}${tile("key","Active Licenses",s.active_licenses)}
+     ${tile("tag","Current Version",esc(s.current_version||"—"))}${tile("shield","Open Sessions",s.open_sessions)}
+     ${tile("heart","ERP Health",'<span style="font-size:15px">'+healthBadge(s.erp_health)+'</span>')}
+   </div>
+   <div class="dash">
+     <div class="col-8 card pad"><div class="section-h"><h2>Recent activity</h2><a class="btn ghost sm more" href="#/erp/${encodeURIComponent(id)}/audit">View audit</a></div>
+       ${recent.length?recent.map(a=>`<div class="lrow"><span class="ic">${ic("activity",16)}</span><div class="m"><div class="t">${esc(a.action)} · ${esc(a.target_type)}</div><div class="s">${esc(a.detail||a.target_id||"")}</div></div><span class="faint" style="font-size:12px">${esc(timeAgo(a.at))}</span></div>`).join(""):`<div class="faint" style="padding:12px 0">No activity yet.</div>`}
+     </div>
+     <div class="col-4 card pad"><div class="section-h"><h2>Master lifecycle</h2></div><div class="lifecycle">${life}</div>
+       <div class="note" style="margin-top:14px">Registered customer URL<br><span class="mono">${esc(s.customer_url||"—")}</span></div>
+       <div class="section-h" style="margin-top:18px"><h2>Health summary</h2></div>
+       ${Object.keys(health).length?Object.entries(health).map(([k,v])=>`<div class="lrow" style="padding:6px 2px">${healthBadge(k)}<div class="m"></div><b>${v}</b></div>`).join(""):`<div class="faint">No runtimes.</div>`}
+     </div>
+     <div class="col-6 card pad">${widgetList("Support Sessions","shield",ov.support_sessions,x=>({icon:"shield",t:esc(x.customer_name||x.session_ref),s:esc(x.capabilities||""),badge:sessBadge(x.status),href:`#/erp/${encodeURIComponent(id)}/sessions`}),"Open one from Customers.")}</div>
+     <div class="col-6 card pad">${widgetList("Recent Updates","upload",ov.customer_deployments,d=>({icon:"upload",t:esc(d.customer_name||"customer"),s:"→ "+esc(d.release_version||"—"),badge:`<span class="badge b-gray">${esc(d.status)}</span>`,href:`#/erp/${encodeURIComponent(id)}/updates`}),"Version assignments show here.")}</div>
+   </div>`;
 }
 
-/* -------- Customers (the heart) -------- */
-const PAGE=25;
+/* ---------- Customers pro data table ---------- */
+const PAGE_DEFAULT=25;
 function erpCustomers(id,ov,m){
-  let rows=ov.customers.slice(); let q="",st="",page=1;
+  let rows=ov.customers.slice();
+  const st={q:"",status:"",sort:"name",dir:1,page:1,size:PAGE_DEFAULT,sel:new Set()};
+  const sortKeys={name:r=>(r.name||"").toLowerCase(),license:r=>r.license_status||"",version:r=>r.current_version||"",status:r=>r.status||"",health:r=>r.health||"",sync:r=>r.last_sync_state||""};
+  window.__custOpen=(cid)=>{const r=rows.find(x=>x.id===cid);if(r)openErpModal(id,r);};
   const draw=()=>{
-    let f=rows.filter(r=>(!q|| (r.name||"").toLowerCase().includes(q)||(r.external_ref||"").toLowerCase().includes(q))
-      && (!st||r.status===st));
-    const total=f.length, pages=Math.max(1,Math.ceil(total/PAGE)); if(page>pages)page=pages;
-    const slice=f.slice((page-1)*PAGE,page*PAGE);
-    const body=slice.map(r=>`<tr>
+    let f=rows.filter(r=>(!st.q||(r.name||"").toLowerCase().includes(st.q)||(r.external_ref||"").toLowerCase().includes(st.q))&&(!st.status||r.status===st.status));
+    const key=sortKeys[st.sort]||sortKeys.name;f.sort((a,b)=>{const x=key(a),y=key(b);return x<y?-st.dir:x>y?st.dir:0;});
+    const total=f.length,pages=Math.max(1,Math.ceil(total/st.size));if(st.page>pages)st.page=pages;
+    const slice=f.slice((st.page-1)*st.size,st.page*st.size);
+    document.getElementById("cbody").innerHTML=total?slice.map(r=>`<tr class="${st.sel.has(r.id)?"sel":""}">
+      <td><input type="checkbox" ${st.sel.has(r.id)?"checked":""} onclick="__csel(${r.id})"></td>
       <td><div class="co">${esc(r.name)}</div><div class="ref mono">ref: ${esc(r.external_ref||"—")}</div></td>
       <td>${licBadge(r.license_status)}<div class="faint" style="font-size:12px">${esc(r.license_plan||"—")}</div></td>
-      <td>${esc(r.current_version||"—")}</td>
+      <td>${esc(r.current_version||"—")}</td><td>${custBadge(r.status)}</td>
       <td>${healthBadge(r.health)}<div class="faint" style="font-size:11px">inherited</div></td>
       <td class="faint">${r.last_sync_state==="not_yet_integrated"?'<span class="badge b-gray">Not integrated</span>':esc(fmtDate(r.last_sync_at))}</td>
-      <td>${custBadge(r.status)}</td>
-      <td class="faint" style="font-size:12px">${r.deployment_type==="customer_production_shared"?"Shared prod":esc(r.deployment_type)}</td>
-      <td class="rowact"><button class="btn primary sm" onclick='openErpModal(${JSON.stringify(id)},${JSON.stringify(r)})'>Open ERP</button></td>
-    </tr>`).join("");
-    document.getElementById("cbody").innerHTML= total? body :
-      `<tr><td colspan="8">${emptyState("No customers match","Adjust search or filters.","","")}</td></tr>`;
-    document.getElementById("pager").innerHTML= total>PAGE?
-      `Showing ${(page-1)*PAGE+1}–${Math.min(page*PAGE,total)} of ${total}
-       <button class="btn sm" ${page<=1?"disabled":""} onclick="__cp(${page-1})">Prev</button>
-       <button class="btn sm" ${page>=pages?"disabled":""} onclick="__cp(${page+1})">Next</button>` :
-      `<span class="faint">${total} customer${total===1?"":"s"}</span>`;
+      <td class="faint" style="font-size:12px">${r.deployment_type==="customer_production_shared"?"Shared prod":esc(r.deployment_type||"—")}</td>
+      <td class="rowact"><button class="btn primary sm" onclick="__custOpen(${r.id})">${ic("shield",14)} Open ERP</button></td></tr>`).join(""):
+      `<tr><td colspan="9">${emptyState("No customers match","Adjust search or filters.","","","users")}</td></tr>`;
+    document.getElementById("pager").innerHTML=`<span class="faint" style="margin-right:auto">${total} customer${total===1?"":"s"}</span>
+      <select class="filter" onchange="__csize(this.value)">${[10,25,50,100].map(n=>`<option ${st.size===n?"selected":""}>${n}</option>`).join("")}</select>
+      <span class="faint">${total?((st.page-1)*st.size+1)+"–"+Math.min(st.page*st.size,total):0} of ${total}</span>
+      <button class="btn sm" ${st.page<=1?"disabled":""} onclick="__cpage(${st.page-1})">Prev</button>
+      <button class="btn sm" ${st.page>=pages?"disabled":""} onclick="__cpage(${st.page+1})">Next</button>`;
+    const bar=document.getElementById("bulkbar");
+    if(st.sel.size){bar.classList.remove("hidden");document.getElementById("bulkn").textContent=st.sel.size;}else bar.classList.add("hidden");
+    document.getElementById("selall").checked=slice.length&&slice.every(r=>st.sel.has(r.id));
+    document.querySelectorAll("th.sortable").forEach(th=>{const k=th.dataset.k;th.querySelector(".sortarrow").textContent=st.sort===k?(st.dir===1?"↑":"↓"):"";});
   };
-  window.__cp=(p)=>{page=p;draw();};
+  window.__csel=(cid)=>{st.sel.has(cid)?st.sel.delete(cid):st.sel.add(cid);draw();};
+  window.__cpage=(p)=>{st.page=p;draw();};window.__csize=(n)=>{st.size=+n;st.page=1;draw();};
+  window.__csort=(k)=>{if(st.sort===k)st.dir*=-1;else{st.sort=k;st.dir=1;}draw();};
+  window.__cselall=()=>{const f=rows.filter(r=>(!st.q||(r.name||"").toLowerCase().includes(st.q))&&(!st.status||r.status===st.status)).slice((st.page-1)*st.size,st.page*st.size);
+    const all=f.every(r=>st.sel.has(r.id));f.forEach(r=>all?st.sel.delete(r.id):st.sel.add(r.id));draw();};
+  window.__cexport=()=>{const chosen=rows.filter(r=>st.sel.has(r.id));
+    const cols=["name","external_ref","license_plan","license_status","current_version","status","health","deployment_type"];
+    const csv=[cols.join(",")].concat(chosen.map(r=>cols.map(c=>`"${String(r[c]==null?"":r[c]).replace(/"/g,'""')}"`).join(","))).join("\n");
+    const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download=id+"-customers.csv";a.click();toast("Exported "+chosen.length+" customers","ok");};
+  window.__cclear=()=>{st.sel.clear();draw();};
+  const th=(k,label)=>`<th class="sortable" data-k="${k}" onclick="__csort('${k}')">${label}<span class="sortarrow"></span></th>`;
   m.innerHTML=`<div class="page-h"><div><h1>Customers</h1><p>The heart of this ERP — every company running ${esc(S.erpName[id]||id)}.</p></div>
-    <div class="actions"><button class="btn" onclick='newCustomerModal(${JSON.stringify(id)})'>+ Add customer</button></div></div>
-    <div class="toolbar">
-      <div class="search"><span class="mag">⌕</span><input id="csearch" placeholder="Search company or reference…"/></div>
-      <select class="filter" id="cstatus"><option value="">All statuses</option><option>active</option><option>suspended</option><option>inactive</option></select>
-    </div>
-    <div class="tablewrap"><div class="scroll"><table>
-      <thead><tr><th>Company</th><th>License</th><th>Version</th><th>Health</th><th>Last sync</th><th>Status</th><th>Deployment</th><th></th></tr></thead>
-      <tbody id="cbody"></tbody></table></div><div class="pager" id="pager"></div></div>`;
-  document.getElementById("csearch").addEventListener("input",e=>{q=e.target.value.trim().toLowerCase();page=1;draw();});
-  document.getElementById("cstatus").addEventListener("change",e=>{st=e.target.value;page=1;draw();});
+     <div class="actions"><button class="btn" onclick="newCustomerModal('${id}')">${ic("plus",15)} Add customer</button></div></div>
+   <div class="toolbar">
+     <div class="search">${'<span class="mag">'+ic("search",15)+'</span>'}<input id="csearch" placeholder="Search company or reference…"/></div>
+     <select class="filter" id="cstatus"><option value="">All statuses</option><option>active</option><option>suspended</option><option>inactive</option></select>
+   </div>
+   <div class="tablewrap">
+     <div id="bulkbar" class="bulkbar hidden">${ic("check",15)} <span><b id="bulkn">0</b> selected</span>
+       <button class="btn sm" onclick="__cexport()">Export CSV</button><button class="btn ghost sm" onclick="__cclear()">Clear</button></div>
+     <div class="scroll"><table>
+       <thead><tr><th style="width:34px"><input type="checkbox" id="selall" onclick="__cselall()"></th>
+         ${th("name","Company")}${th("license","License")}${th("version","Current Version")}${th("status","Status")}${th("health","Health")}${th("sync","Last Sync")}<th>Deployment</th><th></th></tr></thead>
+       <tbody id="cbody"></tbody></table></div><div class="pager" id="pager"></div></div>`;
+  document.getElementById("csearch").addEventListener("input",debounce(e=>{st.q=e.target.value.trim().toLowerCase();st.page=1;draw();},120));
+  document.getElementById("cstatus").addEventListener("change",e=>{st.status=e.target.value;st.page=1;draw();});
   draw();
 }
 
 function openErpModal(id,r){
-  modal(`<div class="modal"><div class="mh"><h3>Open ERP — ${esc(r.name)}</h3></div>
-    <div class="mb">
-      <div class="note warn">This opens a <b>secure support session</b>. PFS never uses the customer's password.
-        ERP-side session consumption is not yet implemented, so the session is recorded and audited, then the
-        registered ERP URL opens in a new tab, marked <b>Pending ERP Integration</b>.</div>
-      <div class="field"><label>Capabilities (restricted by default)</label>
-        <input id="scaps" value="support:read"/><div class="hint">Comma-separated scopes.</div></div>
-      <div class="field"><label>Reason (audited)</label><input id="sreason" placeholder="e.g. investigate invoice export"/></div>
-      <div class="field"><label>Session length</label>
-        <select id="smin"><option value="15">15 minutes</option><option value="30" selected>30 minutes</option><option value="60">60 minutes</option></select></div>
-      <div class="note">Target URL: <span class="mono">${esc(r.target_url||"— none registered —")}</span></div>
-    </div>
-    <div class="mf"><button class="btn" onclick="closeModal()">Cancel</button>
-      <button class="btn primary" id="ssub">Open ERP</button></div></div>`);
-  document.getElementById("ssub").onclick=async()=>{
-    const b=document.getElementById("ssub"); b.disabled=true; b.textContent="Opening…";
-    try{ const res=await api("/api/support-sessions",{method:"POST",json:{erp_product_id:id,customer_ref_id:r.id,
-        reason:document.getElementById("sreason").value.trim(),capabilities:document.getElementById("scaps").value.trim(),
-        minutes:parseInt(document.getElementById("smin").value)}});
-      closeModal(); toast("Support session opened (Pending ERP Integration)","ok");
-      const url=res.session&&res.session.target_url; if(url) window.open(url,"_blank","noopener");
+  modal(`<div class="modal"><div class="mh"><h3>Open ERP — ${esc(r.name)}</h3><p>Secure support session · ${esc(S.erpName[id]||id)}</p></div><div class="mb">
+    <div class="note warn">${ic("shield",14)} This opens a <b>secure support session</b>. PFS never uses the customer's password. ERP-side consumption isn't implemented yet, so the session is recorded and audited, the registered ERP URL opens in a new tab, and it's marked <b>Pending ERP Integration</b>.</div>
+    <div class="field"><label>Capabilities (restricted by default)</label><input class="field-in" id="scaps" value="support:read"/><div class="hint">Comma-separated scopes.</div></div>
+    <div class="field"><label>Reason (audited)</label><input class="field-in" id="sreason" placeholder="e.g. investigate invoice export"/></div>
+    <div class="field"><label>Session length</label><select class="field-in" id="smin"><option value="15">15 minutes</option><option value="30" selected>30 minutes</option><option value="60">60 minutes</option></select></div>
+    <div class="note">Target URL: <span class="mono">${esc(r.target_url||"— none registered —")}</span></div></div>
+    <div class="mf"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" id="ssub">${ic("shield",15)} Open ERP</button></div></div>`);
+  document.getElementById("ssub").onclick=async()=>{const b=document.getElementById("ssub");b.disabled=true;b.textContent="Opening…";
+    try{const res=await api("/api/support-sessions",{method:"POST",json:{erp_product_id:id,customer_ref_id:r.id,reason:document.getElementById("sreason").value.trim(),capabilities:document.getElementById("scaps").value.trim(),minutes:parseInt(document.getElementById("smin").value)}});
+      closeModal();toast("Support session opened (Pending ERP Integration)","ok");const url=res.session&&res.session.target_url;if(url)window.open(url,"_blank","noopener");
       window.__ov=await api("/api/products/"+encodeURIComponent(id)+"/overview");
-    }catch(e){ toast(e.message,"err"); b.disabled=false; b.textContent="Open ERP"; } };
+    }catch(e){toast(e.message,"err");b.disabled=false;b.textContent="Open ERP";}};
 }
-
 function newCustomerModal(id){
-  modal(`<div class="modal"><div class="mh"><h3>Add customer</h3></div>
-    <div class="mb"><div class="note">A customer is a <b>reference</b> to a company running this ERP. The authoritative
-      business record lives inside the ERP; PFS stores metadata only.</div>
-      <div class="field"><label>Company name</label><input id="ncname" placeholder="e.g. Northwind Traders"/></div>
-      <div class="field"><label>Customer reference (tenant id in the ERP)</label><input id="ncref" placeholder="e.g. 2"/></div>
-      <div class="field"><label>Notes</label><input id="ncnotes"/></div>
-    </div>
-    <div class="mf"><button class="btn" onclick="closeModal()">Cancel</button>
-      <button class="btn primary" id="ncsub">Add customer</button></div></div>`);
-  document.getElementById("ncsub").onclick=async()=>{
-    const name=document.getElementById("ncname").value.trim(); if(!name){toast("Company name required","err");return;}
+  modal(`<div class="modal"><div class="mh"><h3>Add customer</h3><p>Reference only — the ERP owns the authoritative record.</p></div><div class="mb">
+    <div class="field"><label>Company name</label><input class="field-in" id="ncname" placeholder="e.g. Northwind Traders"/></div>
+    <div class="field"><label>Customer reference (tenant id in the ERP)</label><input class="field-in" id="ncref" placeholder="e.g. 2"/></div>
+    <div class="field"><label>Notes</label><input class="field-in" id="ncnotes"/></div></div>
+    <div class="mf"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" id="ncsub">Add customer</button></div></div>`);
+  document.getElementById("ncsub").onclick=async()=>{const name=document.getElementById("ncname").value.trim();if(!name){toast("Company name required","err");return;}
     const b=document.getElementById("ncsub");b.disabled=true;b.textContent="Adding…";
-    try{ await api("/api/customers",{method:"POST",json:{erp_product_id:id,name,
-        external_ref:document.getElementById("ncref").value.trim(),notes:document.getElementById("ncnotes").value.trim()}});
-      closeModal(); toast("Customer added","ok");
-      window.__ov=await api("/api/products/"+encodeURIComponent(id)+"/overview"); renderErp(id,"customers");
-    }catch(e){ toast(e.message,"err"); b.disabled=false; b.textContent="Add customer"; } };
+    try{await api("/api/customers",{method:"POST",json:{erp_product_id:id,name,external_ref:document.getElementById("ncref").value.trim(),notes:document.getElementById("ncnotes").value.trim()}});
+      closeModal();toast("Customer added","ok");window.__ov=await api("/api/products/"+encodeURIComponent(id)+"/overview");renderErp(id,"customers");
+    }catch(e){toast(e.message,"err");b.disabled=false;b.textContent="Add customer";}};
 }
+window.newCustomerModal=newCustomerModal;window.openErpModal=openErpModal;window.erpSwitcher=erpSwitcher;
 
-/* -------- Support Sessions -------- */
+/* ---------- Sessions ---------- */
 function erpSessions(id,ov,m){
   const rows=ov.support_sessions;
-  const body=rows.map(s=>`<tr>
-    <td class="co">${esc(s.customer_name||("customer #"+s.customer_ref_id))}</td>
-    <td class="mono faint" style="font-size:12px">${esc(s.session_ref||"")}</td>
-    <td class="faint">${esc(s.capabilities||"")}</td>
-    <td>${sessBadge(s.status)}</td>
-    <td class="faint">${esc(fmtDate(s.created_at))}</td>
-    <td class="faint">${esc(fmtDate(s.expires_at))}</td>
-    <td class="rowact">${["active","pending_erp_integration"].includes(s.status)?
-      `<button class="btn danger sm" onclick="revokeSession(${JSON.stringify(id)},${s.id})">Revoke</button>`:
-      `<span class="faint">—</span>`}</td></tr>`).join("");
   m.innerHTML=`<div class="page-h"><div><h1>Support Sessions</h1><p>Short-lived, capability-scoped, auditable, revocable grants. Never uses a customer password.</p></div></div>
-    <div class="tablewrap"><div class="scroll"><table>
-      <thead><tr><th>Customer</th><th>Session</th><th>Capabilities</th><th>Status</th><th>Opened</th><th>Expires</th><th></th></tr></thead>
-      <tbody>${rows.length?body:`<tr><td colspan="7">${emptyState("No support sessions","Open one from the Customers tab (Open ERP).","","")}</td></tr>`}</tbody>
-    </table></div></div>`;
+   <div class="tablewrap"><div class="scroll"><table>
+     <thead><tr><th>Customer</th><th>Session</th><th>Capabilities</th><th>Status</th><th>Opened</th><th>Expires</th><th></th></tr></thead>
+     <tbody>${rows.length?rows.map(s=>`<tr><td class="co">${esc(s.customer_name||("customer #"+s.customer_ref_id))}</td>
+       <td class="mono faint" style="font-size:12px">${esc(s.session_ref||"")}</td><td class="faint">${esc(s.capabilities||"")}</td>
+       <td>${sessBadge(s.status)}</td><td class="faint">${esc(fmtDate(s.created_at))}</td><td class="faint">${esc(fmtDate(s.expires_at))}</td>
+       <td class="rowact">${["active","pending_erp_integration"].includes(s.status)?`<button class="btn danger sm" onclick="revokeSession('${id}',${s.id})">Revoke</button>`:`<span class="faint">—</span>`}</td></tr>`).join(""):
+       `<tr><td colspan="7">${emptyState("No support sessions","Open one from the Customers tab (Open ERP).","","","shield")}</td></tr>`}</tbody></table></div></div>`;
 }
-async function revokeSession(id,sid){
-  if(!await confirmDialog({title:"Revoke support session?",body:`<div class="note warn">The session will be immediately marked <b>revoked</b> and audited.</div>`,ok:"Revoke",danger:true})) return;
-  try{ await api("/api/support-sessions/"+sid+"/revoke",{method:"POST"}); toast("Session revoked","ok");
-    window.__ov=await api("/api/products/"+encodeURIComponent(id)+"/overview"); renderErp(id,"sessions");
-  }catch(e){ toast(e.message,"err"); }
-}
-window.revokeSession=revokeSession; window.openErpModal=openErpModal; window.newCustomerModal=newCustomerModal;
+async function revokeSession(id,sid){if(!await confirmDialog({title:"Revoke support session?",body:`<div class="note warn">The session will be immediately marked <b>revoked</b> and audited.</div>`,ok:"Revoke",danger:true}))return;
+  try{await api("/api/support-sessions/"+sid+"/revoke",{method:"POST"});toast("Session revoked","ok");window.__ov=await api("/api/products/"+encodeURIComponent(id)+"/overview");renderErp(id,"sessions");}catch(e){toast(e.message,"err");}}
+window.revokeSession=revokeSession;
 
-/* -------- Versions -------- */
+/* ---------- Versions ---------- */
 function erpVersions(id,ov,m){
-  const custByRel={}; ov.customer_deployments.forEach(d=>{custByRel[d.release_id]=(custByRel[d.release_id]||0)+1;});
-  const body=ov.releases.map(r=>`<tr>
-    <td class="co">${esc(r.version)}</td><td>${verBadge(r)}</td>
-    <td class="mono faint">${esc(r.source_sha||"—")}</td>
-    <td class="faint">${esc(fmtDay(r.published_at))}</td>
-    <td>${custByRel[r.id]||0}</td>
-    <td class="faint">${esc(r.notes||"")}</td></tr>`).join("");
+  const byRel={};ov.customer_deployments.forEach(d=>{byRel[d.release_id]=(byRel[d.release_id]||0)+1;});
   m.innerHTML=`<div class="page-h"><div><h1>Versions</h1><p>Immutable published builds of this ERP. Only Master Production may publish (ADR-028).</p></div></div>
-    <div class="tablewrap"><div class="scroll"><table>
-      <thead><tr><th>Version</th><th>Status</th><th>Source SHA</th><th>Published</th><th>Customers</th><th>Release notes</th></tr></thead>
-      <tbody>${ov.releases.length?body:`<tr><td colspan="6">${emptyState("No versions yet","","","")}</td></tr>`}</tbody>
-    </table></div></div>`;
+   <div class="tablewrap"><div class="scroll"><table>
+     <thead><tr><th>Version</th><th>Status</th><th>Source SHA</th><th>Published</th><th>Customers</th><th>Release notes</th></tr></thead>
+     <tbody>${ov.releases.length?ov.releases.map(r=>`<tr><td class="co">${esc(r.version)}</td><td>${verBadge(r)}</td>
+       <td class="mono faint">${esc(r.source_sha||"—")}</td><td class="faint">${esc(fmtDay(r.published_at))}</td><td>${byRel[r.id]||0}</td>
+       <td class="faint">${esc(r.notes||"")}</td></tr>`).join(""):`<tr><td colspan="6">${emptyState("No versions yet","","","","tag")}</td></tr>`}</tbody></table></div></div>`;
 }
-
-/* -------- Updates (metadata-only observed rollouts) -------- */
+/* ---------- Updates ---------- */
 function erpUpdates(id,ov,m){
-  const rows=ov.customer_deployments.map(d=>({customer:d.customer_name,prev:"—",target:d.release_version,status:d.status}));
-  const body=rows.map(u=>`<tr><td class="co">${esc(u.customer||"—")}</td><td class="faint">${esc(u.prev)}</td>
-    <td>${esc(u.target||"—")}</td><td><span class="badge b-gray">${esc(u.status)} (observed)</span></td>
-    <td class="faint">platform</td><td class="faint">—</td></tr>`).join("");
+  const rows=ov.customer_deployments;
   m.innerHTML=`<div class="page-h"><div><h1>Updates</h1><p>Assigning or rolling a version to customers. Metadata-only in this milestone — no automatic deployment execution.</p></div></div>
-    <div class="note" style="margin-bottom:14px">These rows are <b>observed</b> version assignments. Update orchestration is intentionally deferred.</div>
-    <div class="tablewrap"><div class="scroll"><table>
-      <thead><tr><th>Customer</th><th>Previous version</th><th>Target version</th><th>Status</th><th>Requested by</th><th>Completed at</th></tr></thead>
-      <tbody>${rows.length?body:`<tr><td colspan="6">${emptyState("No updates recorded","","","")}</td></tr>`}</tbody>
-    </table></div></div>`;
+   <div class="note" style="margin-bottom:14px">These rows are <b>observed</b> version assignments. Update orchestration is intentionally deferred.</div>
+   <div class="tablewrap"><div class="scroll"><table>
+     <thead><tr><th>Customer</th><th>Previous version</th><th>Target version</th><th>Status</th><th>Requested by</th><th>Completed at</th></tr></thead>
+     <tbody>${rows.length?rows.map(d=>`<tr><td class="co">${esc(d.customer_name||"—")}</td><td class="faint">—</td><td>${esc(d.release_version||"—")}</td>
+       <td><span class="badge b-gray">${esc(d.status)} (observed)</span></td><td class="faint">platform</td><td class="faint">—</td></tr>`).join(""):
+       `<tr><td colspan="6">${emptyState("No updates recorded","","","","upload")}</td></tr>`}</tbody></table></div></div>`;
 }
-
-/* -------- Licenses (CRUD) -------- */
+/* ---------- Licenses ---------- */
 function erpLicenses(id,ov,m){
-  const custName={}; ov.customers.forEach(c=>custName[c.id]=c.name);
-  const body=ov.licenses.map(l=>`<tr>
-    <td class="co">${esc(custName[l.customer_ref_id]||("customer #"+l.customer_ref_id))}</td>
-    <td>${esc(l.plan)}</td><td>${licBadge(l.status)}</td>
-    <td class="faint">${esc(fmtDay(l.start_date))}</td><td class="faint">${l.expiry_date?esc(fmtDay(l.expiry_date)):"No expiry"}</td>
-    <td class="faint">${l.seat_limit!=null?l.seat_limit+" seats":"—"}${l.branch_limit!=null?" · "+l.branch_limit+" br":""}</td>
-    <td class="rowact"><button class="btn sm" onclick='editLicenseModal(${JSON.stringify(id)},${JSON.stringify(l)})'>Edit</button></td></tr>`).join("");
+  const cn={};ov.customers.forEach(c=>cn[c.id]=c.name);
   m.innerHTML=`<div class="page-h"><div><h1>Licenses</h1><p>Entitlements per customer. Metadata only — no billing or payment processing.</p></div>
-    <div class="actions"><button class="btn primary" onclick='newLicenseModal(${JSON.stringify(id)})'>+ New license</button></div></div>
-    <div class="tablewrap"><div class="scroll"><table>
-      <thead><tr><th>Customer</th><th>Plan</th><th>Status</th><th>Start</th><th>Expiry</th><th>Limits</th><th></th></tr></thead>
-      <tbody>${ov.licenses.length?body:`<tr><td colspan="7">${emptyState("No licenses yet","Create a license to entitle a customer.","","")}</td></tr>`}</tbody>
-    </table></div></div>`;
+     <div class="actions"><button class="btn primary" onclick="newLicenseModal('${id}')">${ic("plus",15)} New license</button></div></div>
+   <div class="tablewrap"><div class="scroll"><table>
+     <thead><tr><th>Customer</th><th>Plan</th><th>Status</th><th>Start</th><th>Expiry</th><th>Limits</th><th></th></tr></thead>
+     <tbody>${ov.licenses.length?ov.licenses.map(l=>`<tr><td class="co">${esc(cn[l.customer_ref_id]||("customer #"+l.customer_ref_id))}</td>
+       <td>${esc(l.plan)}</td><td>${licBadge(l.status)}</td><td class="faint">${esc(fmtDay(l.start_date))}</td>
+       <td class="faint">${l.expiry_date?esc(fmtDay(l.expiry_date)):"No expiry"}</td>
+       <td class="faint">${l.seat_limit!=null?l.seat_limit+" seats":"—"}${l.branch_limit!=null?" · "+l.branch_limit+" br":""}</td>
+       <td class="rowact"><button class="btn sm" onclick='editLicenseModal("${id}",${JSON.stringify(l)})'>Edit</button></td></tr>`).join(""):
+       `<tr><td colspan="7">${emptyState("No licenses yet","Create a license to entitle a customer.","+ New license","newLicenseModal(\\'"+id+"\\')","key")}</td></tr>`}</tbody></table></div></div>`;
 }
-function licFields(l){ l=l||{}; return `
-  <div class="field"><label>Plan</label><input id="lplan" value="${esc(l.plan||"standard")}"/></div>
-  <div class="field"><label>Status</label><select id="lstatus">
-    ${["trial","active","suspended","expired","cancelled"].map(s=>`<option ${l.status===s?"selected":""}>${s}</option>`).join("")}</select></div>
-  <div class="row2">
-    <div class="field"><label>Start date</label><input id="lstart" type="date" value="${l.start_date?l.start_date.slice(0,10):""}"/></div>
-    <div class="field"><label>Expiry date</label><input id="lexp" type="date" value="${l.expiry_date?l.expiry_date.slice(0,10):""}"/></div></div>
-  <div class="row2">
-    <div class="field"><label>Seat limit</label><input id="lseat" type="number" value="${l.seat_limit!=null?l.seat_limit:""}"/></div>
-    <div class="field"><label>Branch limit</label><input id="lbranch" type="number" value="${l.branch_limit!=null?l.branch_limit:""}"/></div></div>
-  <div class="field"><label>Notes</label><input id="lnotes" value="${esc(l.notes||"")}"/></div>`; }
-function licPayload(){ const v=id=>{const e=document.getElementById(id);return e?e.value:"";};
-  const num=id=>{const x=v(id);return x===""?null:parseInt(x);};
-  return {plan:v("lplan").trim()||"standard",status:v("lstatus"),
-    start_date:v("lstart")||null,expiry_date:v("lexp")||null,
-    seat_limit:num("lseat"),branch_limit:num("lbranch"),notes:v("lnotes").trim()}; }
-function newLicenseModal(id){
-  const custs=(window.__ov&&window.__ov.customers)||[];
-  if(!custs.length){ toast("Add a customer first","err"); return; }
+function licFields(l){l=l||{};return `
+  <div class="row2"><div class="field"><label>Plan</label><input class="field-in" id="lplan" value="${esc(l.plan||"standard")}"/></div>
+  <div class="field"><label>Status</label><select class="field-in" id="lstatus">${["trial","active","suspended","expired","cancelled"].map(s=>`<option ${l.status===s?"selected":""}>${s}</option>`).join("")}</select></div></div>
+  <div class="row2"><div class="field"><label>Start date</label><input class="field-in" id="lstart" type="date" value="${l.start_date?l.start_date.slice(0,10):""}"/></div>
+  <div class="field"><label>Expiry date</label><input class="field-in" id="lexp" type="date" value="${l.expiry_date?l.expiry_date.slice(0,10):""}"/></div></div>
+  <div class="row2"><div class="field"><label>Seat limit</label><input class="field-in" id="lseat" type="number" value="${l.seat_limit!=null?l.seat_limit:""}"/></div>
+  <div class="field"><label>Branch limit</label><input class="field-in" id="lbranch" type="number" value="${l.branch_limit!=null?l.branch_limit:""}"/></div></div>
+  <div class="field"><label>Notes</label><input class="field-in" id="lnotes" value="${esc(l.notes||"")}"/></div>`;}
+function licPayload(){const v=id=>{const e=document.getElementById(id);return e?e.value:"";},num=id=>{const x=v(id);return x===""?null:parseInt(x);};
+  return {plan:v("lplan").trim()||"standard",status:v("lstatus"),start_date:v("lstart")||null,expiry_date:v("lexp")||null,seat_limit:num("lseat"),branch_limit:num("lbranch"),notes:v("lnotes").trim()};}
+function newLicenseModal(id){const custs=(window.__ov&&window.__ov.customers)||[];if(!custs.length){toast("Add a customer first","err");return;}
   modal(`<div class="modal"><div class="mh"><h3>New license</h3></div><div class="mb">
-    <div class="field"><label>Customer</label><select id="lcust">${custs.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select></div>
-    ${licFields()}</div>
+    <div class="field"><label>Customer</label><select class="field-in" id="lcust">${custs.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select></div>${licFields()}</div>
     <div class="mf"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" id="lsub">Create</button></div></div>`);
-  document.getElementById("lsub").onclick=async()=>{
-    const cid=parseInt(document.getElementById("lcust").value); if(!cid){toast("Pick a customer","err");return;}
+  document.getElementById("lsub").onclick=async()=>{const cid=parseInt(document.getElementById("lcust").value);if(!cid){toast("Pick a customer","err");return;}
     const b=document.getElementById("lsub");b.disabled=true;b.textContent="Creating…";
-    try{ await api("/api/licenses",{method:"POST",json:Object.assign({erp_product_id:id,customer_ref_id:cid},licPayload())});
-      closeModal(); toast("License created","ok"); window.__ov=await api("/api/products/"+encodeURIComponent(id)+"/overview"); renderErp(id,"licenses");
-    }catch(e){ toast(e.message,"err"); b.disabled=false; b.textContent="Create"; } };
-}
-function editLicenseModal(id,l){
-  const cn=(window.__ov.customers.find(c=>c.id===l.customer_ref_id)||{}).name||l.customer_ref_id;
-  modal(`<div class="modal"><div class="mh"><h3>Edit license</h3></div><div class="mb">
-    <div class="note">Customer: <b>${esc(cn)}</b></div>
-    ${licFields(l)}</div>
+    try{await api("/api/licenses",{method:"POST",json:Object.assign({erp_product_id:id,customer_ref_id:cid},licPayload())});
+      closeModal();toast("License created","ok");window.__ov=await api("/api/products/"+encodeURIComponent(id)+"/overview");renderErp(id,"licenses");
+    }catch(e){toast(e.message,"err");b.disabled=false;b.textContent="Create";}};}
+function editLicenseModal(id,l){const cn=(window.__ov.customers.find(c=>c.id===l.customer_ref_id)||{}).name||l.customer_ref_id;
+  modal(`<div class="modal"><div class="mh"><h3>Edit license</h3></div><div class="mb"><div class="note">Customer: <b>${esc(cn)}</b></div>${licFields(l)}</div>
     <div class="mf"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" id="lsub">Save changes</button></div></div>`);
-  document.getElementById("lsub").onclick=async()=>{
-    const b=document.getElementById("lsub");b.disabled=true;b.textContent="Saving…";
-    try{ await api("/api/licenses/"+l.id,{method:"PATCH",json:licPayload()});
-      closeModal(); toast("License updated","ok"); window.__ov=await api("/api/products/"+encodeURIComponent(id)+"/overview"); renderErp(id,"licenses");
-    }catch(e){ toast(e.message,"err"); b.disabled=false; b.textContent="Save changes"; } };
-}
-window.newLicenseModal=newLicenseModal; window.editLicenseModal=editLicenseModal;
+  document.getElementById("lsub").onclick=async()=>{const b=document.getElementById("lsub");b.disabled=true;b.textContent="Saving…";
+    try{await api("/api/licenses/"+l.id,{method:"PATCH",json:licPayload()});closeModal();toast("License updated","ok");
+      window.__ov=await api("/api/products/"+encodeURIComponent(id)+"/overview");renderErp(id,"licenses");}catch(e){toast(e.message,"err");b.disabled=false;b.textContent="Save changes";}};}
+window.newLicenseModal=newLicenseModal;window.editLicenseModal=editLicenseModal;
 
-/* -------- Health -------- */
+/* ---------- Health ---------- */
 function erpHealth(id,ov,m){
   const cp=ov.runtimes.find(r=>r.tier==="customer");
-  const custRows=ov.customers.map(c=>`<tr><td class="co">${esc(c.name)}</td><td>${healthBadge(c.health)}</td>
-    <td class="faint">Inherited from runtime</td><td class="faint">Not yet integrated</td></tr>`).join("");
   m.innerHTML=`<div class="page-h"><div><h1>Health</h1><p>Live ERP health from the registered runtime. Per-customer telemetry is not yet integrated.</p></div>
-    ${cp?`<div class="actions"><button class="btn" id="hchk">Run health check</button></div>`:""}</div>
-    <div class="tiles">
-      <div class="tile"><b style="font-size:15px">${healthBadge(ov.summary.erp_health)}</b><span>ERP-level (live)</span></div>
-      <div class="tile"><b style="font-size:13px" class="mono">${esc((ov.summary.health_url||"—"))}</b><span>Health endpoint</span></div>
-    </div>
-    <div class="note warn" style="margin-bottom:14px">Per-customer health and last-sync require an ERP→PFS heartbeat that is not implemented yet.
-      Customer rows below inherit the shared runtime's health and are explicitly marked <b>not yet integrated</b> — no values are fabricated.</div>
-    <div class="tablewrap"><div class="scroll"><table>
-      <thead><tr><th>Customer</th><th>Health</th><th>Source</th><th>Last sync</th></tr></thead>
-      <tbody>${ov.customers.length?custRows:`<tr><td colspan="4">${emptyState("No customers","","","")}</td></tr>`}</tbody></table></div></div>`;
+     ${cp?`<div class="actions"><button class="btn" id="hchk">${ic("refresh",15)} Run health check</button></div>`:""}</div>
+   <div class="tiles" style="margin-bottom:16px">
+     ${tile("heart","ERP-level (live)",'<span style="font-size:15px">'+healthBadge(ov.summary.erp_health)+'</span>')}
+     <div class="tile"><div class="lab">${ic("external",14)} Health endpoint</div><b class="mono" style="font-size:12px;font-weight:600">${esc(ov.summary.health_url||"—")}</b></div></div>
+   <div class="note warn" style="margin-bottom:14px">${ic("heart",14)} Per-customer health and last-sync require an ERP→PFS heartbeat that is not implemented yet. Customer rows inherit the shared runtime's health and are explicitly marked <b>not yet integrated</b> — no values are fabricated.</div>
+   <div class="tablewrap"><div class="scroll"><table><thead><tr><th>Customer</th><th>Health</th><th>Source</th><th>Last sync</th></tr></thead>
+     <tbody>${ov.customers.length?ov.customers.map(c=>`<tr><td class="co">${esc(c.name)}</td><td>${healthBadge(c.health)}</td><td class="faint">Inherited from runtime</td><td class="faint">Not yet integrated</td></tr>`).join(""):`<tr><td colspan="4">${emptyState("No customers","","","","users")}</td></tr>`}</tbody></table></div></div>`;
   const btn=document.getElementById("hchk");
-  if(btn) btn.onclick=async()=>{ btn.disabled=true; btn.textContent="Checking…";
-    try{ const r=await api("/api/runtimes/"+cp.id+"/health-check",{method:"POST"}); toast("Health: "+r.health,r.health==="ok"?"ok":"err");
-      window.__ov=await api("/api/products/"+encodeURIComponent(id)+"/overview"); renderErp(id,"health");
-    }catch(e){ toast(e.message,"err"); btn.disabled=false; btn.textContent="Run health check"; } };
+  if(btn)btn.onclick=async()=>{btn.disabled=true;btn.innerHTML=ic("refresh",15)+" Checking…";
+    try{const r=await api("/api/runtimes/"+cp.id+"/health-check",{method:"POST"});toast("Health: "+r.health,r.health==="ok"?"ok":"err");
+      window.__ov=await api("/api/products/"+encodeURIComponent(id)+"/overview");renderErp(id,"health");}catch(e){toast(e.message,"err");btn.disabled=false;btn.innerHTML=ic("refresh",15)+" Run health check";}};
 }
-
-/* -------- Audit -------- */
+/* ---------- Audit ---------- */
 function erpAudit(id,ov,m){
-  const body=ov.audit.map(a=>`<tr><td class="faint mono">${esc(fmtDate(a.at))}</td><td class="faint">${esc(a.actor||"")}</td>
-    <td><b>${esc(a.action)}</b></td><td class="faint">${esc(a.target_type)} ${esc(a.target_id)}</td>
-    <td class="faint">${esc(a.detail||"")}</td><td>${a.result==="ok"?'<span class="badge b-green">ok</span>':`<span class="badge b-red">${esc(a.result)}</span>`}</td></tr>`).join("");
   m.innerHTML=`<div class="page-h"><div><h1>Audit</h1><p>Control-plane actions for this ERP. Immutable, separate from the ERP's own audit trail.</p></div></div>
-    <div class="tablewrap"><div class="scroll"><table>
-      <thead><tr><th>When</th><th>Operator</th><th>Action</th><th>Target</th><th>Detail</th><th>Result</th></tr></thead>
-      <tbody>${ov.audit.length?body:`<tr><td colspan="6">${emptyState("No audit entries yet","","","")}</td></tr>`}</tbody></table></div></div>`;
+   <div class="tablewrap"><div class="scroll"><table><thead><tr><th>When</th><th>Operator</th><th>Action</th><th>Target</th><th>Detail</th><th>Result</th></tr></thead>
+     <tbody>${ov.audit.length?ov.audit.map(a=>`<tr><td class="faint mono">${esc(fmtDate(a.at))}</td><td class="faint">${esc(a.actor||"")}</td><td><b>${esc(a.action)}</b></td>
+       <td class="faint">${esc(a.target_type)} ${esc(a.target_id)}</td><td class="faint">${esc(a.detail||"")}</td>
+       <td>${a.result==="ok"?'<span class="badge b-green">ok</span>':`<span class="badge b-red">${esc(a.result)}</span>`}</td></tr>`).join(""):`<tr><td colspan="6">${emptyState("No audit entries yet","","","","list")}</td></tr>`}</tbody></table></div></div>`;
 }
-
-/* -------- Settings -------- */
-function erpSettings(id,ov,m){
-  const p=ov.product;
+/* ---------- Settings ---------- */
+function erpSettings(id,ov,m){const p=ov.product;
   m.innerHTML=`<div class="page-h"><div><h1>Settings</h1><p>Product metadata and platform posture.</p></div></div>
-    <div class="grid" style="grid-template-columns:1fr 1fr">
-      <div class="card" style="padding:18px"><h3 style="margin:0 0 12px;font-size:14px">Product</h3>
-        <div class="field"><label>Product ID</label><input value="${esc(p.id)}" disabled/></div>
-        <div class="field"><label>Name</label><input value="${esc(p.name)}" disabled/></div>
-        <div class="field"><label>Description</label><input value="${esc(p.description||"")}" disabled/></div>
-        <div class="field"><label>Status</label><input value="${esc(p.status)}" disabled/></div>
-        <div class="hint faint">Product editing lands in a later milestone.</div>
-      </div>
-      <div class="card" style="padding:18px"><h3 style="margin:0 0 12px;font-size:14px">Platform posture</h3>
-        <div class="note">This ERP is a <b>registered</b> product. PFS stores metadata only and never holds customer
-          transactional data. The Control Center is an independent service with its own database, auth realm, CI and deploy.</div>
-        <div style="margin-top:12px" class="lifecycle">${ov.environments.map(e=>`<div class="lc"><b>${esc(e.display_name||e.kind)}</b><span class="faint">${esc(e.status)}</span></div>`).join("")}</div>
-      </div></div>`;
+   <div class="dash"><div class="col-6 card pad"><div class="section-h"><h2>Product</h2></div>
+     <div class="field"><label>Product ID</label><input class="field-in" value="${esc(p.id)}" disabled/></div>
+     <div class="field"><label>Name</label><input class="field-in" value="${esc(p.name)}" disabled/></div>
+     <div class="field"><label>Description</label><input class="field-in" value="${esc(p.description||"")}" disabled/></div>
+     <div class="field"><label>Status</label><input class="field-in" value="${esc(p.status)}" disabled/></div>
+     <div class="hint faint">Product editing lands in a later milestone.</div></div>
+   <div class="col-6 card pad"><div class="section-h"><h2>Platform posture</h2></div>
+     <div class="note">This ERP is a <b>registered</b> product. PFS stores metadata only and never holds customer transactional data. The Control Center is an independent service with its own database, auth realm, CI and deploy.</div>
+     <div style="margin-top:14px" class="lifecycle">${ov.environments.map(e=>`<div class="lc"><b>${esc(e.display_name||e.kind)}</b><span class="faint">${esc(e.status)}</span></div>`).join("")}</div></div></div>`;
 }
 
-/* ---------------- platform-level views ---------------- */
-async function renderPlatformSessions(){
-  shell({crumbs:`${crumbHome()}<span class="sep">▸</span><span class="cur">Support Sessions</span>`,rail:"",body:`<div class="skel" style="height:200px"></div>`});
-  let rows; try{ rows=await api("/api/support-sessions"); }catch(e){ return errMain(e); }
-  const m=document.getElementById("main");
-  const body=rows.map(s=>`<tr><td class="faint">${esc(s.erp_product_id)}</td><td class="co">${esc(s.customer_name||s.customer_ref_id)}</td>
-    <td>${sessBadge(s.status)}</td><td class="faint">${esc(fmtDate(s.created_at))}</td><td class="faint">${esc(fmtDate(s.expires_at))}</td>
-    <td class="rowact">${["active","pending_erp_integration"].includes(s.status)?`<button class="btn danger sm" onclick="revokeSessionG(${s.id})">Revoke</button>`:"—"}</td></tr>`).join("");
-  m.innerHTML=`<div class="page-h"><div><h1>All Support Sessions</h1><p>Every support grant across every ERP.</p></div></div>
-    <div class="tablewrap"><div class="scroll"><table><thead><tr><th>ERP</th><th>Customer</th><th>Status</th><th>Opened</th><th>Expires</th><th></th></tr></thead>
-    <tbody>${rows.length?body:`<tr><td colspan="6">${emptyState("No support sessions","","","")}</td></tr>`}</tbody></table></div></div>`;
+/* ============================ Register ERP wizard ============================ */
+function registerErpWizard(){
+  const state={step:0,d:{id:"",name:"",description:"",repo:"",branch:"main",deploy_url:"",health_url:"",tags:""}};
+  const steps=["General Information","Repository","Deployment","Metadata","Confirmation"];
+  const render=()=>{
+    const d=state.d;
+    let body="";
+    if(state.step===0)body=`<div class="note">${ic("box",14)} ERP systems are <b>built externally</b> and then registered into PFS. This records product metadata only.</div>
+      <div class="field"><label>Product ID *</label><input class="field-in" id="w_id" value="${esc(d.id)}" placeholder="e.g. dairy"/><div class="hint">Lowercase, stable identifier.</div></div>
+      <div class="field"><label>Display name *</label><input class="field-in" id="w_name" value="${esc(d.name)}" placeholder="e.g. Dairy ERP"/></div>`;
+    else if(state.step===1)body=`<div class="field"><label>Repository URL</label><input class="field-in" id="w_repo" value="${esc(d.repo)}" placeholder="https://github.com/org/repo"/></div>
+      <div class="field"><label>Default branch</label><input class="field-in" id="w_branch" value="${esc(d.branch)}"/></div>`;
+    else if(state.step===2)body=`<div class="field"><label>Customer production URL</label><input class="field-in" id="w_deploy" value="${esc(d.deploy_url)}" placeholder="https://app.example.com"/></div>
+      <div class="field"><label>Health endpoint</label><input class="field-in" id="w_health" value="${esc(d.health_url)}" placeholder="https://app.example.com/api/health"/></div>`;
+    else if(state.step===3)body=`<div class="field"><label>Description</label><textarea id="w_desc" rows="3" placeholder="What this ERP does">${esc(d.description)}</textarea></div>
+      <div class="field"><label>Tags</label><input class="field-in" id="w_tags" value="${esc(d.tags)}" placeholder="inventory, invoicing"/></div>`;
+    else body=`<div class="note">${ic("check",14)} Review before registering.</div>
+      <div class="lrow"><div class="m"><div class="t">${esc(d.name||"—")}</div><div class="s mono">${esc(d.id||"—")}</div></div>${ic("box",18)}</div>
+      <div class="lrow"><div class="m"><div class="t faint">Repository</div><div class="s">${esc(d.repo||"—")} · ${esc(d.branch)}</div></div></div>
+      <div class="lrow"><div class="m"><div class="t faint">Deployment</div><div class="s">${esc(d.deploy_url||"—")}</div></div></div>
+      <div class="lrow"><div class="m"><div class="t faint">Description</div><div class="s">${esc(d.description||"—")}</div></div></div>`;
+    modal(`<div class="modal"><div class="steps">${steps.map((_,i)=>`<div class="step ${i<=state.step?"on":""}"></div>`).join("")}</div>
+      <div class="steplabels"><span style="flex:1">Step ${state.step+1} of 5 · ${steps[state.step]}</span></div>
+      <div class="mh"><h3>Register ERP · ${esc(steps[state.step])}</h3></div><div class="mb">${body}</div>
+      <div class="mf"><button class="btn" onclick="closeModal()">Cancel</button>
+        ${state.step>0?`<button class="btn" id="w_back">Back</button>`:""}
+        <button class="btn primary" id="w_next">${state.step===4?"Register ERP":"Continue"}</button></div></div>`);
+    const grab=()=>{const g=id=>{const e=document.getElementById(id);return e?e.value.trim():undefined;};
+      if(state.step===0){d.id=g("w_id")??d.id;d.name=g("w_name")??d.name;}
+      if(state.step===1){d.repo=g("w_repo")??d.repo;d.branch=g("w_branch")||d.branch;}
+      if(state.step===2){d.deploy_url=g("w_deploy")??d.deploy_url;d.health_url=g("w_health")??d.health_url;}
+      if(state.step===3){d.description=g("w_desc")??d.description;d.tags=g("w_tags")??d.tags;}};
+    const back=document.getElementById("w_back");if(back)back.onclick=()=>{grab();state.step--;render();};
+    document.getElementById("w_next").onclick=async()=>{grab();
+      if(state.step===0&&(!d.id||!d.name)){toast("Product ID and name are required","err");return;}
+      if(state.step<4){state.step++;render();return;}
+      const desc=[d.description,d.repo?("Repo: "+d.repo+" ("+d.branch+")"):"",d.deploy_url?("URL: "+d.deploy_url):"",d.tags?("Tags: "+d.tags):""].filter(Boolean).join(" · ");
+      const b=document.getElementById("w_next");b.disabled=true;b.textContent="Registering…";
+      try{await api("/api/products",{method:"POST",json:{id:d.id,name:d.name,description:desc}});
+        window.__dash=null;window.__home=null;closeModal();toast("ERP registered","ok");location.hash="#/erp/"+encodeURIComponent(d.id)+"/overview";route();
+      }catch(e){toast(e.message,"err");b.disabled=false;b.textContent="Register ERP";}};
+  };
+  render();
 }
-async function revokeSessionG(sid){ if(!await confirmDialog({title:"Revoke session?",body:`<div class="note warn">Immediately revoked and audited.</div>`,ok:"Revoke",danger:true}))return;
-  try{ await api("/api/support-sessions/"+sid+"/revoke",{method:"POST"}); toast("Revoked","ok"); renderPlatformSessions(); }catch(e){ toast(e.message,"err"); } }
+window.registerErpWizard=registerErpWizard;
+
+/* ============================ platform-level views ============================ */
+async function renderPlatformSessions(){
+  shell({crumbs:`${crumbHome()}<span class="sep">${ic("chevron",13)}</span><span class="cur">Support Sessions</span>`,rail:"",body:`<div class="card pad"><div class="skel" style="height:200px"></div></div>`,notifCount:(window.__dash&&window.__dash.recent_activity||[]).length});
+  let rows;try{rows=await api("/api/support-sessions");}catch(e){return errMain(e);}const m=document.getElementById("main");
+  m.innerHTML=`<div class="page-h"><div><h1>All Support Sessions</h1><p>Every support grant across every ERP.</p></div></div>
+   <div class="tablewrap"><div class="scroll"><table><thead><tr><th>ERP</th><th>Customer</th><th>Status</th><th>Opened</th><th>Expires</th><th></th></tr></thead>
+     <tbody>${rows.length?rows.map(s=>`<tr><td class="faint">${esc(S.erpName[s.erp_product_id]||s.erp_product_id)}</td><td class="co">${esc(s.customer_name||s.customer_ref_id)}</td>
+       <td>${sessBadge(s.status)}</td><td class="faint">${esc(fmtDate(s.created_at))}</td><td class="faint">${esc(fmtDate(s.expires_at))}</td>
+       <td class="rowact">${["active","pending_erp_integration"].includes(s.status)?`<button class="btn danger sm" onclick="revokeSessionG(${s.id})">Revoke</button>`:"—"}</td></tr>`).join(""):`<tr><td colspan="6">${emptyState("No support sessions","","","","shield")}</td></tr>`}</tbody></table></div></div>`;
+}
+async function revokeSessionG(sid){if(!await confirmDialog({title:"Revoke session?",body:`<div class="note warn">Immediately revoked and audited.</div>`,ok:"Revoke",danger:true}))return;
+  try{await api("/api/support-sessions/"+sid+"/revoke",{method:"POST"});toast("Revoked","ok");renderPlatformSessions();}catch(e){toast(e.message,"err");}}
 window.revokeSessionG=revokeSessionG;
 
 async function renderPlatformAudit(){
-  shell({crumbs:`${crumbHome()}<span class="sep">▸</span><span class="cur">Platform Audit</span>`,rail:"",body:`<div class="skel" style="height:200px"></div>`});
-  let rows; try{ rows=await api("/api/audit"); }catch(e){ return errMain(e); }
-  const m=document.getElementById("main");
-  const body=rows.map(a=>`<tr><td class="faint mono">${esc(fmtDate(a.at))}</td><td class="faint">${esc(a.actor||"")}</td><td><b>${esc(a.action)}</b></td>
-    <td class="faint">${esc(a.target_type)} ${esc(a.target_id)}</td><td class="faint">${esc(a.detail||"")}</td></tr>`).join("");
+  shell({crumbs:`${crumbHome()}<span class="sep">${ic("chevron",13)}</span><span class="cur">Platform Audit</span>`,rail:"",body:`<div class="card pad"><div class="skel" style="height:200px"></div></div>`,notifCount:(window.__dash&&window.__dash.recent_activity||[]).length});
+  let rows;try{rows=await api("/api/audit");}catch(e){return errMain(e);}const m=document.getElementById("main");
   m.innerHTML=`<div class="page-h"><div><h1>Platform Audit</h1><p>Immutable control-plane audit trail.</p></div></div>
-    <div class="tablewrap"><div class="scroll"><table><thead><tr><th>When</th><th>Operator</th><th>Action</th><th>Target</th><th>Detail</th></tr></thead>
-    <tbody>${rows.length?body:`<tr><td colspan="5">${emptyState("No audit entries","","","")}</td></tr>`}</tbody></table></div></div>`;
+   <div class="tablewrap"><div class="scroll"><table><thead><tr><th>When</th><th>Operator</th><th>Action</th><th>Target</th><th>Detail</th></tr></thead>
+     <tbody>${rows.length?rows.map(a=>`<tr><td class="faint mono">${esc(fmtDate(a.at))}</td><td class="faint">${esc(a.actor||"")}</td><td><b>${esc(a.action)}</b></td>
+       <td class="faint">${esc(a.target_type)} ${esc(a.target_id)}</td><td class="faint">${esc(a.detail||"")}</td></tr>`).join(""):`<tr><td colspan="5">${emptyState("No audit entries","","","","list")}</td></tr>`}</tbody></table></div></div>`;
 }
-function renderPlatformSettings(){
-  shell({crumbs:`${crumbHome()}<span class="sep">▸</span><span class="cur">Platform Settings</span>`,rail:"",body:""});
-  document.getElementById("main").innerHTML=`<div class="page-h"><div><h1>Platform Settings</h1><p>PFS Control Center — the one place you run every ERP.</p></div></div>
-    <div class="card" style="padding:18px;max-width:640px">
-      <div class="field"><label>Operator</label><input value="${esc((S.op&&S.op.name)||"")} (${esc((S.op&&S.op.id)||"")})" disabled/></div>
-      <div class="field"><label>Role</label><input value="${esc((S.op&&S.op.role)||"")}" disabled/></div>
-      <div class="note">The Control Center stores platform metadata only. Each ERP is independent; customer transactional
-        data always stays inside the ERP. Support sessions never use a customer's password.</div>
-      <div style="margin-top:14px"><button class="btn danger" onclick="logout()">Sign out</button></div>
-    </div>`;
-}
+function pageShell(title,cur,inner){shell({crumbs:`${crumbHome()}<span class="sep">${ic("chevron",13)}</span><span class="cur">${esc(cur)}</span>`,rail:"",body:inner,notifCount:(window.__dash&&window.__dash.recent_activity||[]).length});}
+function renderPlatformSettings(){pageShell("Settings","Platform Settings",`<div class="page-h"><div><h1>Platform Settings</h1><p>PFS Control Center — the one place you run every ERP.</p></div></div>
+   <div class="dash"><div class="col-6 card pad"><div class="section-h"><h2>Operator</h2></div>
+     <div class="field"><label>Name</label><input class="field-in" value="${esc((S.op&&S.op.name)||"")} (${esc((S.op&&S.op.id)||"")})" disabled/></div>
+     <div class="field"><label>Role</label><input class="field-in" value="${esc((S.op&&S.op.role)||"")}" disabled/></div></div>
+   <div class="col-6 card pad"><div class="section-h"><h2>Appearance</h2></div>
+     <div class="field"><label>Theme</label><div style="display:flex;gap:8px"><button class="btn ${S.theme==="light"?"primary":""}" onclick="setTheme('light');route()">${ic("sun",15)} Light</button><button class="btn ${S.theme==="dark"?"primary":""}" onclick="setTheme('dark');route()">${ic("moon",15)} Dark</button></div></div>
+     <div class="note" style="margin-top:12px">The Control Center stores platform metadata only. Support sessions never use a customer's password.</div>
+     <div style="margin-top:14px"><button class="btn danger" onclick="logout()">${ic("logout",15)} Sign out</button></div></div></div>`);}
+function renderProfile(){pageShell("Profile","Profile",`<div class="page-h"><div><h1>Profile</h1><p>Your platform operator identity.</p></div></div>
+   <div class="card pad" style="max-width:560px"><div class="lrow"><span class="avatar" style="width:44px;height:44px;font-size:16px">${opInitials()}</span>
+     <div class="m"><div class="t" style="font-size:16px">${esc((S.op&&S.op.name)||"")}</div><div class="s">${esc((S.op&&S.op.id)||"")} · ${esc((S.op&&S.op.role)||"")}</div></div></div>
+     <div class="note" style="margin-top:14px">Operator profile editing lands in a later milestone.</div></div>`);}
+function renderApiKeys(){pageShell("API Keys","API Keys",`<div class="page-h"><div><h1>API Keys</h1><p>Programmatic access to the Control Center.</p></div></div>
+   <div class="card pad">${emptyState("No API keys yet","Machine-to-machine keys will be managed here.","","","key")}</div>`);}
+window.setTheme=setTheme;window.logout=logout;window.route=route;window.closeModal=closeModal;window.closeMenus=closeMenus;
 
-/* ---------------- helpers ---------------- */
-function emptyState(title,sub,btnLabel,btnAction){ return `<div class="empty"><div class="ei">▢</div><h4>${esc(title)}</h4>
-  <div>${esc(sub||"")}</div>${btnLabel?`<div style="margin-top:12px"><button class="btn primary" onclick="${btnAction}">${esc(btnLabel)}</button></div>`:""}</div>`; }
-function errMain(e){ const m=document.getElementById("main")||el;
-  m.innerHTML=`<div class="errbox">Couldn't load: ${esc(e.message)} <button class="btn sm" style="margin-left:10px" onclick="route()">Retry</button></div>`; }
-
-/* ---------------- boot ---------------- */
+/* ============================ boot ============================ */
 route();
 </script>
 </body>
