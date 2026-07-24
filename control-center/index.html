@@ -301,6 +301,11 @@ const ICONS={
  menu:'<path d="M3 12h18M3 6h18M3 18h18"/>',
  check:'<path d="M20 6L9 17l-5-5"/>',
  dot:'<circle cx="12" cy="12" r="3"/>',
+ cart:'<circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.7 13.4a2 2 0 002 1.6h9.7a2 2 0 002-1.6L23 6H6"/>',
+ chart:'<path d="M3 3v18h18M7 14l3-4 3 3 5-7"/>',
+ briefcase:'<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v16"/>',
+ receipt:'<path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1zM8 8h8M8 12h8"/>',
+ rocket:'<path d="M4.5 16.5c-1.5 1.3-2 5-2 5s3.7-.5 5-2c.7-.9.7-2.2-.2-3a2.1 2.1 0 00-2.8 0zM12 15l-3-3a22 22 0 015-8 12.5 12.5 0 018-3 12.5 12.5 0 01-3 8 22 22 0 01-8 5zM9 12H4s.5-2.7 2-4c1.1-1 3 0 3 0M12 15v5s2.7-.5 4-2c1-1.1 0-3 0-3"/>',
 };
 function ic(name,size){size=size||16;return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]||''}</svg>`;}
 
@@ -308,9 +313,13 @@ function ic(name,size){size=size||16;return `<svg width="${size}" height="${size
 const S={token:localStorage.getItem("cc_token")||"",op:null,erpName:{},theme:localStorage.getItem("cc_theme")||"light"};
 document.documentElement.setAttribute("data-theme",S.theme);
 const el=document.getElementById("app"), modalRoot=document.getElementById("modalRoot");
-const TABS=[["overview","Overview","grid"],["customers","Customers","users"],["sessions","Support Sessions","shield"],
- ["versions","Versions","tag"],["updates","Updates","upload"],["licenses","Licenses","key"],
- ["health","Health","heart"],["audit","Audit","list"],["settings","Settings","gear"]];
+const TABS=[["overview","Overview","grid"],["customers","Customers","users"],
+ ["inventory","Inventory","box"],["sales","Sales","receipt"],["purchases","Purchases","cart"],
+ ["employees","Employees","briefcase"],["reports","Reports","chart"],
+ ["licenses","Licenses","key"],["updates","Updates","upload"],["health","Health","heart"],
+ ["audit","Audit","list"],["settings","Settings","gear"]];
+/* Control-Center concepts still reachable (from Overview widgets + global search), not primary nav */
+const AUX_TABS={sessions:"Support Sessions",versions:"Versions"};
 
 function esc(s){return (s==null?"":String(s)).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
 function fmtDate(s){if(!s)return "—";const d=new Date(s);return isNaN(d)?"—":d.toLocaleString(undefined,{year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});}
@@ -436,7 +445,7 @@ function shell({crumbs,rail,body}){
 }
 function gKey(e){if(e.key==="/"&&document.activeElement.tagName!=="INPUT"&&document.activeElement.tagName!=="TEXTAREA"){e.preventDefault();const g=document.getElementById("gsi");if(g)g.focus();}
   if(e.key==="Escape")closeMenus();}
-function crumbHome(){return `<a href="#/">PFS</a>`;}
+function crumbHome(){return `<a href="#/">PFS Dashboard</a>`;}
 
 /* ---- global search ---- */
 let _gsData=window.__home?null:null;
@@ -509,20 +518,26 @@ function toggleUserMenu(){
 }
 
 /* ============================ PLATFORM DASHBOARD ============================ */
-function skelDash(){return `<div class="page-h"><div><h1>Platform</h1></div></div><div class="tiles">${Array(4).fill('<div class="tile"><div class="skel" style="height:52px"></div></div>').join("")}</div><div class="dash" style="margin-top:16px">${Array(3).fill('<div class="col-4 card pad"><div class="skel" style="height:150px"></div></div>').join("")}</div>`;}
+function skelDash(){return `<div class="page-h"><div><h1>PFS Dashboard</h1></div></div><div class="tiles">${Array(4).fill('<div class="tile"><div class="skel" style="height:52px"></div></div>').join("")}</div><div class="dash" style="margin-top:16px">${Array(3).fill('<div class="col-4 card pad"><div class="skel" style="height:150px"></div></div>').join("")}</div>`;}
+async function runHealthChecks(btn){if(btn){btn.disabled=true;btn.innerHTML=ic("refresh",14)+" Checking…";}
+  try{const r=await api("/api/runtimes/health-check-all",{method:"POST"});toast("Checked "+r.checked+" runtime"+(r.checked===1?"":"s"),"ok");window.__dash=null;renderDashboard();}
+  catch(e){toast(e.message,"err");if(btn){btn.disabled=false;btn.innerHTML=ic("refresh",14)+" Run checks";}}}
+window.runHealthChecks=runHealthChecks;
 async function renderDashboard(){
-  shell({crumbs:`<span class="cur">Platform</span>`,rail:"",body:skelDash(),notifCount:(window.__dash&&window.__dash.recent_activity||[]).length});
+  shell({crumbs:`<span class="cur">PFS Dashboard</span>`,rail:"",body:skelDash()});
   let d;try{d=await api("/api/dashboard");}catch(e){return errMain(e);}
   window.__dash=d;d.newest_products.forEach(p=>S.erpName[p.id]=p.name);
   const f=d.fleet, m=document.getElementById("main");
   const health=f.by_health||{}, order=["ok","degraded","unreachable","unknown"],
     hcolors={ok:"var(--brand)",degraded:"var(--amber)",unreachable:"var(--red)",unknown:"var(--line)"},
+    hlabel={ok:"healthy",degraded:"degraded",unreachable:"unreachable",unknown:"awaiting check"},
     htotal=Object.values(health).reduce((a,b)=>a+b,0)||1;
   const hbar=order.filter(k=>health[k]).map(k=>`<span style="width:${(health[k]/htotal*100)}%;background:${hcolors[k]}"></span>`).join("");
+  const allStatus=(health.unreachable?{cls:"b-red",label:"Issues detected"}:health.degraded?{cls:"b-amber",label:"Degraded"}:(health.ok&&health.ok===htotal)?{cls:"b-green",label:"Operational"}:{cls:"b-gray",label:"Awaiting checks"});
   const lic=d.license_summary.by_status||{};
   const erpCards=d.newest_products.map(erpCardHTML).join("");
   m.innerHTML=`
-   <div class="page-h"><div><h1>Platform</h1><p>Everything running on PFS at a glance.</p></div>
+   <div class="page-h"><div><h1>PFS Dashboard</h1><p>Everything running on PFS at a glance.</p></div>
      <div class="actions"><button class="btn primary" onclick="registerErpWizard()">${ic("plus",16)} Register ERP</button></div></div>
    <div class="tiles" style="margin-bottom:18px">
      ${tile("box","ERP Products",f.products)}${tile("users","Customers",f.customers)}
@@ -534,11 +549,13 @@ async function renderDashboard(){
        ${d.newest_products.length?`<div class="grid cols-auto">${erpCards}</div>`:emptyState("No ERP products yet","Register an externally-built ERP to begin.","+ Register ERP","registerErpWizard()")}
      </div>
      <div class="col-4 card pad">
-       <div class="section-h"><h2>Platform Health</h2></div>
-       <div style="font-size:26px;font-weight:800;margin-bottom:8px">${health.ok||0}/${htotal} ${ic("heart",18)}</div>
+       <div class="section-h"><h2>Platform Health</h2><button class="btn ghost sm more" onclick="runHealthChecks(this)">${ic("refresh",14)} Run checks</button></div>
+       <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+         <div style="font-size:26px;font-weight:800">${health.ok||0}/${htotal}</div>
+         <span class="badge ${allStatus.cls}">${ic("heart",13)} ${allStatus.label}</span></div>
        <div class="hbar">${hbar}</div>
        <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:12px">
-         ${order.map(k=>health[k]?`<div class="faint" style="font-size:12px"><b style="color:var(--ink)">${health[k]}</b> ${k}</div>`:"").join("")}
+         ${order.map(k=>health[k]?`<div class="faint" style="font-size:12px"><b style="color:var(--ink)">${health[k]}</b> ${hlabel[k]}</div>`:"").join("")}
        </div>
        <div class="section-h" style="margin-top:20px"><h2>License Summary</h2></div>
        <div style="font-size:26px;font-weight:800;margin-bottom:10px">${d.license_summary.total}</div>
@@ -557,19 +574,25 @@ function widgetList(title,icon,items,map,emptyMsg){
   return `<div class="section-h"><h2>${title}</h2></div>${items&&items.length?rows:`<div class="empty" style="padding:26px">${ic(icon,26)}<h4 style="margin-top:8px">Nothing yet</h4><div>${esc(emptyMsg||"")}</div></div>`}`;
 }
 function erpCardHTML(p){const init=(p.name||p.id).split(" ").map(x=>x[0]).join("").slice(0,2).toUpperCase();
-  return `<div class="card erpcard" role="link" tabindex="0" onclick="location.hash='#/erp/${encodeURIComponent(p.id)}/overview'"
-    onkeydown="if(event.key==='Enter')location.hash='#/erp/${encodeURIComponent(p.id)}/overview'">
+  const num=v=>v==null?"—":v;
+  return `<div class="card erpcard" role="link" tabindex="0" aria-label="Open ${esc(p.name)} workspace"
+    onclick="location.hash='#/erp/${encodeURIComponent(p.id)}/overview'"
+    onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();location.hash='#/erp/${encodeURIComponent(p.id)}/overview'}">
     <div class="go">${ic("arrow",18)}</div>
     <div class="top"><div class="icon">${esc(init)}</div>
       <div style="min-width:0"><h3>${esc(p.name)}</h3><div class="faint mono" style="font-size:12px">${esc(p.id)}</div></div>
       <div style="margin-left:auto">${healthBadge(p.erp_health)}</div></div>
     <div class="desc">${esc(p.description||"")}</div>
     <div class="statrow">
-      <div class="stat"><b>${p.customers}</b><span>Customers</span></div>
-      <div class="stat"><b>${p.active_licenses}</b><span>Licenses</span></div>
       <div class="stat"><b>${esc(p.current_version||"—")}</b><span>Version</span></div>
+      <div class="stat"><b>${p.customers}</b><span>Customers</span></div>
+      <div class="stat"><b>${num(p.user_count)}</b><span>Users</span></div>
+      <div class="stat"><b>${num(p.branch_count)}</b><span>Branches</span></div>
     </div>
-    <div class="faint" style="font-size:12px">Last activity ${esc(timeAgo(p.last_activity))}</div></div>`;
+    <div class="faint" style="font-size:12px;display:flex;gap:16px;flex-wrap:wrap;border-top:1px solid var(--line-2);padding-top:11px">
+      <span style="display:inline-flex;align-items:center;gap:5px">${ic("upload",13)} Last deploy ${esc(p.last_deployment?timeAgo(p.last_deployment):"—")}</span>
+      <span style="display:inline-flex;align-items:center;gap:5px">${ic("activity",13)} Last activity ${esc(timeAgo(p.last_activity))}</span>
+    </div></div>`;
 }
 
 /* ============================ ERP WORKSPACE ============================ */
@@ -586,15 +609,28 @@ function erpSwitcher(){
     ${prods.map(p=>`<div class="lrow" style="cursor:pointer;padding:12px 8px;border-radius:9px" onclick="closeModal();location.hash='#/erp/${encodeURIComponent(p.id)}/overview'"><span class="ic">${ic("box",18)}</span><div class="m"><div class="t">${esc(p.name)}</div><div class="s mono">${esc(p.id)}</div></div>${ic("arrow",16)}</div>`).join("")}
     </div><div class="mf"><button class="btn" onclick="closeModal()">Close</button></div></div>`);
 }
+function erpModule(title,icon,desc,note){return (id,ov,m)=>{
+  m.innerHTML=`<div class="page-h"><div><h1>${esc(title)}</h1><p>${esc(desc)}</p></div></div>
+   <div class="card pad">${emptyState(title+" — integration pending","This module is owned by the ERP. PFS stores platform metadata only; live "+title.toLowerCase()+" data appears here once the ERP→PFS integration is enabled.","","",icon)}</div>
+   <div class="note" style="margin-top:14px">${ic("shield",14)} ${esc(note||"PFS never stores or displays customer transactional data. Modules populate via a sanctioned ERP→PFS feed (deferred).")}</div>`;
+};}
 async function renderErp(id,tab){
-  const tabDef=TABS.find(t=>t[0]===tab)||TABS[0];
-  shell({crumbs:erpCrumbs(id,tabDef[1]),rail:erpRail(id,tab,null),body:`<div class="page-h"><div><h1>${esc(tabDef[1])}</h1></div></div><div class="card pad"><div class="skel" style="height:240px"></div></div>`,notifCount:(window.__dash&&window.__dash.recent_activity||[]).length});
+  const tabDef=TABS.find(t=>t[0]===tab);
+  const tabLabel=tabDef?tabDef[1]:(AUX_TABS[tab]||"Overview");
+  shell({crumbs:erpCrumbs(id,tabLabel),rail:erpRail(id,tab,null),body:`<div class="page-h"><div><h1>${esc(tabLabel)}</h1></div></div><div class="card pad"><div class="skel" style="height:240px"></div></div>`});
   let ov;try{ov=await api("/api/products/"+encodeURIComponent(id)+"/overview");}catch(e){return errMain(e);}
   S.erpName[id]=ov.product.name;window.__ov=ov;
-  const counts={customers:ov.customers.length,sessions:ov.support_sessions.filter(s=>["active","pending_erp_integration"].includes(s.status)).length,versions:ov.releases.length,licenses:ov.licenses.length,updates:ov.customer_deployments.length};
+  const counts={customers:ov.customers.length,licenses:ov.licenses.length,updates:ov.customer_deployments.length};
   document.getElementById("sb").innerHTML=erpRail(id,tab,counts);
-  const cr=el.querySelector(".crumbs");if(cr)cr.innerHTML=erpCrumbs(id,tabDef[1]);
-  const R={overview:erpOverview,customers:erpCustomers,sessions:erpSessions,versions:erpVersions,updates:erpUpdates,licenses:erpLicenses,health:erpHealth,audit:erpAudit,settings:erpSettings}[tab]||erpOverview;
+  const cr=el.querySelector(".crumbs");if(cr)cr.innerHTML=erpCrumbs(id,tabLabel);
+  const R={overview:erpOverview,customers:erpCustomers,
+    inventory:erpModule("Inventory","box","Stock, items and reorder signals reported by the ERP."),
+    sales:erpModule("Sales","receipt","Orders and invoicing reported by the ERP."),
+    purchases:erpModule("Purchases","cart","Suppliers and purchasing reported by the ERP."),
+    employees:erpModule("Employees","briefcase","Workforce and roles reported by the ERP."),
+    reports:erpModule("Reports","chart","Cross-module reporting and analytics for this ERP."),
+    licenses:erpLicenses,updates:erpUpdates,health:erpHealth,audit:erpAudit,settings:erpSettings,
+    sessions:erpSessions,versions:erpVersions}[tab]||erpOverview;
   R(id,ov,document.getElementById("main"));
 }
 
@@ -777,7 +813,9 @@ function erpVersions(id,ov,m){
 /* ---------- Updates ---------- */
 function erpUpdates(id,ov,m){
   const rows=ov.customer_deployments;
-  m.innerHTML=`<div class="page-h"><div><h1>Updates</h1><p>Assigning or rolling a version to customers. Metadata-only in this milestone — no automatic deployment execution.</p></div></div>
+  m.innerHTML=`<div class="page-h"><div><h1>Updates</h1><p>Assigning or rolling a version to customers. Metadata-only in this milestone — no automatic deployment execution.</p></div>
+     <div class="actions"><button class="btn" onclick="location.hash='#/erp/${encodeURIComponent(id)}/versions'">${ic("tag",15)} Versions</button>
+       <button class="btn" onclick="location.hash='#/erp/${encodeURIComponent(id)}/sessions'">${ic("shield",15)} Support Sessions</button></div></div>
    <div class="note" style="margin-bottom:14px">These rows are <b>observed</b> version assignments. Update orchestration is intentionally deferred.</div>
    <div class="tablewrap"><div class="scroll"><table>
      <thead><tr><th>Customer</th><th>Previous version</th><th>Target version</th><th>Status</th><th>Requested by</th><th>Completed at</th></tr></thead>

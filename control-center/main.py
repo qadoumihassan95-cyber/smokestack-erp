@@ -309,30 +309,51 @@ def register_runtime(body: RuntimeIn, db: Session = Depends(get_db), op=Depends(
     return {"ok": True, "id": r.id}
 
 
+def _poll_runtime(rt):
+    """Read-only outbound GET to a runtime's health URL; returns (state, detail). No DB writes."""
+    if not rt.health_url:
+        return "unknown", ""
+    try:
+        req = urllib.request.Request(rt.health_url, headers={"User-Agent": "pfs-control-center"})
+        with urllib.request.urlopen(req, timeout=8) as resp:   # noqa: S310 (operator-registered URL)
+            body = resp.read().decode("utf-8", "replace")[:500]
+            code = resp.status
+        j = json.loads(body) if body.strip().startswith("{") else {}
+        state = "ok" if (code == 200 and j.get("status") == "ok") else "degraded"
+        return state, body[:200]
+    except Exception as e:   # noqa: BLE001
+        return "unreachable", str(e)[:200]
+
+
 @app.post("/api/runtimes/{rid}/health-check")
 def health_check(rid: int, db: Session = Depends(get_db), op=Depends(current_operator)):
     """Read-only outbound GET to a runtime's health URL; records the last-known state."""
     rt = db.get(models.Runtime, rid)
     if not rt:
         raise HTTPException(404, "Runtime not found")
-    state, detail = "unknown", ""
-    if rt.health_url:
-        try:
-            req = urllib.request.Request(rt.health_url, headers={"User-Agent": "pfs-control-center"})
-            with urllib.request.urlopen(req, timeout=8) as resp:   # noqa: S310 (operator-registered URL)
-                body = resp.read().decode("utf-8", "replace")[:500]
-                code = resp.status
-            j = json.loads(body) if body.strip().startswith("{") else {}
-            state = "ok" if (code == 200 and j.get("status") == "ok") else "degraded"
-            detail = body[:200]
-        except Exception as e:   # noqa: BLE001
-            state, detail = "unreachable", str(e)[:200]
+    state, detail = _poll_runtime(rt)
     rt.last_health_state = state
     rt.last_health_at = datetime.datetime.utcnow()
     rt.last_health_detail = detail
     db.commit()
     audit(db, op, "health_check", "runtime", rt.id, state)
     return {"runtime": rt.id, "health": state, "detail": detail}
+
+
+@app.post("/api/runtimes/health-check-all")
+def health_check_all(db: Session = Depends(get_db), op=Depends(current_operator)):
+    """Poll every customer-tier runtime so Platform Health reflects real operational status."""
+    rts = db.query(models.Runtime).filter_by(tier="customer").all()
+    by_health = {}
+    for rt in rts:
+        state, detail = _poll_runtime(rt)
+        rt.last_health_state = state
+        rt.last_health_at = datetime.datetime.utcnow()
+        rt.last_health_detail = detail
+        by_health[state] = by_health.get(state, 0) + 1
+    db.commit()
+    audit(db, op, "health_check_all", "fleet", "", f"checked {len(rts)} runtimes")
+    return {"checked": len(rts), "by_health": by_health}
 
 
 # ----------------------------- customers & deployments -----------------------------
@@ -650,19 +671,30 @@ def home(db: Session = Depends(get_db), op=Depends(current_operator)):
     for p in db.query(models.ErpProduct).order_by(models.ErpProduct.name).all():
         prt = _customer_runtime(db, p.id)
         n_cust = db.query(models.CustomerRef).filter_by(erp_product_id=p.id).count()
-        active_lic = (db.query(models.License).filter_by(erp_product_id=p.id)
-                      .filter(models.License.status.in_(["active", "trial"])).count())
+        lics = (db.query(models.License).filter_by(erp_product_id=p.id)
+                .filter(models.License.status.in_(["active", "trial"])).all())
+        seats = [x.seat_limit for x in lics if x.seat_limit is not None]
+        branches = [x.branch_limit for x in lics if x.branch_limit is not None]
         cur = None
         if prt and prt.current_release_id:
             rel = db.get(models.Release, prt.current_release_id)
             cur = rel.version if rel else None
+        rt_ids = [r.id for r in db.query(models.Runtime).filter_by(erp_product_id=p.id).all()]
+        last_dep = None
+        if rt_ids:
+            d = (db.query(models.Deployment).filter(models.Deployment.runtime_id.in_(rt_ids))
+                 .order_by(models.Deployment.id.desc()).first())
+            last_dep = _iso(d.observed_at) if d else None
         last_audit = (db.query(models.PlatformAuditLog)
                       .filter(models.PlatformAuditLog.target_id == p.id)
                       .order_by(models.PlatformAuditLog.id.desc()).first())
         cards.append({
             "id": p.id, "name": p.name, "description": p.description, "status": p.status,
-            "customers": n_cust, "active_licenses": active_lic,
+            "customers": n_cust, "active_licenses": len(lics),
+            "user_count": (sum(seats) if seats else None),
+            "branch_count": (sum(branches) if branches else None),
             "current_version": cur, "erp_health": (prt.last_health_state if prt else "unknown"),
+            "last_deployment": last_dep,
             "last_activity": _iso(last_audit.at) if last_audit else _iso(p.created_at),
         })
     return {"products": cards, "operator": {"id": op.id, "name": op.name, "role": op.platform_role}}
