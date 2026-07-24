@@ -114,7 +114,8 @@ def assert_branch(user: models.User, db: Session, branch: str):
     if branch not in scope_branches(user, db):
         raise HTTPException(status.HTTP_403_FORBIDDEN, f"Branch not permitted: {branch}")
 
-def audit(db: Session, user, action, entity, ref="", detail="", source="WEB", result="ok"):
+def audit(db: Session, user, action, entity, ref="", detail="", source="WEB", result="ok", commit=True):
     db.add(models.AuditLog(source=source, user_id=getattr(user, "id", None),
                            action=action, entity=entity, ref=str(ref), detail=detail, result=result))
-    db.commit()
+    if commit:
+        db.commit()

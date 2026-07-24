@@ -12,9 +12,9 @@ transfer_out from the source branch, transfer_in to the destination). Routing it
 through ``apply_ordered_movements`` guarantees both directions of a transfer between
 the same two branches lock rows in the same order.
 
-Note: the underlying ``_write_movement`` currently commits per call, so the deadlock
-window is already small; the canonical ordering makes it *zero* and is the required
-policy for any future atomic (single-transaction) multi-row mutation.
+As of TD-002 the underlying ``_write_movement`` is COMMIT-FREE and a transfer runs in a
+single transaction, so this canonical ordering is what prevents opposing transfers between
+the same two branches from ever acquiring their row locks in reverse order (deadlock-free).
 """
 
 

@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, update as sa_update
+from sqlalchemy.dialects.postgresql import insert as _pg_insert
+from sqlalchemy.dialects.sqlite import insert as _sqlite_insert
 from datetime import datetime, timedelta
 from ..database import get_db
 from .. import models, security as S, permissions as P, counters
@@ -89,45 +91,44 @@ def reactivate_product(sku: str, db: Session = Depends(get_db), user: models.Use
     return {"ok": True, "status": "active"}
 
 def _write_movement(db, user, sku, branch, mtype, change, notes="", unit_cost=None):
+    """Apply one stock movement + append the ledger row. COMMIT-FREE (TD-002).
+
+    The caller owns the transaction and the single commit (ADR-008). This never
+    commits and never rolls back; on insufficient stock it raises and the caller's
+    transaction boundary rolls back the whole operation atomically.
+    """
     change = int(change)
-    st = db.query(models.Stock).filter_by(sku=sku, branch=branch).first()
-    if not st:
-        st = models.Stock(sku=sku, branch=branch, qty=0)
-        db.add(st)
-        db.flush()
-    # Race-safe, atomic stock mutation. Reading qty into Python and writing it
-    # back lost concurrent updates (two simultaneous decrements both read the
-    # same "before" and one overwrote the other), leaving the stock table and
-    # the movement ledger disagreeing. The arithmetic and the non-negative
-    # guard are both evaluated by the database in a single statement.
-    # This is a Core UPDATE, which bypasses the SELECT-only tenant-scoping event —
-    # so it is scoped EXPLICITLY by company_id here. Correct today (global SKUs)
-    # and safe after composite keys land (Wave B): it can only ever mutate the
-    # acting company's own stock row.
     cid = getattr(user, "_company_id", 1)
-    res = db.execute(
+    # Race-free row creation: UPSERT a zero row so the guarded UPDATE always has a
+    # target, even for the first-ever movement of this (sku, branch) under concurrency.
+    _ins = _pg_insert if db.get_bind().dialect.name == "postgresql" else _sqlite_insert
+    db.execute(_ins(models.Stock)
+               .values(company_id=cid, sku=sku, branch=branch, qty=0)
+               .on_conflict_do_nothing(index_elements=["sku", "branch"]))
+    # Atomic, race-safe, guarded mutation: arithmetic + non-negative guard evaluated by
+    # the DB in one statement; qty_after read via RETURNING (no ORM staleness). The Core
+    # UPDATE bypasses the SELECT-only scoping event, so it is scoped by company_id here.
+    row = db.execute(
         sa_update(models.Stock)
         .where(models.Stock.sku == sku,
                models.Stock.branch == branch,
                models.Stock.company_id == cid,
                models.Stock.qty + change >= 0)
         .values(qty=models.Stock.qty + change)
-    )
-    if res.rowcount == 0:
-        db.rollback()
+        .returning(models.Stock.qty)
+    ).first()
+    if row is None:
         cur = db.query(models.Stock).filter_by(sku=sku, branch=branch).first()
         have = int(cur.qty or 0) if cur else 0
         raise HTTPException(422, f"Insufficient stock: {branch} holds {have} × {sku}, "
                                  f"cannot remove {abs(change)}.")
-    db.refresh(st)
-    after = int(st.qty or 0)
-    before = after - change   # derived, so qty_before + qty_change == qty_after always holds
+    after = int(row[0])
+    before = after - change   # qty_before + qty_change == qty_after always holds
     p = db.get(models.Product, sku)
     uc = unit_cost if unit_cost is not None else (p.cost if p else 0)
     db.add(models.Movement(ref=counters.next_number(db, counters.MOVEMENT), sku=sku, branch=branch,
                            type=mtype, qty_before=before, qty_change=int(change), qty_after=after,
                            unit_cost=uc, user_id=user.id, notes=notes))
-    db.commit()
     return after
 
 @router.post("/receive")
@@ -138,7 +139,9 @@ def receive(body: StockOp, db: Session = Depends(get_db), user: models.User = De
     after = _write_movement(db, user, body.sku, body.branch, "receive", abs(body.qty),
                             notes=(body.reason or ""), unit_cost=body.unit_cost)
     S.audit(db, user, "receive", "product", body.sku,
-            f"+{abs(body.qty)} @ {body.branch}" + (f" · {body.reason}" if body.reason else ""))
+            f"+{abs(body.qty)} @ {body.branch}" + (f" · {body.reason}" if body.reason else ""),
+            commit=False)
+    db.commit()   # caller owns the single commit (stock + movement + audit atomically)
     return {"ok": True, "sku": body.sku, "branch": body.branch, "new_stock": after}
 
 @router.post("/adjust")
@@ -149,7 +152,9 @@ def adjust(body: StockOp, db: Session = Depends(get_db), user: models.User = Dep
     if not db.get(models.Product, body.sku):
         raise HTTPException(404, "Product not found")
     after = _write_movement(db, user, body.sku, body.branch, "adjust", body.qty, body.reason)
-    S.audit(db, user, "adjust", "product", body.sku, f"{body.qty:+d} @ {body.branch}: {body.reason}")
+    S.audit(db, user, "adjust", "product", body.sku, f"{body.qty:+d} @ {body.branch}: {body.reason}",
+            commit=False)
+    db.commit()   # caller owns the single commit (stock + movement + audit atomically)
     return {"ok": True, "sku": body.sku, "branch": body.branch, "new_stock": after}
 
 @router.get("/movements")
