@@ -351,6 +351,25 @@ def test_global_search_requires_auth():
     assert client.get("/api/search?q=x").status_code == 401
 
 
+def test_home_cards_expose_richer_metadata():
+    sm = [p for p in client.get("/api/home", headers=_h()).json()["products"] if p["id"] == "smokestack"][0]
+    assert {"user_count", "branch_count", "last_deployment", "current_version",
+            "erp_health", "customers", "active_licenses", "last_activity"} <= set(sm)
+
+
+def test_health_check_all_returns_summary():
+    r = client.post("/api/runtimes/health-check-all", headers=_h())
+    assert r.status_code == 200
+    d = r.json()
+    assert d["checked"] >= 1 and isinstance(d["by_health"], dict)
+    # audited as a fleet-level action
+    assert any(a["action"] == "health_check_all" for a in client.get("/api/audit", headers=_h()).json())
+
+
+def test_health_check_all_requires_auth():
+    assert client.post("/api/runtimes/health-check-all").status_code == 401
+
+
 def test_effective_session_status_timezone_safe():
     """Regression: PostgreSQL returns tz-AWARE datetimes for DateTime(timezone=True);
     the status calc must not raise 'can't compare offset-naive and offset-aware datetimes'."""
