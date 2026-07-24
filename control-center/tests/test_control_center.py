@@ -337,11 +337,14 @@ def test_global_search_finds_across_entities():
     assert any("company" in (c["name"] or "").lower() for c in r2["customers"])
     r3 = client.get("/api/search?q=legacy", headers=_h()).json()
     assert any("legacy" in (v["version"] or "").lower() for v in r3["versions"])
+    # audit is searchable too (seed + registrations produce 'create'/'register' actions)
+    r4 = client.get("/api/search?q=register", headers=_h()).json()
+    assert "audit" in r4 and any("register" in (a["action"] or "").lower() for a in r4["audit"])
 
 
 def test_global_search_empty_query_returns_empty_buckets():
     r = client.get("/api/search?q=", headers=_h()).json()
-    assert r["products"] == [] and r["customers"] == [] and r["versions"] == []
+    assert r["products"] == [] and r["customers"] == [] and r["versions"] == [] and r["audit"] == []
 
 
 def test_global_search_requires_auth():
