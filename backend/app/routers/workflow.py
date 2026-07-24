@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 from ..database import get_db
 from .. import models, security as S, partners_repo as PR, counters
-from ..locking import apply_ordered_movements
+from .. import transfers_service
 from ..schemas import TransferIn, ApprovalDecision, ClockIn
 
 router = APIRouter(prefix="/api", tags=["workflow"])
@@ -52,19 +52,15 @@ def _decide(db, user, aid, status, comment):
     # Approving must actually complete the underlying work. Previously the
     # approval row flipped to "approved" but the transfer never moved stock and
     # the purchase stayed pending forever.
+    if a.kind == "transfer" and status == "approved":
+        t = PR.get_transfer(db, a.ref)
+        if not t:
+            raise HTTPException(404, "Transfer not found")
+        # Single-transaction, race-safe completion via the shared service (TD-002).
+        return transfers_service.execute_approved_transfer(db, user, t, a, comment)
     if a.kind == "transfer":
         t = PR.get_transfer(db, a.ref)
         if t:
-            if status == "approved":
-                if t.status != "pending":
-                    raise HTTPException(409, f"Transfer already {t.status}.")
-                # multi-row stock mutation → canonical lock order (Phase 6)
-                apply_ordered_movements(db, user, [
-                    {"sku": t.sku, "branch": t.from_branch, "mtype": "transfer_out",
-                     "change": -int(t.qty), "notes": f"Transfer {t.id} -> {t.to_branch}"},
-                    {"sku": t.sku, "branch": t.to_branch, "mtype": "transfer_in",
-                     "change": int(t.qty), "notes": f"Transfer {t.id} <- {t.from_branch}"},
-                ])
             t.status = status
     elif a.kind == "purchase":
         p = PR.get_purchase(db, a.ref)
