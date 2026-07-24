@@ -121,3 +121,28 @@ def test_health_check_records_unreachable_for_bad_url():
 def test_fleet_summary_shape():
     f = client.get("/api/fleet", headers=_h()).json()
     assert f["products"] >= 1 and f["runtimes"] >= 1 and "by_health" in f
+
+
+# ------------------------------- ERP details aggregate + enriched lists -------------------------------
+def test_product_overview_aggregate():
+    o = client.get("/api/products/smokestack/overview", headers=_h()).json()
+    assert o["product"]["id"] == "smokestack"
+    assert {e["kind"] for e in o["environments"]} == {"master_development", "master_testing", "master_production"}
+    cp = [r for r in o["runtimes"] if r["tier"] == "customer"]
+    assert cp and "current_release_version" in cp[0] and "current_release_is_legacy" in cp[0]
+    assert any(r["is_legacy_import"] for r in o["releases"])
+    cd = o["customer_deployments"]
+    assert cd and cd[0]["customer_name"] and cd[0]["tenant_ref"] == "1"
+    assert "release_version" in cd[0] and "runtime_name" in cd[0]
+    assert isinstance(o["deployments"], list) and isinstance(o["audit"], list)
+
+
+def test_overview_404_for_unknown_product():
+    assert client.get("/api/products/does-not-exist/overview", headers=_h()).status_code == 404
+
+
+def test_customer_deployments_and_deployments_are_enriched():
+    cds = client.get("/api/customer-deployments", headers=_h()).json()
+    assert cds and {"customer_name", "release_version", "runtime_name", "erp_product_id"} <= set(cds[0])
+    deps = client.get("/api/deployments", headers=_h()).json()
+    assert deps and {"runtime_name", "release_version"} <= set(deps[0])
