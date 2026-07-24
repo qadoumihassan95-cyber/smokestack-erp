@@ -1,12 +1,14 @@
-"""init control center schema (fleet & platform metadata)
+"""init control center schema (platform metadata — accountant model)
 
 Revision ID: 0001_init
 Revises:
 Create Date: 2026-07-24
 
 Initial migration for the PFS Control Center's isolated database. Creates the whole
-Milestone-1 metadata schema from the model metadata (a standard initial-migration pattern),
-giving a real, reversible Alembic history.
+Milestone-1.1 metadata schema from the model metadata (a standard initial-migration
+pattern), giving a real, reversible Alembic history. Because nothing is deployed yet,
+the accountant-model additions (licenses, support_sessions) are part of this single
+foundation migration rather than an incremental patch on a live schema.
 """
 from alembic import op
 
