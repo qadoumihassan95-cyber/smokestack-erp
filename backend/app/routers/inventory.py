@@ -28,6 +28,55 @@ def products(q: str = "", branch: str = "all", db: Session = Depends(get_db),
                              models.Product.barcode.like(f"%{q}%"))
     return [_prod_out(db, p, branches) for p in query.order_by(models.Product.name).all()]
 
+@router.get("/reorder")
+def reorder(branch: str = "all", db: Session = Depends(get_db),
+            user: models.User = Depends(S.require("view"))):
+    """Actionable reorder / purchasing report.
+
+    Lists products at or below their configured minimum level (or out of stock),
+    per in-scope branch, with a suggested order quantity that restores stock to the
+    minimum, grouped by supplier with an estimated cost. Read-only; derived entirely
+    from existing product/stock data (no schema change). Cost fields are hidden from
+    roles lacking the ``view_cost`` capability, mirroring the product lookup.
+    """
+    scope = S.scope_branches(user, db)
+    brs = [branch] if branch != "all" and branch in scope else scope
+    show_cost = P.can(user.role, "view_cost")
+    stock = {}
+    for st in db.query(models.Stock).filter(models.Stock.branch.in_(brs)).all():
+        stock[(st.sku, st.branch)] = int(st.qty or 0)
+    items, by_supplier, total = [], {}, 0.0
+    for p in (db.query(models.Product).filter(models.Product.status != "deleted")
+              .order_by(models.Product.name).all()):
+        mn = int(p.min_level or 0)
+        for b in brs:
+            qty = stock.get((p.sku, b), 0)
+            if qty > 0 and not (mn > 0 and qty <= mn):
+                continue                                   # healthy stock — nothing to do
+            suggested = max(mn - qty, 0)                   # restore to the configured minimum
+            if suggested <= 0 and qty > 0:
+                continue                                   # exactly at minimum — order qty is 0
+            unit_cost = float(p.cost or 0)
+            est = round(suggested * unit_cost, 2)
+            sup = p.supplier or "—"
+            items.append({"sku": p.sku, "name": p.name, "branch": b, "supplier": sup,
+                          "qty": qty, "min_level": mn, "below_by": max(mn - qty, 0),
+                          "suggested_order_qty": suggested,
+                          "status": "out" if qty <= 0 else "low",
+                          "unit_cost": unit_cost if show_cost else None,
+                          "est_cost": est if show_cost else None})
+            g = by_supplier.setdefault(sup, {"supplier": sup, "lines": 0, "est_cost": 0.0})
+            g["lines"] += 1
+            g["est_cost"] = round(g["est_cost"] + est, 2)
+            total += est
+    supp = sorted(by_supplier.values(), key=lambda x: -x["est_cost"])
+    if not show_cost:
+        supp = [{"supplier": s["supplier"], "lines": s["lines"]} for s in supp]
+    return {"as_of": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+            "branch": branch, "items": items, "by_supplier": supp,
+            "totals": {"items": len(items),
+                       "est_cost": round(total, 2) if show_cost else None}}
+
 @router.get("/barcode/{code}")
 def by_barcode(code: str, db: Session = Depends(get_db), user: models.User = Depends(S.require("view"))):
     p = db.query(models.Product).filter(models.Product.barcode == code).first()
