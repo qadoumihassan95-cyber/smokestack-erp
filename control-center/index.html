@@ -143,6 +143,7 @@
   .erpcard{padding:18px;display:flex;flex-direction:column;gap:13px;cursor:pointer;position:relative;
     transition:border-color .14s,box-shadow .14s,transform .14s}
   .erpcard:hover{border-color:#cfe6c8;box-shadow:var(--shadow-lg);transform:translateY(-2px)}
+  .erpcard:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-color:#cfe6c8}
   .erpcard:hover .go{opacity:1;transform:none}
   .erpcard .go{position:absolute;top:16px;right:16px;color:var(--brand-d);opacity:0;transform:translateX(-4px);transition:.14s}
   .erpcard .top{display:flex;align-items:center;gap:12px}
@@ -190,7 +191,7 @@
   tbody td{padding:11px 14px;border-bottom:1px solid var(--line-2);vertical-align:middle}
   tbody tr:last-child td{border-bottom:none} tbody tr:hover{background:var(--surface-2)}
   tbody tr.sel{background:var(--brand-t)}
-  td .co{font-weight:700} td .ref{font-size:12px;color:var(--faint)}
+  td .co{font-weight:700} td a.co:hover{color:var(--brand-d)} td .ref{font-size:12px;color:var(--faint)}
   .rowact{display:flex;gap:6px;justify-content:flex-end}
   .pager{display:flex;align-items:center;gap:10px;justify-content:flex-end;padding:11px 14px;border-top:1px solid var(--line-2);color:var(--muted);flex-wrap:wrap}
   .bulkbar{display:flex;align-items:center;gap:12px;padding:9px 14px;background:var(--brand-t);border-bottom:1px solid var(--line);
@@ -365,7 +366,7 @@ function errMain(e){const m=document.getElementById("main")||el;
 /* ============================ router ============================ */
 function parseHash(){const h=(location.hash||"#/").replace(/^#/,""),p=h.split("/").filter(Boolean);
   if(p[0]==="erp"&&p[1])return {view:"erp",id:decodeURIComponent(p[1]),tab:p[2]||"overview"};
-  if(["sessions","audit","settings","profile","apikeys"].includes(p[0]))return {view:p[0]};
+  if(["sessions","audit","settings","profile","apikeys","preferences"].includes(p[0]))return {view:p[0]};
   return {view:"home"};}
 async function route(){
   if(!S.token){renderLogin();return;}
@@ -376,6 +377,7 @@ async function route(){
   if(r.view==="audit")return renderPlatformAudit();
   if(r.view==="settings")return renderPlatformSettings();
   if(r.view==="profile")return renderProfile();
+  if(r.view==="preferences")return renderPreferences();
   if(r.view==="apikeys")return renderApiKeys();
   if(r.view==="erp")return renderErp(r.id,r.tab);
 }
@@ -403,7 +405,8 @@ function opInitials(){const n=(S.op&&S.op.name)||"OP";return n.split(" ").map(x=
 function closeMenus(){document.querySelectorAll(".menu,.gs-panel").forEach(m=>m.remove());
   const sb=document.querySelector(".sidebar");if(sb)sb.classList.remove("open");const sc=document.querySelector(".scrim");if(sc)sc.classList.remove("show");}
 
-function shell({crumbs,rail,body,notifCount}){
+function shell({crumbs,rail,body}){
+  const notifCount=notifUnread();
   el.innerHTML=`
   <div class="topbar">
     ${rail?`<button class="btn icon hamburger" id="hb" aria-label="Menu">${ic("menu",18)}</button>`:""}
@@ -450,25 +453,42 @@ async function globalSearch(q){
   add("Licenses",r.licenses,l=>gsItem("key",esc((l.customer_name||"Customer")+" · "+l.plan),esc(l.status),`#/erp/${encodeURIComponent(l.erp_product_id)}/licenses`));
   add("Support Sessions",r.sessions,s=>gsItem("shield",esc(s.customer_name||s.session_ref),esc(s.status),`#/erp/${encodeURIComponent(s.erp_product_id)}/sessions`));
   add("Versions",r.versions,v=>gsItem("tag",esc(v.version),esc(v.status),`#/erp/${encodeURIComponent(v.erp_product_id)}/versions`));
+  add("Audit",r.audit,a=>gsItem("list",esc(a.action+" · "+a.target_type),esc(a.detail||a.target_id||""),`#/audit`));
   panel.innerHTML=secs.length?secs.join(""):`<div class="gs-empty">${ic("search",22)}<div style="margin-top:8px">No matches for “${esc(q)}”.</div></div>`;
   panel.querySelectorAll(".gs-item").forEach(it=>it.onmousedown=ev=>{ev.preventDefault();location.hash=it.dataset.href;panel.remove();document.getElementById("gsi").blur();});
 }
 function gsItem(icon,title,sub,href){return `<div class="gs-item" data-href="${href}"><span class="ic">${ic(icon,16)}</span><div class="t">${title}</div><div class="faint" style="font-size:12px">${sub}</div></div>`;}
 
-/* ---- notifications ---- */
+/* ---- notifications (real center: unread + categorized alerts) ---- */
+function notifClassify(a){
+  if((a.result&&a.result!=="ok")||a.action==="health_check")return {kind:"System alert",icon:"heart"};
+  if(a.target_type==="release")return {kind:"Version alert",icon:"tag"};
+  if(a.target_type==="customer_ref"||a.target_type==="customer_deployment")return {kind:"Customer alert",icon:"users"};
+  if(a.target_type==="support_session")return {kind:"Support session",icon:"shield"};
+  if(a.target_type==="license")return {kind:"License",icon:"key"};
+  return {kind:"Platform event",icon:"activity"};
+}
+function notifList(){return ((window.__dash&&window.__dash.recent_activity)||[]).slice(0,12);}
+function notifUnread(){const seen=localStorage.getItem("cc_notif_seen")||"";return notifList().filter(a=>a.at&&a.at>seen).length;}
+function notifMarkSeen(){const l=notifList();if(l.length)localStorage.setItem("cc_notif_seen",l[0].at||new Date().toISOString());
+  const b=document.querySelector("#bellBtn .bell-badge");if(b)b.remove();}
 async function toggleNotifs(){
-  const open=document.querySelector("#bellBtn ~ .menu")||document.getElementById("notifMenu");
-  closeMenus();if(open)return;
+  if(document.getElementById("notifMenu")){closeMenus();return;}closeMenus();
   const wrap=document.getElementById("bellBtn").parentElement;
-  const menu=document.createElement("div");menu.className="menu";menu.id="notifMenu";menu.style.minWidth="320px";
+  const menu=document.createElement("div");menu.className="menu";menu.id="notifMenu";
+  menu.style.minWidth="342px";menu.style.maxHeight="72vh";menu.style.overflow="auto";
   menu.innerHTML=`<div class="hd">Notifications</div><div style="padding:16px" class="faint">Loading…</div>`;
   wrap.appendChild(menu);menu.onclick=e=>e.stopPropagation();
-  let d;try{d=window.__dash||await api("/api/dashboard");window.__dash=d;}catch(e){menu.innerHTML=`<div class="hd">Notifications</div><div style="padding:14px">${esc(e.message)}</div>`;return;}
-  const items=(d.recent_activity||[]).slice(0,7);
-  menu.innerHTML=`<div class="hd">Notifications</div>`+
-    (items.length?items.map(a=>`<div class="notif"><span class="ic">${ic("activity",15)}</span><div><div class="t">${esc(a.action)} · ${esc(a.target_type)}</div><div class="s">${esc(a.detail||a.target_id||"")} — ${esc(timeAgo(a.at))}</div></div></div>`).join(""):
-     `<div class="empty" style="padding:26px">${ic("bell",26)}<h4 style="margin-top:8px">You're all caught up</h4><div>Platform notifications will appear here.</div></div>`)+
-    `<div class="sepline"></div><button class="item" onclick="location.hash='#/audit';closeMenus()">${ic("list",15)} View all platform audit</button>`;
+  try{if(!window.__dash)window.__dash=await api("/api/dashboard");}catch(e){menu.innerHTML=`<div class="hd">Notifications</div><div style="padding:14px">${esc(e.message)}</div>`;return;}
+  const seen=localStorage.getItem("cc_notif_seen")||"", items=notifList(), unread=items.filter(a=>a.at&&a.at>seen).length;
+  menu.innerHTML=`<div class="hd">Notifications${unread?` · <span style="color:var(--brand-d)">${unread} new</span>`:""}</div>`+
+    (items.length?items.map(a=>{const c=notifClassify(a),u=a.at&&a.at>seen;
+      return `<div class="notif" style="${u?"background:var(--brand-t)":""}"><span class="ic">${ic(c.icon,16)}</span>
+        <div style="flex:1;min-width:0"><div class="t">${esc(c.kind)}</div><div class="s">${esc(a.action)} · ${esc(a.detail||a.target_id||a.target_type)} — ${esc(timeAgo(a.at))}</div></div>
+        ${u?'<span style="width:8px;height:8px;border-radius:50%;background:var(--brand);flex:none;align-self:center"></span>':""}</div>`;}).join(""):
+     `<div class="empty" style="padding:26px">${ic("bell",26)}<h4 style="margin-top:8px">You're all caught up</h4><div>System, customer and version alerts appear here.</div></div>`)+
+    `<div class="sepline"></div><button class="item" onclick="location.hash='#/audit';closeMenus()">${ic("list",16)} View all platform audit</button>`;
+  notifMarkSeen();  /* opening the center marks alerts as seen and clears the unread badge */
 }
 /* ---- user menu ---- */
 function toggleUserMenu(){
@@ -477,8 +497,9 @@ function toggleUserMenu(){
   menu.onclick=e=>e.stopPropagation();
   menu.innerHTML=`<div class="hd">${esc((S.op&&S.op.name)||"Operator")} · ${esc((S.op&&S.op.role)||"")}</div>
     <button class="item" onclick="location.hash='#/profile';closeMenus()">${ic("user",16)} Profile</button>
+    <button class="item" onclick="location.hash='#/preferences';closeMenus()">${ic("gear",16)} Preferences</button>
     <button class="item" onclick="location.hash='#/apikeys';closeMenus()">${ic("key",16)} API Keys</button>
-    <button class="item" onclick="location.hash='#/settings';closeMenus()">${ic("gear",16)} Settings</button>
+    <button class="item" onclick="location.hash='#/audit';closeMenus()">${ic("list",16)} Audit</button>
     <div class="sepline"></div>
     <button class="item" id="themeItem">${ic(S.theme==="dark"?"sun":"moon",16)} <span>${S.theme==="dark"?"Light theme":"Dark theme"}</span></button>
     <div class="sepline"></div>
@@ -601,6 +622,11 @@ function erpOverview(id,ov,m){
      </div>
      <div class="col-6 card pad">${widgetList("Support Sessions","shield",ov.support_sessions,x=>({icon:"shield",t:esc(x.customer_name||x.session_ref),s:esc(x.capabilities||""),badge:sessBadge(x.status),href:`#/erp/${encodeURIComponent(id)}/sessions`}),"Open one from Customers.")}</div>
      <div class="col-6 card pad">${widgetList("Recent Updates","upload",ov.customer_deployments,d=>({icon:"upload",t:esc(d.customer_name||"customer"),s:"→ "+esc(d.release_version||"—"),badge:`<span class="badge b-gray">${esc(d.status)}</span>`,href:`#/erp/${encodeURIComponent(id)}/updates`}),"Version assignments show here.")}</div>
+     <div class="col-12 card pad"><div class="section-h"><h2>Deployment Status</h2><a class="btn ghost sm more" href="#/erp/${encodeURIComponent(id)}/health">Health</a></div>
+       ${ov.runtimes.length?`<div class="scroll"><table><thead><tr><th>Runtime</th><th>Tier</th><th>Environment</th><th>Version</th><th>Status</th><th>Health</th></tr></thead>
+         <tbody>${ov.runtimes.map(r=>`<tr><td class="co">${esc(r.name)}</td><td class="faint">${esc(r.tier)}</td><td class="faint">${esc(r.environment_kind)}</td>
+           <td>${esc(r.current_release_version||"—")}</td><td><span class="badge b-blue">${esc(r.status)}</span></td><td>${healthBadge(r.last_health_state)}</td></tr>`).join("")}</tbody></table></div>`:
+         emptyState("No runtimes registered","This ERP has no registered runtimes yet.","","","upload")}</div>
    </div>`;
 }
 
@@ -611,6 +637,7 @@ function erpCustomers(id,ov,m){
   const st={q:"",status:"",sort:"name",dir:1,page:1,size:PAGE_DEFAULT,sel:new Set()};
   const sortKeys={name:r=>(r.name||"").toLowerCase(),license:r=>r.license_status||"",version:r=>r.current_version||"",status:r=>r.status||"",health:r=>r.health||"",sync:r=>r.last_sync_state||""};
   window.__custOpen=(cid)=>{const r=rows.find(x=>x.id===cid);if(r)openErpModal(id,r);};
+  window.__custDetail=(cid)=>{const r=rows.find(x=>x.id===cid);if(r)customerDetail(id,r);};
   const draw=()=>{
     let f=rows.filter(r=>(!st.q||(r.name||"").toLowerCase().includes(st.q)||(r.external_ref||"").toLowerCase().includes(st.q))&&(!st.status||r.status===st.status));
     const key=sortKeys[st.sort]||sortKeys.name;f.sort((a,b)=>{const x=key(a),y=key(b);return x<y?-st.dir:x>y?st.dir:0;});
@@ -618,13 +645,13 @@ function erpCustomers(id,ov,m){
     const slice=f.slice((st.page-1)*st.size,st.page*st.size);
     document.getElementById("cbody").innerHTML=total?slice.map(r=>`<tr class="${st.sel.has(r.id)?"sel":""}">
       <td><input type="checkbox" ${st.sel.has(r.id)?"checked":""} onclick="__csel(${r.id})"></td>
-      <td><div class="co">${esc(r.name)}</div><div class="ref mono">ref: ${esc(r.external_ref||"—")}</div></td>
+      <td><a class="co" style="cursor:pointer" onclick="__custDetail(${r.id})">${esc(r.name)}</a><div class="ref mono">ref: ${esc(r.external_ref||"—")}</div></td>
       <td>${licBadge(r.license_status)}<div class="faint" style="font-size:12px">${esc(r.license_plan||"—")}</div></td>
       <td>${esc(r.current_version||"—")}</td><td>${custBadge(r.status)}</td>
       <td>${healthBadge(r.health)}<div class="faint" style="font-size:11px">inherited</div></td>
       <td class="faint">${r.last_sync_state==="not_yet_integrated"?'<span class="badge b-gray">Not integrated</span>':esc(fmtDate(r.last_sync_at))}</td>
       <td class="faint" style="font-size:12px">${r.deployment_type==="customer_production_shared"?"Shared prod":esc(r.deployment_type||"—")}</td>
-      <td class="rowact"><button class="btn primary sm" onclick="__custOpen(${r.id})">${ic("shield",14)} Open ERP</button></td></tr>`).join(""):
+      <td class="rowact"><button class="btn sm" onclick="__custDetail(${r.id})">Details</button><button class="btn primary sm" onclick="__custOpen(${r.id})">${ic("shield",14)} Open ERP</button></td></tr>`).join(""):
       `<tr><td colspan="9">${emptyState("No customers match","Adjust search or filters.","","","users")}</td></tr>`;
     document.getElementById("pager").innerHTML=`<span class="faint" style="margin-right:auto">${total} customer${total===1?"":"s"}</span>
       <select class="filter" onchange="__csize(this.value)">${[10,25,50,100].map(n=>`<option ${st.size===n?"selected":""}>${n}</option>`).join("")}</select>
@@ -679,6 +706,34 @@ function openErpModal(id,r){
       window.__ov=await api("/api/products/"+encodeURIComponent(id)+"/overview");
     }catch(e){toast(e.message,"err");b.disabled=false;b.textContent="Open ERP";}};
 }
+function customerDetail(id,r){
+  const ov=window.__ov||{support_sessions:[],licenses:[],audit:[]};
+  const ev=[];
+  (ov.support_sessions||[]).filter(s=>s.customer_ref_id===r.id).forEach(s=>{
+    ev.push({at:s.created_at,icon:"shield",text:"Support session opened · "+s.status});
+    if(s.revoked_at)ev.push({at:s.revoked_at,icon:"shield",text:"Support session revoked"});});
+  (ov.licenses||[]).filter(l=>l.customer_ref_id===r.id).forEach(l=>{
+    ev.push({at:l.created_at,icon:"key",text:"License created · "+l.plan+" ("+l.status+")"});
+    if(l.updated_at&&l.updated_at!==l.created_at)ev.push({at:l.updated_at,icon:"key",text:"License updated · "+l.status});});
+  (ov.audit||[]).filter(a=>a.target_type==="customer_ref"&&String(a.target_id)===String(r.id)).forEach(a=>{
+    ev.push({at:a.at,icon:"activity",text:a.action+(a.detail?" · "+a.detail:"")});});
+  ev.sort((a,b)=>(a.at<b.at?1:a.at>b.at?-1:0));
+  const timeline=ev.length?ev.map(e=>`<div class="lrow"><span class="ic">${ic(e.icon,15)}</span><div class="m"><div class="t">${esc(e.text)}</div><div class="s">${esc(fmtDate(e.at))}</div></div></div>`).join(""):`<div class="faint" style="padding:10px 2px">No recorded activity yet.</div>`;
+  modal(`<div class="modal" style="max-width:600px"><div class="mh"><h3>${esc(r.name)}</h3><p>Customer reference ${esc(r.external_ref||"—")} · ${esc(S.erpName[id]||id)}</p></div>
+    <div class="mb">
+      <div class="tiles" style="grid-template-columns:repeat(2,1fr)">
+        <div class="tile"><div class="lab">${ic("key",14)} License</div><b style="font-size:15px">${licBadge(r.license_status)}</b><span>${esc(r.license_plan||"—")}</span></div>
+        <div class="tile"><div class="lab">${ic("tag",14)} Current version</div><b style="font-size:16px">${esc(r.current_version||"—")}</b></div>
+        <div class="tile"><div class="lab">${ic("heart",14)} Health</div><b style="font-size:15px">${healthBadge(r.health)}</b><span>inherited from runtime</span></div>
+        <div class="tile"><div class="lab">${ic("refresh",14)} Last sync</div><b style="font-size:13px">${r.last_sync_state==="not_yet_integrated"?"Not integrated":esc(fmtDate(r.last_sync_at))}</b></div>
+      </div>
+      <div class="note" style="margin-top:12px">Status ${custBadge(r.status)} &nbsp;·&nbsp; Deployment ${r.deployment_type==="customer_production_shared"?"Shared production":esc(r.deployment_type||"—")}<br>Target URL <span class="mono">${esc(r.target_url||"—")}</span></div>
+      <div class="section-h" style="margin-top:18px"><h2>Customer timeline</h2></div>${timeline}
+    </div>
+    <div class="mf"><button class="btn" onclick="closeModal()">Close</button>
+      <button class="btn primary" onclick="closeModal();__custOpen(${r.id})">${ic("shield",15)} Open ERP</button></div></div>`);
+}
+window.customerDetail=customerDetail;
 function newCustomerModal(id){
   modal(`<div class="modal"><div class="mh"><h3>Add customer</h3><p>Reference only — the ERP owns the authoritative record.</p></div><div class="mb">
     <div class="field"><label>Company name</label><input class="field-in" id="ncname" placeholder="e.g. Northwind Traders"/></div>
@@ -892,6 +947,26 @@ function renderProfile(){pageShell("Profile","Profile",`<div class="page-h"><div
      <div class="note" style="margin-top:14px">Operator profile editing lands in a later milestone.</div></div>`);}
 function renderApiKeys(){pageShell("API Keys","API Keys",`<div class="page-h"><div><h1>API Keys</h1><p>Programmatic access to the Control Center.</p></div></div>
    <div class="card pad">${emptyState("No API keys yet","Machine-to-machine keys will be managed here.","","","key")}</div>`);}
+function renderPreferences(){
+  const density=localStorage.getItem("cc_density")||"comfortable";
+  pageShell("Preferences","Preferences",`<div class="page-h"><div><h1>Preferences</h1><p>Personalize your Control Center.</p></div></div>
+   <div class="dash">
+     <div class="col-6 card pad"><div class="section-h"><h2>Appearance</h2></div>
+       <div class="field"><label>Theme</label><div style="display:flex;gap:8px">
+         <button class="btn ${S.theme==="light"?"primary":""}" onclick="setTheme('light');route()">${ic("sun",15)} Light</button>
+         <button class="btn ${S.theme==="dark"?"primary":""}" onclick="setTheme('dark');route()">${ic("moon",15)} Dark</button></div></div>
+       <div class="field"><label>Table density</label><div style="display:flex;gap:8px">
+         <button class="btn ${density==="comfortable"?"primary":""}" onclick="localStorage.setItem('cc_density','comfortable');route();toast('Comfortable density','ok')">Comfortable</button>
+         <button class="btn ${density==="compact"?"primary":""}" onclick="localStorage.setItem('cc_density','compact');route();toast('Compact density','ok')">Compact</button></div></div>
+     </div>
+     <div class="col-6 card pad"><div class="section-h"><h2>Notifications</h2></div>
+       <div class="note">The notification center groups <b>System</b>, <b>Customer</b> and <b>Version</b> alerts from the platform audit trail. Opening it marks alerts as read.</div>
+       <div style="margin-top:12px"><button class="btn" onclick="localStorage.removeItem('cc_notif_seen');route();toast('Marked all as unread','ok')">${ic("bell",15)} Reset unread state</button></div>
+       <div class="section-h" style="margin-top:20px"><h2>Session</h2></div>
+       <div><button class="btn danger" onclick="logout()">${ic("logout",15)} Sign out</button></div>
+     </div></div>`);
+}
+window.renderPreferences=renderPreferences;
 window.setTheme=setTheme;window.logout=logout;window.route=route;window.closeModal=closeModal;window.closeMenus=closeMenus;
 
 /* ============================ boot ============================ */

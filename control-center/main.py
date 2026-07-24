@@ -714,7 +714,7 @@ def search(q: str = "", db: Session = Depends(get_db), op=Depends(current_operat
     ql = (q or "").strip().lower()
     if not ql:
         return {"query": q, "products": [], "customers": [], "licenses": [],
-                "sessions": [], "versions": []}
+                "sessions": [], "versions": [], "audit": []}
 
     def _match(*vals):
         return any(ql in (str(v).lower()) for v in vals if v is not None)
@@ -739,5 +739,10 @@ def search(q: str = "", db: Session = Depends(get_db), op=Depends(current_operat
     versions = [{"id": r.id, "erp_product_id": r.erp_product_id, "version": r.version, "status": r.status}
                 for r in db.query(models.Release).order_by(models.Release.id.desc()).all()
                 if _match(r.version, r.status, r.source_sha)][:8]
+    audit = [{"id": a.id, "action": a.action, "target_type": a.target_type,
+              "target_id": a.target_id, "detail": a.detail, "at": _iso(a.at)}
+             for a in db.query(models.PlatformAuditLog)
+             .order_by(models.PlatformAuditLog.id.desc()).limit(500).all()
+             if _match(a.action, a.target_type, a.target_id, a.detail)][:8]
     return {"query": q, "products": products, "customers": customers,
-            "licenses": licenses, "sessions": sessions, "versions": versions}
+            "licenses": licenses, "sessions": sessions, "versions": versions, "audit": audit}
