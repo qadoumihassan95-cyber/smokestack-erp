@@ -2,12 +2,14 @@ name: Control Center CI
 
 # Independent CI for the Control Plane unit. Path-filtered so it runs ONLY when the
 # Control Center changes — a change to an ERP never triggers it, and vice-versa (ADR-023).
+# Branch scope includes the foundation integration branch so the Mission Control
+# foundation PR is gated before it is promoted toward main.
 on:
   push:
-    branches: [main]
+    branches: [main, control-center-foundation]
     paths: ["control-center/**", ".github/workflows/control-center-ci.yml"]
   pull_request:
-    branches: [main]
+    branches: [main, control-center-foundation]
     paths: ["control-center/**", ".github/workflows/control-center-ci.yml"]
 
 concurrency:

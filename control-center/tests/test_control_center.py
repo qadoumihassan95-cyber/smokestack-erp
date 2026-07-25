@@ -383,3 +383,416 @@ def test_effective_session_status_timezone_safe():
     assert M._effective_session_status(SimpleNamespace(status="pending_erp_integration", expires_at=aware_past)) == "expired"
     assert M._effective_session_status(SimpleNamespace(status="active", expires_at=naive_future)) == "active"
     assert M._effective_session_status(SimpleNamespace(status="revoked", expires_at=aware_past)) == "revoked"
+
+
+# ==========================================================================================
+#            FEATURE MANAGEMENT & INTERNAL TOOLS (deny-by-default) — Milestone 1
+# ==========================================================================================
+def _smokestack_customer_id():
+    custs = client.get("/api/customers", headers=_h()).json()
+    c = [c for c in custs if c["erp_product_id"] == "smokestack"][0]
+    return c["id"]
+
+
+def _open_session(minutes=30):
+    cid = _smokestack_customer_id()
+    r = client.post("/api/support-sessions", headers=_h(),
+                    json={"erp_product_id": "smokestack", "customer_ref_id": cid,
+                          "reason": "feature test", "capabilities": "support:read", "minutes": minutes})
+    assert r.status_code == 201
+    return r.json()["session"]["session_ref"], r.json()["id"]
+
+
+def _mkflag(**kw):
+    body = {"key": kw.pop("key"), "name": kw.pop("name", "F"), "erp_product_id": "smokestack"}
+    body.update(kw)
+    r = client.post("/api/platform/feature-flags", headers=_h(), json=body)
+    assert r.status_code == 201, r.text
+    return r.json()["id"], r.json()["feature"]
+
+
+def _check(**kw):
+    kw.setdefault("erp_product_id", "smokestack")   # the calling ERP always identifies itself
+    return client.post("/api/internal/feature-check", headers=_h(), json=kw).json()
+
+
+# --------------------------- namespace auth (deny-by-default) ---------------------------
+def test_internal_namespace_requires_auth():
+    # No operator token → 401 on BOTH management and evaluation routes (not just UI hiding).
+    assert client.get("/api/platform/products/smokestack/feature-flags").status_code == 401
+    assert client.post("/api/platform/feature-flags",
+                       json={"key": "x", "name": "x"}).status_code == 401
+    assert client.post("/api/internal/feature-check",
+                       json={"feature_key": "x"}).status_code == 401
+
+
+def test_require_internal_denies_non_internal_tier_with_403():
+    # A validated operator that is NOT owner/operator/internal is forbidden (deny-by-default → 403).
+    import main as M
+    from fastapi import HTTPException
+    from types import SimpleNamespace
+    try:
+        M.require_internal(SimpleNamespace(id="OP-x", platform_role="customer"))
+        assert False, "expected HTTPException"
+    except HTTPException as e:
+        assert e.status_code == 403
+    # owner passes
+    assert M.require_internal(SimpleNamespace(id="OP-owner", platform_role="owner")).id == "OP-owner"
+
+
+# ------------------------------- CRUD + audit -------------------------------
+def test_create_list_patch_flag_writes_audit_with_before_after():
+    fid, feat = _mkflag(key="inventory.batch_repair", name="Batch Repair",
+                        visibility="customer", default_state=False, module="inventory")
+    assert feat["visibility"] == "customer" and feat["default_state"] is False
+    listed = client.get("/api/platform/products/smokestack/feature-flags", headers=_h()).json()
+    assert any(f["id"] == fid for f in listed)
+    # enable it
+    r = client.patch(f"/api/platform/feature-flags/{fid}", headers=_h(),
+                     json={"default_state": True, "reason": "GA release"})
+    assert r.status_code == 200 and r.json()["feature"]["default_state"] is True
+    aud = client.get(f"/api/platform/feature-flags/{fid}/audit", headers=_h()).json()
+    actions = [a["action"] for a in aud]
+    assert "feature_created" in actions and "feature_enabled" in actions
+    enab = [a for a in aud if a["action"] == "feature_enabled"][0]
+    assert enab["before_state"]["default_state"] is False
+    assert enab["after_state"]["default_state"] is True
+    assert enab["reason"] == "GA release"
+
+
+def test_duplicate_key_same_scope_rejected():
+    _mkflag(key="sales.dup_guard", name="Dup")
+    r = client.post("/api/platform/feature-flags", headers=_h(),
+                    json={"key": "sales.dup_guard", "name": "Dup2", "erp_product_id": "smokestack"})
+    assert r.status_code == 409
+
+
+def test_invalid_visibility_and_rollout_rejected():
+    assert client.post("/api/platform/feature-flags", headers=_h(),
+                       json={"key": "z1", "name": "z", "visibility": "bogus"}).status_code == 422
+    assert client.post("/api/platform/feature-flags", headers=_h(),
+                       json={"key": "z2", "name": "z", "rollout_percentage": 150}).status_code == 422
+
+
+# --------- Deliverable 7: customers CANNOT access owner-only / internal features ---------
+def test_customer_denied_owner_only_feature():
+    _mkflag(key="platform.sql_console", name="SQL Console", visibility="platform_owner_only")
+    d = _check(feature_key="platform.sql_console", actor_type="customer",
+               customer_ref="1", environment="production")
+    assert d["allow"] is False and d["reason"].startswith("owner_only")
+
+
+def test_customer_denied_internal_feature():
+    _mkflag(key="platform.debug_traces", name="Debug Traces", visibility="internal_team")
+    d = _check(feature_key="platform.debug_traces", actor_type="customer", customer_ref="1")
+    assert d["allow"] is False and d["reason"].startswith("internal_only")
+
+
+def test_owner_with_valid_session_allowed_owner_only():
+    _mkflag(key="platform.license_override", name="License Override", visibility="platform_owner_only")
+    ref, _sid = _open_session()
+    d = _check(feature_key="platform.license_override", actor_type="platform_owner",
+               support_session_ref=ref, environment="production")
+    assert d["allow"] is True and d["reason"] == "owner_session"
+
+
+def test_owner_only_denied_without_session():
+    _mkflag(key="platform.wipe_cache", name="Wipe Cache", visibility="platform_owner_only")
+    d = _check(feature_key="platform.wipe_cache", actor_type="platform_owner")
+    assert d["allow"] is False and "no_session" in d["reason"]
+
+
+# --------- Deliverable 8: disabled features inaccessible even when route/key is known ---------
+def test_disabled_feature_denied_for_everyone_even_owner():
+    _mkflag(key="sales.legacy_export", name="Legacy Export", visibility="disabled",
+            default_state=True, rollout_percentage=100)
+    ref, _sid = _open_session()
+    assert _check(feature_key="sales.legacy_export", actor_type="customer",
+                  customer_ref="1")["allow"] is False
+    d_owner = _check(feature_key="sales.legacy_export", actor_type="platform_owner",
+                     support_session_ref=ref)
+    assert d_owner["allow"] is False and d_owner["reason"] == "feature_disabled"
+
+
+def test_unknown_feature_denied():
+    d = _check(feature_key="does.not.exist", actor_type="platform_owner")
+    assert d["allow"] is False and d["reason"] == "unknown_feature"
+
+
+# --------- Deliverable 9: expired / revoked support sessions deny elevated access ---------
+def test_expired_session_denies_owner_only():
+    _mkflag(key="platform.expired_probe", name="Expired Probe", visibility="platform_owner_only")
+    ref, sid = _open_session(minutes=1)
+    # force-expire by rewriting expires_at in the DB to the past
+    import datetime as _dt
+    import main as M
+    from database import SessionLocal
+    db = SessionLocal()
+    s = db.get(M.models.SupportSession, sid)
+    s.expires_at = _dt.datetime.utcnow() - _dt.timedelta(minutes=5)
+    db.commit()
+    db.close()
+    d = _check(feature_key="platform.expired_probe", actor_type="platform_owner",
+               support_session_ref=ref)
+    assert d["allow"] is False and "session_expired" in d["reason"]
+
+
+def test_revoked_session_denies_owner_only():
+    _mkflag(key="platform.revoked_probe", name="Revoked Probe", visibility="platform_owner_only")
+    ref, sid = _open_session()
+    assert client.post(f"/api/support-sessions/{sid}/revoke", headers=_h()).status_code == 200
+    d = _check(feature_key="platform.revoked_probe", actor_type="platform_owner",
+               support_session_ref=ref)
+    assert d["allow"] is False and "session_revoked" in d["reason"]
+
+
+def test_session_for_wrong_erp_denied():
+    # register a second product + customer + its own session, then use it against a smokestack flag
+    client.post("/api/products", headers=_h(), json={"id": "dairy2", "name": "Dairy2"})
+    r = client.post("/api/customers", headers=_h(),
+                    json={"erp_product_id": "dairy2", "name": "D2 Cust", "external_ref": "d1"})
+    cid = r.json()["id"]
+    sref = client.post("/api/support-sessions", headers=_h(),
+                       json={"erp_product_id": "dairy2", "customer_ref_id": cid}).json()["session"]["session_ref"]
+    _mkflag(key="platform.cross_erp", name="Cross", visibility="platform_owner_only")
+    d = _check(feature_key="platform.cross_erp", actor_type="platform_owner", support_session_ref=sref)
+    assert d["allow"] is False and "session_wrong_erp" in d["reason"]
+
+
+# --------- Three-gate customer access: flag AND license AND role ---------
+def test_three_gate_role_and_license_and_flag():
+    _mkflag(key="sales.premium_report", name="Premium Report", visibility="customer",
+            default_state=True, role_requirements="admin,manager",
+            license_plan_requirements="pro,enterprise")
+    base = dict(feature_key="sales.premium_report", actor_type="customer", customer_ref="1")
+    # role gate fails
+    assert _check(**base, role="clerk", license_plan="pro")["reason"] == "role_not_permitted"
+    # license gate fails
+    assert _check(**base, role="admin", license_plan="standard")["reason"] == "license_not_entitled"
+    # all three pass
+    ok = _check(**base, role="admin", license_plan="pro")
+    assert ok["allow"] is True and ok["reason"] == "granted"
+
+
+def test_denylist_overrides_default_on():
+    _mkflag(key="sales.broad_feature", name="Broad", visibility="customer",
+            default_state=True, customer_denylist="99")
+    assert _check(feature_key="sales.broad_feature", actor_type="customer",
+                  customer_ref="99")["allow"] is False
+    assert _check(feature_key="sales.broad_feature", actor_type="customer",
+                  customer_ref="1")["allow"] is True
+
+
+def test_customer_not_targeted_denied_by_default():
+    _mkflag(key="sales.dark_feature", name="Dark", visibility="customer", default_state=False)
+    d = _check(feature_key="sales.dark_feature", actor_type="customer", customer_ref="1")
+    assert d["allow"] is False and d["reason"] == "not_targeted"
+    # allowlisted customer gets in
+    fid = client.get("/api/platform/products/smokestack/feature-flags", headers=_h()).json()
+    fid = [f for f in fid if f["key"] == "sales.dark_feature"][0]["id"]
+    client.patch(f"/api/platform/feature-flags/{fid}", headers=_h(),
+                 json={"customer_allowlist": "1", "reason": "pilot"})
+    assert _check(feature_key="sales.dark_feature", actor_type="customer",
+                  customer_ref="1")["allow"] is True
+
+
+def test_full_rollout_grants_all_customers():
+    _mkflag(key="sales.rollout_full", name="Rollout", visibility="customer",
+            default_state=False, rollout_percentage=100)
+    assert _check(feature_key="sales.rollout_full", actor_type="customer",
+                  customer_ref="anyone")["allow"] is True
+
+
+# --------- environment scoping + date windows ---------
+def test_environment_scope_enforced():
+    _mkflag(key="sales.staging_only", name="Staging Only", visibility="customer",
+            default_state=True, environment_scope="staging")
+    # A customer is ALWAYS forced to production, so a staging-scoped flag is out of scope for them
+    # even if the client asks for environment=staging.
+    assert _check(feature_key="sales.staging_only", actor_type="customer",
+                  customer_ref="1", environment="production")["reason"] == "environment_not_in_scope"
+    assert _check(feature_key="sales.staging_only", actor_type="customer",
+                  customer_ref="1", environment="staging")["reason"] == "environment_not_in_scope"
+    # An elevated actor (owner/internal) may evaluate against staging.
+    assert _check(feature_key="sales.staging_only", actor_type="internal",
+                  customer_ref="1", environment="staging")["allow"] is True
+
+
+def test_expiry_date_denies_after_window():
+    past = "2000-01-01T00:00:00"
+    _mkflag(key="sales.expired_flag", name="Expired", visibility="customer",
+            default_state=True, expiry_date=past)
+    assert _check(feature_key="sales.expired_flag", actor_type="customer",
+                  customer_ref="1")["reason"] == "expired"
+
+
+def test_archived_flag_denied():
+    fid, _ = _mkflag(key="sales.to_archive", name="Archive", visibility="customer", default_state=True)
+    client.patch(f"/api/platform/feature-flags/{fid}", headers=_h(),
+                 json={"status": "archived", "reason": "retire"})
+    assert _check(feature_key="sales.to_archive", actor_type="customer",
+                  customer_ref="1")["reason"] == "flag_archived"
+
+
+# --------- audit trail of sensitive access decisions ---------
+def test_unauthorized_customer_access_is_audited():
+    fid, _ = _mkflag(key="platform.audited_denial", name="Audited", visibility="platform_owner_only")
+    _check(feature_key="platform.audited_denial", actor_type="customer", customer_ref="1")
+    aud = client.get(f"/api/platform/feature-flags/{fid}/audit", headers=_h()).json()
+    assert any(a["action"] == "unauthorized_access_denied" for a in aud)
+
+
+def test_owner_tool_open_is_audited():
+    fid, _ = _mkflag(key="platform.audited_open", name="AuditedOpen", visibility="platform_owner_only")
+    ref, _sid = _open_session()
+    _check(feature_key="platform.audited_open", actor_type="platform_owner", support_session_ref=ref)
+    aud = client.get(f"/api/platform/feature-flags/{fid}/audit", headers=_h()).json()
+    assert any(a["action"] == "owner_tool_opened" for a in aud)
+
+
+def test_global_flag_applies_when_no_product_specific_exists():
+    # erp_product_id None → applies to all products; product-specific wins when both exist
+    r = client.post("/api/platform/feature-flags", headers=_h(),
+                    json={"key": "global.telemetry", "name": "Telemetry",
+                          "erp_product_id": None, "visibility": "customer", "default_state": True})
+    assert r.status_code == 201
+    d = _check(feature_key="global.telemetry", erp_product_id="smokestack",
+               actor_type="customer", customer_ref="1")
+    assert d["allow"] is True
+
+
+# ==========================================================================================
+#            INTERNAL DEVELOPMENT PLATFORM — Developer Mode (Platform Owner only)
+# ==========================================================================================
+def test_require_owner_denies_non_owner_and_allows_owner():
+    import main as M
+    from fastapi import HTTPException
+    from types import SimpleNamespace
+    for role in ("internal", "operator", "customer", None):
+        try:
+            M.require_owner(SimpleNamespace(id="OP-x", platform_role=role))
+            assert False, f"expected 403 for role={role}"
+        except HTTPException as e:
+            assert e.status_code == 403
+    assert M.require_owner(SimpleNamespace(id="OP-owner", platform_role="owner")).id == "OP-owner"
+
+
+def test_dev_endpoints_require_auth_no_token():
+    # A customer has no operator token → 401 on every developer endpoint (never UI-only hiding).
+    for path in ("/api/platform/dev/context", "/api/platform/dev/diagnostics",
+                 "/api/platform/dev/schema", "/api/platform/dev/routes",
+                 "/api/platform/dev/debug", "/api/platform/dev/jobs",
+                 "/api/platform/dev/integrations"):
+        assert client.get(path).status_code == 401, path
+    assert client.post("/api/platform/preview/start",
+                       json={"erp_product_id": "smokestack"}).status_code == 401
+
+
+def test_dev_context_reports_tools_and_profile():
+    d = client.get("/api/platform/dev/context?pid=smokestack", headers=_h()).json()
+    assert d["developer_mode"] is True and d["feature_profile"] == "platform_owner"
+    keys = {t["key"] for t in d["tools"]}
+    assert {"feature_manager", "release_manager", "rollout_manager", "db_inspector",
+            "system_diagnostics", "api_explorer"}.issubset(keys)
+    assert set(d["environments"]) == {"development", "staging", "production"}
+    assert d["lifecycle_stages"][0] == "development" and d["lifecycle_stages"][-1] == "removed"
+
+
+def test_customer_always_forced_to_production():
+    # Flag scoped to development, default on. A customer asking for development is still forced
+    # to production by the backend and therefore denied — customers never leave Production.
+    _mkflag(key="sales.dev_only", name="Dev Only", visibility="customer",
+            default_state=True, environment_scope="development")
+    assert _check(feature_key="sales.dev_only", actor_type="customer", customer_ref="1",
+                  environment="development")["reason"] == "environment_not_in_scope"
+    # The owner previewing development sees it.
+    assert _check(feature_key="sales.dev_only", actor_type="platform_owner", customer_ref="1",
+                  environment="development")["allow"] is True
+
+
+def test_preview_start_switch_end_are_audited():
+    r = client.post("/api/platform/preview/start", headers=_h(),
+                    json={"erp_product_id": "smokestack", "customer_ref": "1", "environment": "development"})
+    assert r.status_code == 201
+    pv = r.json()["preview"]
+    assert pv["status"] == "active" and pv["feature_profile"] == "platform_owner"
+    assert pv["environment"] == "development"
+    # context now reports the active preview
+    ctx = client.get("/api/platform/dev/context?pid=smokestack", headers=_h()).json()
+    assert ctx["active_preview"] and ctx["active_preview"]["id"] == pv["id"]
+    # switch environment instantly
+    r2 = client.post(f"/api/platform/preview/{pv['id']}/environment?environment=staging", headers=_h())
+    assert r2.status_code == 200 and r2.json()["preview"]["environment"] == "staging"
+    # end it
+    r3 = client.post(f"/api/platform/preview/{pv['id']}/end", headers=_h())
+    assert r3.status_code == 200 and r3.json()["preview"]["status"] == "ended"
+    actions = [a["action"] for a in client.get("/api/audit", headers=_h()).json()]
+    assert "preview_started" in actions and "preview_ended" in actions
+    assert "preview_environment_switched" in actions
+
+
+def test_preview_start_rejects_bad_env_and_unknown_erp():
+    assert client.post("/api/platform/preview/start", headers=_h(),
+                       json={"erp_product_id": "smokestack", "environment": "prod"}).status_code == 422
+    assert client.post("/api/platform/preview/start", headers=_h(),
+                       json={"erp_product_id": "nope", "environment": "development"}).status_code == 404
+
+
+def test_lifecycle_stage_promote_and_demote_audited():
+    fid, feat = _mkflag(key="inventory.pipeline", name="Pipeline", visibility="customer")
+    assert feat["lifecycle_stage"] == "development"
+    r = client.post(f"/api/platform/feature-flags/{fid}/stage", headers=_h(),
+                    json={"lifecycle_stage": "staging", "reason": "ready for staging"})
+    assert r.status_code == 200 and r.json()["feature"]["lifecycle_stage"] == "staging"
+    client.post(f"/api/platform/feature-flags/{fid}/stage", headers=_h(),
+                json={"lifecycle_stage": "development", "reason": "regression found"})
+    acts = [a["action"] for a in client.get(f"/api/platform/feature-flags/{fid}/audit", headers=_h()).json()]
+    assert "feature_promoted" in acts and "feature_demoted" in acts
+
+
+def test_invalid_lifecycle_stage_rejected():
+    assert client.post("/api/platform/feature-flags", headers=_h(),
+                       json={"key": "x.bad_stage", "name": "x", "erp_product_id": "smokestack",
+                             "lifecycle_stage": "bogus"}).status_code == 422
+
+
+def test_rollback_restores_previous_state():
+    fid, _ = _mkflag(key="sales.rollback_me", name="RB", visibility="customer", default_state=False)
+    # change 1: enable
+    client.patch(f"/api/platform/feature-flags/{fid}", headers=_h(),
+                 json={"default_state": True, "reason": "ship it"})
+    assert client.get(f"/api/platform/feature-flags/{fid}", headers=_h()).json()["default_state"] is True
+    # rollback → back to off
+    r = client.post(f"/api/platform/feature-flags/{fid}/rollback", headers=_h())
+    assert r.status_code == 200 and r.json()["feature"]["default_state"] is False
+    acts = [a["action"] for a in client.get(f"/api/platform/feature-flags/{fid}/audit", headers=_h()).json()]
+    assert "feature_rolledback" in acts
+
+
+def test_db_inspector_is_metadata_only():
+    d = client.get("/api/platform/dev/schema", headers=_h()).json()
+    tables = {t["table"] for t in d["tables"]}
+    assert "feature_flags" in tables and "operators" in tables
+    # metadata only: each entry exposes counts + column NAMES, never row values
+    for t in d["tables"]:
+        assert "rows" in t and "columns" in t and isinstance(t["columns"], list)
+    assert "metadata only" in d["note"]
+
+
+def test_api_explorer_lists_namespaced_routes():
+    d = client.get("/api/platform/dev/routes", headers=_h()).json()
+    paths = {r["path"] for r in d["routes"]}
+    assert "/api/internal/feature-check" in paths
+    assert any(r["namespace"] == "developer" for r in d["routes"])
+    assert any(r["namespace"] == "internal" for r in d["routes"])
+
+
+def test_diagnostics_and_debug_and_jobs_owner_only():
+    diag = client.get("/api/platform/dev/diagnostics?pid=smokestack", headers=_h()).json()
+    assert diag["database"] == "ok" and "feature_flags" in diag["counts"]
+    dbg = client.get("/api/platform/dev/debug?pid=smokestack", headers=_h()).json()
+    assert "platform" in dbg and "feature_decisions" in dbg
+    jobs = client.get("/api/platform/dev/jobs", headers=_h()).json()
+    assert any(j["name"] == "Fleet health poll" for j in jobs["jobs"])
+    integ = client.get("/api/platform/dev/integrations?pid=smokestack", headers=_h()).json()
+    assert any("Feature-check" in i["name"] for i in integ["integrations"])
