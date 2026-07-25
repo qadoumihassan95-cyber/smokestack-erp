@@ -122,6 +122,29 @@
   html[data-theme="dark"] .sidebar a.nav.active .ct{background:#18351d}
   .content{flex:1;min-width:0;padding:22px 26px 64px;max-width:1360px;margin:0 auto;width:100%}
   .scrim{display:none}
+  /* developer tools nav */
+  .sidebar .nav-sec{margin:14px 4px 4px;font-size:10.5px;font-weight:800;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--violet);display:flex;align-items:center;gap:6px;
+    border-top:1px solid var(--line);padding-top:12px}
+  .sidebar a.nav.dev{color:var(--muted)} .sidebar a.nav.dev:hover{background:var(--violet-t);color:var(--violet)}
+  .sidebar a.nav.dev.active{background:var(--violet-t);color:var(--violet)}
+  /* owner preview / developer-mode banner */
+  .devbanner{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin:0 auto 16px;max-width:1360px;
+    background:linear-gradient(90deg,var(--violet-t),transparent);border:1px solid var(--violet);
+    border-left:4px solid var(--violet);border-radius:12px;padding:10px 16px}
+  .devbanner .dm{font-weight:800;color:var(--violet);display:flex;align-items:center;gap:7px;font-size:13.5px}
+  .devbanner .fld{font-size:12px;color:var(--muted);display:flex;flex-direction:column;line-height:1.35}
+  .devbanner .fld b{color:var(--ink);font-size:13px;font-weight:700}
+  .devbanner select{padding:5px 8px;border:1px solid var(--violet);border-radius:8px;background:var(--surface);
+    color:var(--ink);font-weight:700;font-size:12.5px}
+  .devbanner .sp{margin-left:auto;display:flex;gap:8px;align-items:center}
+  .pill-stage{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;
+    background:var(--gray-t);color:var(--muted)}
+  .pipeline{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+  .pipeline .col{background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:10px;min-height:80px}
+  .pipeline .col h4{margin:0 0 8px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+  .pipeline .fchip{background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:7px 9px;margin-bottom:7px;cursor:pointer}
+  .pipeline .fchip:hover{border-color:var(--violet)}
 
   /* page header */
   .page-h{display:flex;align-items:flex-start;gap:14px;margin-bottom:20px;flex-wrap:wrap}
@@ -306,6 +329,9 @@ const ICONS={
  briefcase:'<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v16"/>',
  receipt:'<path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1zM8 8h8M8 12h8"/>',
  rocket:'<path d="M4.5 16.5c-1.5 1.3-2 5-2 5s3.7-.5 5-2c.7-.9.7-2.2-.2-3a2.1 2.1 0 00-2.8 0zM12 15l-3-3a22 22 0 015-8 12.5 12.5 0 018-3 12.5 12.5 0 01-3 8 22 22 0 01-8 5zM9 12H4s.5-2.7 2-4c1.1-1 3 0 3 0M12 15v5s2.7-.5 4-2c1-1.1 0-3 0-3"/>',
+ flag:'<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7"/>',
+ beaker:'<path d="M9 3h6M10 3v6l-5 9a2 2 0 002 3h10a2 2 0 002-3l-5-9V3M7 15h10"/>',
+ lock:'<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/>',
 };
 function ic(name,size){size=size||16;return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]||''}</svg>`;}
 
@@ -374,7 +400,7 @@ function errMain(e){const m=document.getElementById("main")||el;
 
 /* ============================ router ============================ */
 function parseHash(){const h=(location.hash||"#/").replace(/^#/,""),p=h.split("/").filter(Boolean);
-  if(p[0]==="erp"&&p[1])return {view:"erp",id:decodeURIComponent(p[1]),tab:p[2]||"overview"};
+  if(p[0]==="erp"&&p[1])return {view:"erp",id:decodeURIComponent(p[1]),tab:p[2]||"overview",sub:p[3]?decodeURIComponent(p[3]):""};
   if(["sessions","audit","settings","profile","apikeys","preferences"].includes(p[0]))return {view:p[0]};
   return {view:"home"};}
 async function route(){
@@ -388,7 +414,7 @@ async function route(){
   if(r.view==="profile")return renderProfile();
   if(r.view==="preferences")return renderPreferences();
   if(r.view==="apikeys")return renderApiKeys();
-  if(r.view==="erp")return renderErp(r.id,r.tab);
+  if(r.view==="erp")return renderErp(r.id,r.tab,r.sub);
 }
 window.addEventListener("hashchange",route);
 
@@ -596,10 +622,25 @@ function erpCardHTML(p){const init=(p.name||p.id).split(" ").map(x=>x[0]).join("
 }
 
 /* ============================ ERP WORKSPACE ============================ */
-function erpRail(id,tab,counts){
+/* Developer Tools — Platform-Owner only. Every item is backend-gated (require_owner → 403);
+   the nav is merely hidden for non-owners. Customers never reach the PFS console at all. */
+const DEV_NAV=[
+ ["feature_manager","Feature Manager","flag"],["release_manager","Release Manager","tag"],
+ ["rollout_manager","Rollout Manager","upload"],["beta_features","Beta Features","beaker"],
+ ["experimental_modules","Experimental Modules","beaker"],["system_diagnostics","System Diagnostics","heart"],
+ ["db_inspector","Database Inspector","box"],["api_explorer","API Explorer","activity"],
+ ["integration_status","Integration Status","shield"],["background_jobs","Background Jobs","refresh"],
+ ["debug_console","Debug Console","list"],["support_tools","Support Tools","shield"],
+ ["ai_playground","AI Playground","rocket"]];
+function isOwner(){return S.op&&S.op.role==="owner";}
+function erpRail(id,tab,counts,sub){
+  const dev=isOwner()?
+   `<div class="nav-sec">${ic("lock",13)} Developer Tools</div>`+
+   DEV_NAV.map(([k,label,icon])=>`<a class="nav dev ${tab==="dev"&&sub===k?"active":""}" href="#/erp/${encodeURIComponent(id)}/dev/${k}">${ic(icon,16)}<span>${label}</span></a>`).join(""):"";
   return `<div class="switch" onclick="erpSwitcher()"><span class="icon" style="width:26px;height:26px;border-radius:7px;background:var(--brand-t);color:var(--brand-d);display:grid;place-items:center;font-weight:800;font-size:11px">${esc((S.erpName[id]||id).slice(0,2).toUpperCase())}</span><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(S.erpName[id]||id)}</span>${ic("chevron",14)}</div>`+
    TABS.map(([k,label,icon])=>{const c=counts&&counts[k];
     return `<a class="nav ${tab===k?"active":""}" href="#/erp/${encodeURIComponent(id)}/${k}">${ic(icon,16)}<span>${label}</span>${c!=null?`<span class="ct">${c}</span>`:""}</a>`;}).join("")+
+   dev+
    `<a class="nav" href="#/" style="margin-top:8px">${ic("grid",16)}<span>Back to Platform</span></a>`;
 }
 function erpCrumbs(id,tabLabel){return `${crumbHome()}<span class="sep">${ic("chevron",13)}</span><a href="#/erp/${encodeURIComponent(id)}/overview">${esc(S.erpName[id]||id)}</a><span class="sep">${ic("chevron",13)}</span><span class="cur">${esc(tabLabel)}</span>`;}
@@ -614,15 +655,19 @@ function erpModule(title,icon,desc,note){return (id,ov,m)=>{
    <div class="card pad">${emptyState(title+" — integration pending","This module is owned by the ERP. PFS stores platform metadata only; live "+title.toLowerCase()+" data appears here once the ERP→PFS integration is enabled.","","",icon)}</div>
    <div class="note" style="margin-top:14px">${ic("shield",14)} ${esc(note||"PFS never stores or displays customer transactional data. Modules populate via a sanctioned ERP→PFS feed (deferred).")}</div>`;
 };}
-async function renderErp(id,tab){
+async function renderErp(id,tab,sub){
+  const isDev=tab==="dev";
+  const devDef=isDev?DEV_NAV.find(t=>t[0]===sub):null;
   const tabDef=TABS.find(t=>t[0]===tab);
-  const tabLabel=tabDef?tabDef[1]:(AUX_TABS[tab]||"Overview");
-  shell({crumbs:erpCrumbs(id,tabLabel),rail:erpRail(id,tab,null),body:`<div class="page-h"><div><h1>${esc(tabLabel)}</h1></div></div><div class="card pad"><div class="skel" style="height:240px"></div></div>`});
+  const tabLabel=isDev?(devDef?devDef[1]:"Developer Tools"):(tabDef?tabDef[1]:(AUX_TABS[tab]||"Overview"));
+  shell({crumbs:erpCrumbs(id,tabLabel),rail:erpRail(id,tab,null,sub),body:`<div class="page-h"><div><h1>${esc(tabLabel)}</h1></div></div><div class="card pad"><div class="skel" style="height:240px"></div></div>`});
   let ov;try{ov=await api("/api/products/"+encodeURIComponent(id)+"/overview");}catch(e){return errMain(e);}
   S.erpName[id]=ov.product.name;window.__ov=ov;
   const counts={customers:ov.customers.length,licenses:ov.licenses.length,updates:ov.customer_deployments.length};
-  document.getElementById("sb").innerHTML=erpRail(id,tab,counts);
+  document.getElementById("sb").innerHTML=erpRail(id,tab,counts,sub);
   const cr=el.querySelector(".crumbs");if(cr)cr.innerHTML=erpCrumbs(id,tabLabel);
+  if(isOwner())await mountDevBanner(id);   // owner preview banner (Developer Mode)
+  if(isDev){devToolPage(id,sub||"feature_manager",ov,document.getElementById("main"));return;}
   const R={overview:erpOverview,customers:erpCustomers,
     inventory:erpModule("Inventory","box","Stock, items and reorder signals reported by the ERP."),
     sales:erpModule("Sales","receipt","Orders and invoicing reported by the ERP."),
@@ -665,6 +710,338 @@ function erpOverview(id,ov,m){
          emptyState("No runtimes registered","This ERP has no registered runtimes yet.","","","upload")}</div>
    </div>`;
 }
+
+/* ---------- Feature Management & Internal Tools ---------- */
+const VIS_META={
+  customer:{cls:"b-green",icon:"users",label:"Customer",desc:"Visible to customers (subject to license & role gates)."},
+  platform_owner_only:{cls:"b-violet",icon:"lock",label:"Owner Only",desc:"Platform Owner only — requires a valid support session. Never reaches customers."},
+  internal_team:{cls:"b-blue",icon:"shield",label:"Internal",desc:"Internal team only — requires a valid support session."},
+  experimental:{cls:"b-amber",icon:"beaker",label:"Experimental",desc:"Hidden by default; owner/internal or explicit allowlist / rollout only."},
+  disabled:{cls:"b-gray",icon:"dot",label:"Disabled",desc:"Hard-off for everyone — inaccessible even if the route is known."}};
+function visBadge(v){const m=VIS_META[v]||{cls:"b-gray",label:v||"—"};return `<span class="badge ${m.cls}">${m.label}</span>`;}
+const STAGES=["development","internal_testing","staging","pilot","production","deprecated","removed"];
+const STAGE_LABEL={development:"Development",internal_testing:"Internal Testing",staging:"Staging",pilot:"Pilot",production:"Production",deprecated:"Deprecated",removed:"Removed"};
+function stageBadge(s){const cls={development:"b-gray",internal_testing:"b-blue",staging:"b-amber",pilot:"b-violet",production:"b-green",deprecated:"b-gray",removed:"b-red"}[s]||"b-gray";return `<span class="badge ${cls}">${STAGE_LABEL[s]||s||"—"}</span>`;}
+function targetSummary(f){
+  const p=[];
+  if(f.default_state)p.push("default on");
+  if((f.rollout_percentage||0)>0)p.push(f.rollout_percentage+"% rollout");
+  if((f.customer_allowlist||[]).length)p.push((f.customer_allowlist.length)+" allow");
+  if((f.customer_denylist||[]).length)p.push((f.customer_denylist.length)+" deny");
+  if((f.role_requirements||[]).length)p.push("roles: "+f.role_requirements.join("/"));
+  if((f.license_plan_requirements||[]).length)p.push("plans: "+f.license_plan_requirements.join("/"));
+  return p.length?p.join(" · "):"—";
+}
+async function erpFeatures(id,ov,m){
+  m.innerHTML=`<div class="page-h"><div><h1>Features</h1><p>First-class feature flags and internal-tool access for ${esc(S.erpName[id]||id)}. Enforced by the backend (deny-by-default) — the UI never grants access on its own.</p></div>
+    <div class="actions"><button class="btn primary" onclick="__ffNew()">${ic("plus",15)} New feature flag</button></div></div>
+    <div class="card pad"><div class="skel" style="height:220px"></div></div>`;
+  let flags;try{flags=await api("/api/platform/products/"+encodeURIComponent(id)+"/feature-flags");}catch(e){return errMain(e);}
+  window.__ff={id,flags,q:"",vis:""};
+  __ffRender();
+}
+function __ffRender(){
+  const st=window.__ff;const m=document.getElementById("main");if(!m)return;
+  let rows=st.flags.slice();
+  if(st.q){const q=st.q.toLowerCase();rows=rows.filter(f=>(f.key||"").toLowerCase().includes(q)||(f.name||"").toLowerCase().includes(q));}
+  if(st.vis)rows=rows.filter(f=>f.visibility===st.vis);
+  const counts={};st.flags.forEach(f=>{counts[f.visibility]=(counts[f.visibility]||0)+1;});
+  const chips=Object.keys(VIS_META).map(v=>`<button class="btn sm ${st.vis===v?"primary":"ghost"}" onclick="__ffFilter('${v}')">${VIS_META[v].label}<span class="ct" style="margin-left:6px">${counts[v]||0}</span></button>`).join("");
+  const body=rows.length?rows.map(f=>{
+    const scope=(f.environment_scope==="all"||!f.environment_scope)?"All envs":esc(f.environment_scope);
+    const stateBadge=f.status==="archived"?'<span class="badge b-gray">Archived</span>':(f.visibility==="disabled"?'<span class="badge b-gray">Off</span>':(f.default_state?'<span class="badge b-green">On</span>':'<span class="badge b-amber">Targeted</span>'));
+    const canToggle=f.status==="active"&&f.visibility!=="disabled"&&(f.visibility==="customer"||f.visibility==="experimental");
+    return `<tr style="cursor:pointer" onclick="__ffOpen(${f.id})">
+      <td><a class="co" style="cursor:pointer">${esc(f.name)}</a><div class="ref mono">${esc(f.key)}${f.erp_product_id?"":' · global'}</div></td>
+      <td class="faint">${esc(f.module||"—")}</td>
+      <td>${visBadge(f.visibility)}</td>
+      <td>${stageBadge(f.lifecycle_stage)}</td>
+      <td>${stateBadge}</td>
+      <td class="faint">${scope}</td>
+      <td class="faint" style="max-width:230px">${esc(targetSummary(f))}</td>
+      <td class="faint" style="font-size:12px">${esc(timeAgo(f.updated_at))}</td>
+      <td class="rowact" onclick="event.stopPropagation()">
+        ${canToggle?`<button class="btn sm" onclick="__ffToggle(${f.id},${f.default_state?"false":"true"})">${f.default_state?"Disable":"Enable"}</button>`:""}
+        <button class="btn sm" onclick="__ffOpen(${f.id})">Details</button></td></tr>`;}).join(""):
+    `<tr><td colspan="9">${emptyState("No feature flags yet","Create the first flag to govern feature and internal-tool access for this ERP.","New feature flag","__ffNew()","flag")}</td></tr>`;
+  m.innerHTML=`<div class="page-h"><div><h1>Features</h1><p>First-class feature flags and internal-tool access for ${esc(S.erpName[st.id]||st.id)}. Enforced by the backend (deny-by-default) — the UI never grants access on its own.</p></div>
+    <div class="actions"><button class="btn primary" onclick="__ffNew()">${ic("plus",15)} New feature flag</button></div></div>
+   <div class="card pad" style="margin-bottom:14px"><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+     <div class="search" style="flex:1;min-width:200px"><input placeholder="Search by key or name…" value="${esc(st.q)}" oninput="__ffSearch(this.value)"></div>
+     <button class="btn sm ${st.vis===""?"primary":"ghost"}" onclick="__ffFilter('')">All</button>${chips}
+   </div></div>
+   <div class="card"><div class="scroll"><table><thead><tr><th>Feature</th><th>Module</th><th>Visibility</th><th>Stage</th><th>State</th><th>Environment</th><th>Targeting</th><th>Updated</th><th></th></tr></thead>
+     <tbody>${body}</tbody></table></div></div>
+   <div class="note" style="margin-top:14px">${ic("shield",14)} Owner-only, internal, and disabled features are never exposed to customers. Access is decided server-side by <span class="mono">/api/internal/feature-check</span> using deny-by-default rules (feature enabled AND license entitlement AND role permission).</div>`;
+}
+function __ffSearch(v){window.__ff.q=v;const m=document.getElementById("main");
+  /* light re-render of tbody only to preserve input focus */
+  const st=window.__ff;let rows=st.flags.slice();
+  if(st.q){const q=st.q.toLowerCase();rows=rows.filter(f=>(f.key||"").toLowerCase().includes(q)||(f.name||"").toLowerCase().includes(q));}
+  if(st.vis)rows=rows.filter(f=>f.visibility===st.vis);
+  const tb=m&&m.querySelector("tbody");if(!tb)return;
+  tb.innerHTML=rows.length?rows.map(f=>{const scope=(f.environment_scope==="all"||!f.environment_scope)?"All envs":esc(f.environment_scope);
+    const stateBadge=f.status==="archived"?'<span class="badge b-gray">Archived</span>':(f.visibility==="disabled"?'<span class="badge b-gray">Off</span>':(f.default_state?'<span class="badge b-green">On</span>':'<span class="badge b-amber">Targeted</span>'));
+    const canToggle=f.status==="active"&&f.visibility!=="disabled"&&(f.visibility==="customer"||f.visibility==="experimental");
+    return `<tr style="cursor:pointer" onclick="__ffOpen(${f.id})"><td><a class="co">${esc(f.name)}</a><div class="ref mono">${esc(f.key)}</div></td><td class="faint">${esc(f.module||"—")}</td><td>${visBadge(f.visibility)}</td><td>${stageBadge(f.lifecycle_stage)}</td><td>${stateBadge}</td><td class="faint">${scope}</td><td class="faint" style="max-width:230px">${esc(targetSummary(f))}</td><td class="faint" style="font-size:12px">${esc(timeAgo(f.updated_at))}</td><td class="rowact" onclick="event.stopPropagation()">${canToggle?`<button class="btn sm" onclick="__ffToggle(${f.id},${f.default_state?"false":"true"})">${f.default_state?"Disable":"Enable"}</button>`:""}<button class="btn sm" onclick="__ffOpen(${f.id})">Details</button></td></tr>`;}).join(""):`<tr><td colspan="9" class="faint" style="padding:20px">No matches.</td></tr>`;
+}
+function __ffFilter(v){window.__ff.vis=v;__ffRender();}
+async function __ffReload(){const st=window.__ff;try{st.flags=await api("/api/platform/products/"+encodeURIComponent(st.id)+"/feature-flags");}catch(e){toast(e.message,"err");return;}__ffRender();}
+async function __ffToggle(fid,on){
+  try{await api("/api/platform/feature-flags/"+fid,{method:"PATCH",json:{default_state:on,reason:(on?"Enabled":"Disabled")+" from Features console"}});
+    toast("Feature "+(on?"enabled":"disabled"),"ok");await __ffReload();}catch(e){toast(e.message,"err");}
+}
+function __ffField(label,name,val,hint,ph){return `<div class="field"><label>${label}</label><input class="field-in" id="ff_${name}" value="${esc(val==null?"":val)}" placeholder="${esc(ph||"")}">${hint?`<div class="hint">${esc(hint)}</div>`:""}</div>`;}
+function __ffNew(){__ffForm(null);}
+function __ffOpen(fid){const f=window.__ff.flags.find(x=>x.id===fid);if(f)featureDrawer(f);}
+function __ffForm(f){
+  const isEdit=!!f;f=f||{visibility:"customer",environment_scope:"all",rollout_percentage:0};
+  const visOpts=Object.keys(VIS_META).map(v=>`<option value="${v}" ${f.visibility===v?"selected":""}>${VIS_META[v].label} — ${VIS_META[v].desc}</option>`).join("");
+  modal(`<div class="modal" style="max-width:640px"><div class="mh"><h3>${isEdit?"Edit feature flag":"New feature flag"}</h3><p>${isEdit?esc(f.key):"Metadata only — never store secrets here."}</p></div>
+    <div class="mb" style="max-height:64vh;overflow:auto">
+      ${isEdit?"":__ffField("Key","key",f.key,"Stable identifier the ERP checks, e.g. inventory.batch_repair","module.feature")}
+      ${__ffField("Display name","name",f.name,"","Batch Repair")}
+      <div class="field"><label>Description</label><textarea id="ff_description" rows="2" placeholder="What this flag controls">${esc(f.description||"")}</textarea></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="field"><label>Visibility level</label><select class="field-in" id="ff_visibility">${visOpts}</select><div class="hint" id="ff_vishint">${esc(VIS_META[f.visibility].desc)}</div></div>
+        ${__ffField("Module","module",f.module,"","inventory")}
+      </div>
+      <div class="field"><label>Lifecycle stage</label><select class="field-in" id="ff_lifecycle_stage">${STAGES.map(s=>`<option value="${s}" ${(f.lifecycle_stage||"development")===s?"selected":""}>${STAGE_LABEL[s]}</option>`).join("")}</select><div class="hint">Release pipeline position. Advancing does not by itself expose a feature — targeting still applies.</div></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+        <div class="field"><label>Default state</label><select class="field-in" id="ff_default_state"><option value="false" ${f.default_state?"":"selected"}>Off</option><option value="true" ${f.default_state?"selected":""}>On (customer vis)</option></select></div>
+        ${__ffField("Rollout %","rollout_percentage",f.rollout_percentage||0,"0–100 deterministic")}
+        ${__ffField("Environment scope","environment_scope",(f.environment_scope||"all"),"all or csv")}
+      </div>
+      ${__ffField("Customer allowlist","customer_allowlist",(f.customer_allowlist||[]).join(","),"csv of customer refs")}
+      ${__ffField("Customer denylist","customer_denylist",(f.customer_denylist||[]).join(","),"csv of customer refs")}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        ${__ffField("Role requirements","role_requirements",(f.role_requirements||[]).join(","),"any-of csv")}
+        ${__ffField("License plan requirements","license_plan_requirements",(f.license_plan_requirements||[]).join(","),"any-of csv")}
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        ${__ffField("Start date","start_date",f.start_date?f.start_date.slice(0,10):"","YYYY-MM-DD")}
+        ${__ffField("Expiry date","expiry_date",f.expiry_date?f.expiry_date.slice(0,10):"","YYYY-MM-DD")}
+      </div>
+      <div class="field"><label>Reason (audited)</label><input class="field-in" id="ff_reason" placeholder="Why this change"></div>
+    </div>
+    <div class="mf"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn primary" id="ff_save" onclick="__ffSave(${isEdit?f.id:"null"})">${isEdit?"Save changes":"Create flag"}</button></div></div>`);
+  const vsel=document.getElementById("ff_visibility");if(vsel)vsel.onchange=()=>{const h=document.getElementById("ff_vishint");if(h)h.textContent=(VIS_META[vsel.value]||{}).desc||"";};
+}
+function __ffVal(n){const e=document.getElementById("ff_"+n);return e?e.value.trim():"";}
+async function __ffSave(fid){
+  const st=window.__ff;const btn=document.getElementById("ff_save");if(btn){btn.disabled=true;btn.textContent="Saving…";}
+  const rp=parseInt(__ffVal("rollout_percentage")||"0",10);
+  const payload={name:__ffVal("name"),description:__ffVal("description"),visibility:__ffVal("visibility"),module:__ffVal("module"),
+    lifecycle_stage:__ffVal("lifecycle_stage")||"development",
+    default_state:__ffVal("default_state")==="true",rollout_percentage:isNaN(rp)?0:rp,environment_scope:__ffVal("environment_scope")||"all",
+    customer_allowlist:__ffVal("customer_allowlist"),customer_denylist:__ffVal("customer_denylist"),
+    role_requirements:__ffVal("role_requirements"),license_plan_requirements:__ffVal("license_plan_requirements"),
+    start_date:__ffVal("start_date")||null,expiry_date:__ffVal("expiry_date")||null,reason:__ffVal("reason")};
+  try{
+    if(fid==null||fid==="null"){payload.key=__ffVal("key");payload.erp_product_id=st.id;
+      if(!payload.key||!payload.name){toast("Key and name are required","err");if(btn){btn.disabled=false;btn.textContent="Create flag";}return;}
+      await api("/api/platform/feature-flags",{method:"POST",json:payload});toast("Feature flag created","ok");}
+    else{await api("/api/platform/feature-flags/"+fid,{method:"PATCH",json:payload});toast("Feature flag updated","ok");}
+    closeModal();await __ffReload();
+  }catch(e){toast(e.message,"err");if(btn){btn.disabled=false;btn.textContent=fid==null?"Create flag":"Save changes";}}
+}
+async function featureDrawer(f){
+  const vm=VIS_META[f.visibility]||{};
+  modal(`<div class="modal" style="max-width:660px"><div class="mh"><h3>${esc(f.name)} ${visBadge(f.visibility)}</h3><p class="mono">${esc(f.key)}${f.erp_product_id?"":" · applies to all ERP products"}</p></div>
+    <div class="mb" style="max-height:70vh;overflow:auto">
+      <div class="note" style="margin-bottom:12px">${ic(vm.icon||"flag",14)} ${esc(vm.desc||"")}</div>
+      <div class="tiles" style="grid-template-columns:repeat(4,1fr)">
+        <div class="tile"><div class="lab">Stage</div><b style="font-size:13px">${stageBadge(f.lifecycle_stage)}</b></div>
+        <div class="tile"><div class="lab">State</div><b style="font-size:14px">${f.status==="archived"?"Archived":(f.visibility==="disabled"?"Off":(f.default_state?"On":"Targeted"))}</b></div>
+        <div class="tile"><div class="lab">Rollout</div><b style="font-size:16px">${f.rollout_percentage||0}%</b></div>
+        <div class="tile"><div class="lab">Environment</div><b style="font-size:13px">${esc(f.environment_scope==="all"?"All":f.environment_scope||"All")}</b></div>
+      </div>
+      <div class="note" style="margin-top:12px">${esc(f.description||"No description.")}</div>
+      <div class="note" style="margin-top:10px">Targeting: ${esc(targetSummary(f))}<br>
+        ${f.start_date?"Scheduled release "+esc(fmtDay(f.start_date))+" · ":""}${f.expiry_date?"Scheduled expiry "+esc(fmtDay(f.expiry_date)):"No expiry"}<br>
+        Updated ${esc(fmtDate(f.updated_at))}${f.updated_by?" by "+esc(f.updated_by):""}</div>
+
+      <div class="section-h" style="margin-top:18px"><h2>Release pipeline</h2></div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select class="field-in" id="pl_stage" style="max-width:200px">${STAGES.map(s=>`<option value="${s}" ${(f.lifecycle_stage||"development")===s?"selected":""}>${STAGE_LABEL[s]}</option>`).join("")}</select>
+        <button class="btn" onclick="__ffStage(${f.id})">Apply stage</button>
+        <button class="btn" onclick="__ffRollback(${f.id})">${ic("refresh",14)} Roll back last change</button>
+      </div>
+
+      <div class="section-h" style="margin-top:18px"><h2>Access preview</h2></div>
+      <div class="note" style="margin-bottom:8px">Simulate an ERP calling <span class="mono">/api/internal/feature-check</span>. The result is the real server decision — customers can never see owner-only or disabled features here.</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+        <div class="field" style="margin:4px 0"><label>Actor</label><select class="field-in" id="pv_actor"><option value="customer">customer</option><option value="internal">internal</option><option value="platform_owner">platform_owner</option></select></div>
+        <div class="field" style="margin:4px 0"><label>Environment</label><select class="field-in" id="pv_env"><option>production</option><option>staging</option><option>development</option></select></div>
+        <div class="field" style="margin:4px 0"><label>Customer ref</label><input class="field-in" id="pv_cust" placeholder="e.g. 1"></div>
+        <div class="field" style="margin:4px 0"><label>Role</label><input class="field-in" id="pv_role" placeholder="e.g. admin"></div>
+        <div class="field" style="margin:4px 0"><label>License plan</label><input class="field-in" id="pv_plan" placeholder="e.g. pro"></div>
+        <div class="field" style="margin:4px 0"><label>Support session ref</label><input class="field-in" id="pv_sess" placeholder="for owner/internal"></div>
+      </div>
+      <button class="btn" onclick="__ffPreview(${f.id})">${ic("shield",14)} Evaluate</button>
+      <div id="pv_out" style="margin-top:10px"></div>
+
+      <div class="section-h" style="margin-top:18px"><h2>Audit history</h2></div>
+      <div id="ff_audit"><div class="faint" style="padding:8px 0">Loading…</div></div>
+    </div>
+    <div class="mf"><button class="btn" onclick="closeModal()">Close</button>
+      ${f.status==="archived"?`<button class="btn" onclick="__ffArchive(${f.id},false)">Restore</button>`:`<button class="btn" onclick="__ffArchive(${f.id},true)">Archive</button>`}
+      <button class="btn primary" onclick="__ffEdit(${f.id})">${ic("gear",14)} Edit</button></div></div>`);
+  window.__ffCur=f;
+  try{const aud=await api("/api/platform/feature-flags/"+f.id+"/audit");
+    const box=document.getElementById("ff_audit");if(box)box.innerHTML=aud.length?aud.map(a=>`<div class="lrow"><span class="ic">${ic("activity",15)}</span><div class="m"><div class="t">${esc(a.action)}${a.actor?" · "+esc(a.actor):""}</div><div class="s">${esc(a.reason||"")}${a.customer?" · customer "+esc(a.customer):""}</div></div><span class="faint" style="font-size:12px">${esc(timeAgo(a.at))}</span></div>`).join(""):`<div class="faint" style="padding:8px 0">No audit entries yet.</div>`;
+  }catch(e){const box=document.getElementById("ff_audit");if(box)box.innerHTML=`<div class="faint">Could not load audit.</div>`;}
+}
+function __ffEdit(fid){const f=window.__ff.flags.find(x=>x.id===fid);closeModal();__ffForm(f);}
+async function __ffArchive(fid,on){try{await api("/api/platform/feature-flags/"+fid,{method:"PATCH",json:{status:on?"archived":"active",reason:on?"Archived":"Restored"}});toast(on?"Archived":"Restored","ok");closeModal();await __ffReload();}catch(e){toast(e.message,"err");}}
+async function __ffPreview(fid){
+  const st=window.__ff;const out=document.getElementById("pv_out");if(out)out.innerHTML='<div class="faint">Evaluating…</div>';
+  const g=n=>{const e=document.getElementById(n);return e?e.value.trim():"";};
+  const payload={feature_key:window.__ffCur.key,erp_product_id:st.id,actor_type:g("pv_actor"),environment:g("pv_env"),
+    customer_ref:g("pv_cust")||null,role:g("pv_role")||null,license_plan:g("pv_plan")||null,support_session_ref:g("pv_sess")||null,user_id:null};
+  try{const d=await api("/api/internal/feature-check",{method:"POST",json:payload});
+    if(out)out.innerHTML=`<div class="note" style="border-color:${d.allow?"var(--brand)":"var(--red)"}">${d.allow?'<span class="badge b-green">ALLOW</span>':'<span class="badge b-red">DENY</span>'} &nbsp; reason: <span class="mono">${esc(d.reason)}</span></div>`;
+  }catch(e){if(out)out.innerHTML=`<div class="note" style="border-color:var(--red)"><span class="badge b-red">ERROR</span> ${esc(e.message)}</div>`;}
+}
+window.__ffNew=__ffNew;window.__ffOpen=__ffOpen;window.__ffFilter=__ffFilter;window.__ffSearch=__ffSearch;
+window.__ffToggle=__ffToggle;window.__ffSave=__ffSave;window.__ffEdit=__ffEdit;window.__ffArchive=__ffArchive;window.__ffPreview=__ffPreview;
+
+/* ============================ DEVELOPER MODE (Platform Owner) ============================ */
+async function __ffStage(fid){const e=document.getElementById("pl_stage");const s=e?e.value:"";
+  try{await api("/api/platform/feature-flags/"+fid+"/stage",{method:"POST",json:{lifecycle_stage:s,reason:"stage → "+s}});
+    closeModal();toast("Stage set to "+(STAGE_LABEL[s]||s),"ok");route();}catch(err){toast(err.message,"err");}}
+async function __ffRollback(fid){
+  try{const r=await api("/api/platform/feature-flags/"+fid+"/rollback",{method:"POST"});
+    closeModal();toast("Rolled back over "+(r.rolled_back_over||"last change"),"ok");route();}catch(err){toast(err.message,"err");}}
+async function __ffRollout(fid){const e=document.getElementById("rs_"+fid);const v=parseInt(e?e.value:"0",10);
+  try{await api("/api/platform/feature-flags/"+fid,{method:"PATCH",json:{rollout_percentage:isNaN(v)?0:v,reason:"rollout "+v+"% from Rollout Manager"}});toast("Rollout set to "+v+"%","ok");}catch(err){toast(err.message,"err");}}
+window.__ffStage=__ffStage;window.__ffRollback=__ffRollback;window.__ffRollout=__ffRollout;
+
+/* Owner preview banner — mounted above the workspace; survives in-page #main re-renders. */
+async function mountDevBanner(id){
+  let ctx;try{ctx=await api("/api/platform/dev/context?pid="+encodeURIComponent(id));}catch(e){return;}
+  S.devCtx=S.devCtx||{};
+  const cur=S.devCtx[id]||{};const ap=ctx.active_preview;
+  const env=cur.environment||(ap&&ap.environment)||"development";
+  const custRef=(cur.customer_ref!==undefined)?cur.customer_ref:(ap?ap.customer_ref:"");
+  S.devCtx[id]={context:ctx,previewId:cur.previewId||(ap&&ap.id)||null,environment:env,customer_ref:custRef};
+  const custs=(window.__ov&&window.__ov.customers)||[];
+  const layout=el.querySelector(".layout");if(!layout)return;
+  let bn=document.getElementById("devbanner");
+  if(!bn){bn=document.createElement("div");bn.id="devbanner";bn.className="devbanner";layout.parentNode.insertBefore(bn,layout);}
+  bn.innerHTML=`<span class="dm">${ic("lock",15)} Developer Mode Enabled</span>
+    <div class="fld">Customer<select id="dbc"><option value="">Platform (no customer)</option>${custs.map(c=>`<option value="${esc(c.external_ref)}" ${String(c.external_ref)===String(custRef)?"selected":""}>${esc(c.name)}</option>`).join("")}</select></div>
+    <div class="fld">Environment<select id="dbe">${["development","staging","production"].map(e=>`<option ${e===env?"selected":""}>${e}</option>`).join("")}</select></div>
+    <div class="fld">Feature Profile<b>Platform Owner</b></div>
+    <div class="sp">${S.devCtx[id].previewId?`<span class="pill-stage">preview #${S.devCtx[id].previewId}</span>`:""}<button class="btn sm" onclick="devExit('${encodeURIComponent(id)}')">Exit Session</button></div>`;
+  const de=document.getElementById("dbe"),dc=document.getElementById("dbc");
+  if(de)de.onchange=()=>devPreviewSet(id);if(dc)dc.onchange=()=>devPreviewSet(id);
+}
+async function devPreviewSet(id){
+  const de=document.getElementById("dbe"),dc=document.getElementById("dbc");
+  const env=de?de.value:"development",cust=dc?dc.value:"";
+  const st=S.devCtx[id]||{};
+  try{
+    if(!st.previewId){
+      const r=await api("/api/platform/preview/start",{method:"POST",json:{erp_product_id:id,environment:env,customer_ref:cust||null}});
+      st.previewId=r.preview.id;
+    }else if(String(st.customer_ref||"")!==String(cust||"")){
+      await api("/api/platform/preview/"+st.previewId+"/end",{method:"POST"});
+      const r=await api("/api/platform/preview/start",{method:"POST",json:{erp_product_id:id,environment:env,customer_ref:cust||null}});
+      st.previewId=r.preview.id;
+    }else{
+      await api("/api/platform/preview/"+st.previewId+"/environment?environment="+encodeURIComponent(env),{method:"POST"});
+    }
+    st.environment=env;st.customer_ref=cust;S.devCtx[id]=st;
+    toast("Preview → "+env+(cust?(" · customer "+cust):""),"ok");await mountDevBanner(id);
+  }catch(e){toast(e.message,"err");}
+}
+async function devExit(idEnc){const id=decodeURIComponent(idEnc);const st=S.devCtx&&S.devCtx[id];
+  try{if(st&&st.previewId)await api("/api/platform/preview/"+st.previewId+"/end",{method:"POST"});}catch(e){}
+  if(S.devCtx)delete S.devCtx[id];const bn=document.getElementById("devbanner");if(bn)bn.remove();
+  toast("Developer preview ended","ok");}
+window.devExit=devExit;window.devPreviewSet=devPreviewSet;window.mountDevBanner=mountDevBanner;
+
+/* Developer tool pages */
+function devHeader(t,d){return `<div class="page-h"><div><h1>${esc(t)}</h1><p>${esc(d||"")}</p></div></div>`;}
+function devNote(t){return `<div class="note" style="margin-top:14px">${ic("shield",14)} ${esc(t||"Platform-Owner only. Every endpoint is enforced server-side (HTTP 403 for non-owners). Data shown is platform metadata; customers never see Developer Tools.")}</div>`;}
+async function devFlags(id){return api("/api/platform/products/"+encodeURIComponent(id)+"/feature-flags");}
+async function devReleaseManager(id,m){
+  let flags;try{flags=await devFlags(id);}catch(e){return errMain(e);}
+  window.__ff={id,flags,q:"",vis:""};
+  const cols=STAGES.map(s=>{const items=flags.filter(f=>(f.lifecycle_stage||"development")===s);
+    return `<div class="col"><h4>${STAGE_LABEL[s]} · ${items.length}</h4>${items.map(f=>`<div class="fchip" onclick="__ffOpen(${f.id})"><div style="font-weight:700;font-size:13px">${esc(f.name)}</div><div class="ref mono" style="font-size:11px">${esc(f.key)}</div><div style="margin-top:5px">${visBadge(f.visibility)}</div></div>`).join("")||'<div class="faint" style="font-size:12px">—</div>'}</div>`;}).join("");
+  m.innerHTML=devHeader("Release Manager","Advance features through the lifecycle pipeline. Stage is metadata; targeting still governs exposure. Open a feature to promote, demote or roll back.")+`<div class="pipeline">${cols}</div>`+devNote();
+}
+async function devRolloutManager(id,m){
+  let flags;try{flags=await devFlags(id);}catch(e){return errMain(e);}
+  window.__ff={id,flags,q:"",vis:""};
+  const rows=flags.filter(f=>["customer","experimental"].includes(f.visibility)).map(f=>`<tr>
+    <td><b>${esc(f.name)}</b><div class="ref mono">${esc(f.key)}</div></td><td>${visBadge(f.visibility)}</td><td>${stageBadge(f.lifecycle_stage)}</td>
+    <td style="min-width:230px"><input type="range" min="0" max="100" value="${f.rollout_percentage||0}" id="rs_${f.id}" style="width:150px;vertical-align:middle" oninput="var e=document.getElementById('rv_${f.id}');if(e)e.textContent=this.value"> <b id="rv_${f.id}">${f.rollout_percentage||0}</b>%</td>
+    <td><button class="btn sm" onclick="__ffRollout(${f.id})">Apply</button></td></tr>`).join("");
+  m.innerHTML=devHeader("Rollout Manager","Gradual percentage rollouts with deterministic per-customer bucketing.")+`<div class="card"><div class="scroll"><table><thead><tr><th>Feature</th><th>Visibility</th><th>Stage</th><th>Rollout</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan="5" class="faint" style="padding:18px">No customer-facing flags yet.</td></tr>'}</tbody></table></div></div>`+devNote();
+}
+async function devFlagList(id,m,filt,title,desc){
+  let flags;try{flags=await devFlags(id);}catch(e){return errMain(e);}
+  window.__ff={id,flags,q:"",vis:""};
+  let rows=flags;
+  if(filt.visibility)rows=rows.filter(f=>f.visibility===filt.visibility);
+  if(filt.stages)rows=rows.filter(f=>filt.stages.includes(f.lifecycle_stage||"development"));
+  const body=rows.map(f=>`<tr style="cursor:pointer" onclick="__ffOpen(${f.id})"><td><b>${esc(f.name)}</b><div class="ref mono">${esc(f.key)}</div></td><td>${visBadge(f.visibility)}</td><td>${stageBadge(f.lifecycle_stage)}</td><td class="faint">${esc(targetSummary(f))}</td></tr>`).join("");
+  m.innerHTML=devHeader(title,desc)+`<div class="card"><div class="scroll"><table><thead><tr><th>Feature</th><th>Visibility</th><th>Stage</th><th>Targeting</th></tr></thead><tbody>${body||'<tr><td colspan="4" class="faint" style="padding:18px">Nothing here yet.</td></tr>'}</tbody></table></div></div>`+devNote();
+}
+async function devDiagnostics(id,m){let d;try{d=await api("/api/platform/dev/diagnostics?pid="+encodeURIComponent(id));}catch(e){return errMain(e);}
+  const counts=Object.entries(d.counts).map(([k,v])=>tile("box",k,v)).join("");
+  const rts=(d.runtimes||[]).map(r=>`<tr><td class="co">${esc(r.name)}</td><td class="faint">${esc(r.tier)}</td><td>${healthBadge(r.health)}</td><td class="faint">${esc(fmtDate(r.last_health_at))}</td></tr>`).join("");
+  m.innerHTML=devHeader("System Diagnostics","Service health, database check and fleet counts (platform metadata).")+
+    `<div class="tiles" style="margin-bottom:16px">${tile("heart","Database",d.database==="ok"?'<span class="badge b-green">OK</span>':'<span class="badge b-red">error</span>')}${tile("box","Backend",esc(d.backend))}${tile("tag","Version",esc(d.version))}</div>
+     <div class="section-h"><h2>Record counts</h2></div><div class="tiles" style="margin-bottom:16px">${counts}</div>
+     ${rts?`<div class="section-h"><h2>Runtimes</h2></div><div class="card"><div class="scroll"><table><thead><tr><th>Runtime</th><th>Tier</th><th>Health</th><th>Checked</th></tr></thead><tbody>${rts}</tbody></table></div></div>`:""}`+devNote();
+}
+async function devSchema(m){let d;try{d=await api("/api/platform/dev/schema");}catch(e){return errMain(e);}
+  const rows=d.tables.map(t=>`<tr><td class="co">${esc(t.table)}</td><td><b>${t.rows==null?"—":t.rows}</b></td><td class="faint" style="max-width:440px">${esc((t.columns||[]).join(", "))}</td></tr>`).join("");
+  m.innerHTML=devHeader("Database Inspector","Metadata only — table names, row counts and column names. Never customer row data.")+
+    `<div class="card"><div class="scroll"><table><thead><tr><th>Table</th><th>Rows</th><th>Columns</th></tr></thead><tbody>${rows}</tbody></table></div></div>`+devNote((d.note||"")+" — the inspector never issues SELECT * on any table.");
+}
+async function devRoutes(m){let d;try{d=await api("/api/platform/dev/routes");}catch(e){return errMain(e);}
+  const nb=n=>({internal:"b-blue",developer:"b-violet",platform:"b-amber",app:"b-gray"})[n]||"b-gray";
+  const rows=d.routes.map(r=>`<tr><td class="mono">${esc(r.path)}</td><td class="faint">${esc((r.methods||[]).join(", "))}</td><td><span class="badge ${nb(r.namespace)}">${esc(r.namespace)}</span></td></tr>`).join("");
+  m.innerHTML=devHeader("API Explorer","The Control-Center API surface — "+d.count+" routes. Owner-only.")+
+    `<div class="card"><div class="scroll"><table><thead><tr><th>Path</th><th>Methods</th><th>Namespace</th></tr></thead><tbody>${rows}</tbody></table></div></div>`+devNote();
+}
+async function devIntegrations(id,m){let d;try{d=await api("/api/platform/dev/integrations?pid="+encodeURIComponent(id));}catch(e){return errMain(e);}
+  const rows=d.integrations.map(i=>`<div class="lrow"><span class="ic">${ic("shield",16)}</span><div class="m"><div class="t">${esc(i.name)}</div><div class="s">${esc(i.detail)}</div></div><span class="badge ${i.status==="active"?"b-green":"b-amber"}">${esc(i.status)}</span></div>`).join("");
+  m.innerHTML=devHeader("Integration Status","State of the ERP→PFS integration points.")+`<div class="card pad">${rows}</div>`+devNote();
+}
+async function devJobs(m){let d;try{d=await api("/api/platform/dev/jobs");}catch(e){return errMain(e);}
+  const rows=d.jobs.map(j=>`<div class="lrow"><span class="ic">${ic("refresh",16)}</span><div class="m"><div class="t">${esc(j.name)} · <span class="faint">${esc(j.kind)}</span></div><div class="s">${esc(j.detail)}${j.last_run?" · last run "+esc(timeAgo(j.last_run)):""}</div></div><span class="badge ${j.status==="ready"?"b-green":"b-amber"}">${esc(j.status)}</span></div>`).join("");
+  m.innerHTML=devHeader("Background Jobs","Platform jobs. ERP-side job feeds are deferred.")+`<div class="card pad">${rows}</div>`+devNote();
+}
+async function devDebug(id,m){let d;try{d=await api("/api/platform/dev/debug?pid="+encodeURIComponent(id));}catch(e){return errMain(e);}
+  const plat=d.platform.map(a=>`<tr><td class="faint" style="font-size:12px">${esc(fmtDate(a.at))}</td><td>${esc(a.action)}</td><td class="faint">${esc(a.target)}</td><td class="faint">${esc(a.detail||"")}</td></tr>`).join("");
+  const fe=d.feature_decisions.map(a=>`<tr><td class="faint" style="font-size:12px">${esc(fmtDate(a.at))}</td><td>${esc(a.action)}</td><td class="mono">${esc(a.feature||"")}</td><td class="faint">${esc(a.actor_type||"")}${a.customer?" · "+esc(a.customer):""}</td><td class="faint">${esc(a.reason||"")}</td></tr>`).join("");
+  m.innerHTML=devHeader("Debug Console","Recent platform actions and feature-evaluation decisions (metadata). ERP-side request tracing is deferred.")+
+    `<div class="section-h"><h2>Platform actions</h2></div><div class="card" style="margin-bottom:16px"><div class="scroll"><table><thead><tr><th>When</th><th>Action</th><th>Target</th><th>Detail</th></tr></thead><tbody>${plat||'<tr><td colspan="4" class="faint" style="padding:14px">None.</td></tr>'}</tbody></table></div></div>
+     <div class="section-h"><h2>Feature decisions</h2></div><div class="card"><div class="scroll"><table><thead><tr><th>When</th><th>Action</th><th>Feature</th><th>Actor</th><th>Reason</th></tr></thead><tbody>${fe||'<tr><td colspan="5" class="faint" style="padding:14px">None.</td></tr>'}</tbody></table></div></div>`+devNote();
+}
+function devSupportTools(id,m){m.innerHTML=devHeader("Support Tools","Support sessions and owner overrides for this ERP.")+
+  `<div class="card pad"><div class="lrow" style="cursor:pointer" onclick="location.hash='#/erp/${encodeURIComponent(id)}/sessions'"><span class="ic">${ic("shield",16)}</span><div class="m"><div class="t">Support Sessions</div><div class="s">Open, view and revoke short-lived support grants.</div></div>${ic("arrow",16)}</div>
+   <div class="lrow" style="cursor:pointer" onclick="location.hash='#/erp/${encodeURIComponent(id)}/dev/feature_manager'"><span class="ic">${ic("flag",16)}</span><div class="m"><div class="t">License &amp; Feature Overrides</div><div class="s">Use owner-only flags to override behaviour per customer.</div></div>${ic("arrow",16)}</div></div>`+devNote();
+}
+function devPlaceholder(m,title,desc,icon){m.innerHTML=devHeader(title,desc)+`<div class="card pad">${emptyState(title+" — coming soon",desc,"","",icon||"rocket")}</div>`+devNote("Owner-only. This tool activates once the supporting ERP→PFS feed is enabled.");}
+function devToolPage(id,tool,ov,m){
+  const map={feature_manager:()=>erpFeatures(id,ov,m),release_manager:()=>devReleaseManager(id,m),
+    rollout_manager:()=>devRolloutManager(id,m),
+    beta_features:()=>devFlagList(id,m,{stages:["internal_testing","pilot"]},"Beta Features","Flags currently in internal-testing or pilot stages."),
+    experimental_modules:()=>devFlagList(id,m,{visibility:"experimental"},"Experimental Modules","Experimental-visibility flags, hidden from customers by default."),
+    system_diagnostics:()=>devDiagnostics(id,m),db_inspector:()=>devSchema(m),api_explorer:()=>devRoutes(m),
+    integration_status:()=>devIntegrations(id,m),background_jobs:()=>devJobs(m),debug_console:()=>devDebug(id,m),
+    support_tools:()=>devSupportTools(id,m),
+    ai_playground:()=>devPlaceholder(m,"AI Playground","A prompt and scratch space for future ERP AI features. Model wiring is deferred.","rocket")};
+  (map[tool]||map.feature_manager)();
+}
+window.devToolPage=devToolPage;
 
 /* ---------- Customers pro data table ---------- */
 const PAGE_DEFAULT=25;

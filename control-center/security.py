@@ -30,9 +30,12 @@ def verify_pw(p: str, h: str) -> bool:
         return False
 
 
-def create_token(operator_id: str) -> str:
+def create_token(operator_id: str, jti: str | None = None) -> str:
     exp = datetime.datetime.utcnow() + datetime.timedelta(minutes=settings.jwt_expire_minutes)
-    return jwt.encode({"sub": operator_id, "exp": exp}, settings.jwt_secret, algorithm=settings.jwt_alg)
+    claims = {"sub": operator_id, "exp": exp}
+    if jti:
+        claims["jti"] = jti
+    return jwt.encode(claims, settings.jwt_secret, algorithm=settings.jwt_alg)
 
 
 def current_operator(token: str = Depends(oauth2), db: Session = Depends(get_db)) -> "models.Operator":
@@ -44,6 +47,13 @@ def current_operator(token: str = Depends(oauth2), db: Session = Depends(get_db)
     op = db.get(models.Operator, oid) if oid else None
     if not op or op.status != "active":
         raise HTTPException(401, "Unknown or inactive operator")
+    # Session revocation: a token bound to a revoked/expired operator session is rejected.
+    # Tokens without a jti, or whose session row is absent, remain valid (backward compatible).
+    jti = payload.get("jti")
+    if jti is not None:
+        import sessions
+        if not sessions.is_active(db, jti):
+            raise HTTPException(401, "Session revoked or expired")
     return op
 
 
