@@ -326,7 +326,8 @@ def worksheet(period: str = "month", start: str = None, end: str = None, branch:
 
 
 def _branch_att(b):
-    return {"name": b.name, "lat": float(b.lat) if b.lat is not None else None,
+    return {"name": b.name, "display_name": (getattr(b, "display_name", None) or b.name),
+            "lat": float(b.lat) if b.lat is not None else None,
             "lng": float(b.lng) if b.lng is not None else None,
             "radius_m": int(b.radius_m or 150), "timezone": b.timezone or "UTC",
             "loc_verify": b.loc_verify if b.loc_verify is not None else True,

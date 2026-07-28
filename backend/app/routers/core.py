@@ -61,7 +61,15 @@ def _costs_profit(db, brs, d0, d1):
 
 @router.get("/branches")
 def branches(db: Session = Depends(get_db), user: models.User = Depends(S.require("view"))):
+    # Unchanged contract: list of internal branch KEYS (used everywhere as the value/join key).
     return S.scope_branches(user, db)
+
+@router.get("/branches/labels")
+def branch_labels(db: Session = Depends(get_db), user: models.User = Depends(S.require("view"))):
+    """Display labels for the branches the caller may see: {key: display_name or key}.
+    Lets the UI/exports show business names while keeping the key as the stored value."""
+    allowed = set(S.scope_branches(user, db))
+    return {k: v for k, v in S.branch_labels(db).items() if k in allowed}
 
 @router.get("/reports/dashboard")
 def dashboard(branch: str = "all", db: Session = Depends(get_db), user: models.User = Depends(S.require("view"))):
@@ -95,6 +103,7 @@ def dashboard(branch: str = "all", db: Session = Depends(get_db), user: models.U
     pend_appr = db.query(models.Approval).filter(models.Approval.status == "pending", models.Approval.branch.in_(brs)).count()
     out_data = {
         "branch": "All branches" if branch == "all" else branch,
+        "branch_display": "All branches" if branch == "all" else S.branch_label(db, branch),
         "sales_today": sales, "expenses_today": exp, "profit_today": cp["profit"],
         "cogs_today": cp["cogs"], "payroll_today": cp["payroll"], "costs_today": cp["costs"],
         "inventory_units": units, "low": low, "out": out,
@@ -139,6 +148,7 @@ def kpi(period: str = "month", branch: str = "all", db: Session = Depends(get_db
     can_cost = P.can(user.role, "view_cost")
     can_profit = P.can(user.role, "view_profit")
     out = {"period": period, "branch": "All branches" if branch == "all" else branch,
+           "branch_display": "All branches" if branch == "all" else S.branch_label(db, branch),
            "range": [str(d0), str(d1)], "prev_range": [str(p0), str(p1)],
            "can_view_costs": can_cost, "can_view_profit": can_profit}
     if can_cost:
@@ -189,7 +199,8 @@ def analytics(branch: str = "all", db: Session = Depends(get_db),
     branch_cmp = []
     for b in brs:
         cp = _costs_profit(db, [b], m0, today)
-        branch_cmp.append({"branch": b, "sales": round(cp["revenue"], 2), "profit": round(cp["profit"], 2)})
+        branch_cmp.append({"branch": b, "branch_display": S.branch_label(db, b),
+                           "sales": round(cp["revenue"], 2), "profit": round(cp["profit"], 2)})
 
     # expenses by category (this month)
     ec = db.query(models.Ledger.category, func.coalesce(func.sum(models.Ledger.amount), 0)) \
