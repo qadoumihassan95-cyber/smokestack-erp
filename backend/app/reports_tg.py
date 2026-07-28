@@ -125,11 +125,12 @@ def _inventory(db, brs):
     value = 0.0
     low = out = 0
     negative = []
+    blabels = {b.name: (b.display_name or b.name) for b in db.query(models.Branch).all()}
     for st, p in rows:
         qty = int(st.qty or 0)
         value += qty * float(p.cost or 0)
         if qty < 0:
-            negative.append(f"{p.name} ({st.branch}) {qty}")
+            negative.append(f"{p.name} ({blabels.get(st.branch, st.branch)}) {qty}")
         elif qty == 0:
             out += 1
         elif qty <= int(p.min_level or 0):
@@ -158,11 +159,13 @@ def _licenses(db, brs, today):
     rows = (db.query(models.License)
             .filter(models.License.branch.in_(brs),
                     models.License.status != "archived").all())
+    blabels = {b.name: (b.display_name or b.name) for b in db.query(models.Branch).all()}
     for l in rows:
         if not l.expiry_date:
             continue
         days = (l.expiry_date - today).days
-        item = {"name": l.name, "branch": l.branch, "expiry": str(l.expiry_date), "days": days}
+        # Show the branch's human label in alerts; None (company-wide) stays blank-safe.
+        item = {"name": l.name, "branch": blabels.get(l.branch, l.branch), "expiry": str(l.expiry_date), "days": days}
         if days < 0:
             out["expired"].append(item)
         elif days == 0:

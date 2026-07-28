@@ -107,6 +107,21 @@ def require(*perms):
 def all_branch_names(db: Session):
     return [b.name for b in db.query(models.Branch).order_by(models.Branch.name).all()]
 
+def branch_labels(db: Session):
+    """Map of internal branch key -> human label (display_name, falling back to the key).
+    Display-only: the key is what every relation/permission/history references."""
+    out = {}
+    for b in db.query(models.Branch).all():
+        out[b.name] = (getattr(b, "display_name", None) or b.name)
+    return out
+
+def branch_label(db: Session, name):
+    """Human label for one branch key, safely falling back to the key itself."""
+    if name is None:
+        return name
+    b = db.get(models.Branch, name)
+    return (getattr(b, "display_name", None) or name) if b else name
+
 def scope_branches(user: models.User, db: Session):
     return P.allowed_branches(user, all_branch_names(db))
 

@@ -8,7 +8,10 @@ from .database import Base
 class Branch(Base):
     __tablename__ = "branches"
     company_id = Column(Integer, index=True, nullable=True, server_default="1")  # tenant owner; backfilled to Company #1
-    name = Column(String, primary_key=True)
+    name = Column(String, primary_key=True)   # INTERNAL KEY — never changes; every relation references this
+    # Human-facing label shown in UI / reports / exports / Telegram. Additive & nullable; when NULL
+    # callers fall back to `name`. Renaming for display never touches the key or any relationship.
+    display_name = Column(String, nullable=True)
     # attendance geofence settings
     lat = Column(Numeric(10, 6)); lng = Column(Numeric(10, 6))
     radius_m = Column(Integer, default=150)
