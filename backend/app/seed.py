@@ -7,7 +7,13 @@ from . import models
 from .config import settings
 from .security import hash_pw
 
-BRANCHES = ["Store A", "Store B", "Store C"]
+BRANCHES = ["Store A", "Store B", "Store C"]   # internal keys — stable, referenced everywhere
+# Human-facing labels for fresh installs. Keys stay "Store A/B/C"; only the display label differs.
+BRANCH_DISPLAY = {
+    "Store A": "GM Tobacco Duncanville",
+    "Store B": "GM Tobacco Lancaster",
+    "Store C": "Smoke Depot Waco",
+}
 USERS = [
     ("U-owner", "owner", "Owner", None),
     ("U-admin", "admin", "Admin", None),
@@ -36,7 +42,8 @@ def seed(db: Session):
            "Store C": (31.501700, 34.466800)}
     for b in BRANCHES:
         lat, lng = GEO.get(b, (None, None))
-        db.add(models.Branch(name=b, lat=lat, lng=lng, radius_m=150, timezone="UTC",
+        db.add(models.Branch(name=b, display_name=BRANCH_DISPLAY.get(b), lat=lat, lng=lng,
+                             radius_m=150, timezone="UTC",
                              loc_verify=True, grace_min=10, allow_override=True, attendance_active=True))
     for uid, role, name, branches in USERS:
         db.add(models.User(id=uid, name=name, role=role, email=f"{role}@smokestack.local",
