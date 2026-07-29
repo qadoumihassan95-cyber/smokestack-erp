@@ -87,12 +87,14 @@ def rules(tool_name, data, user):
         rows = data.get("rows") or []
         if len(rows) > 1 and rows[0]["sales"] and rows[-1]["sales"] is not None:
             best, worst = rows[0], rows[-1]
+            best_lbl = best.get("branch_label") or best["branch"]
+            worst_lbl = worst.get("branch_label") or worst["branch"]
             if worst["sales"] == 0:
                 out.append({"level": "critical",
-                            "text": f"{worst['branch']} posted no sales this period."})
+                            "text": f"{worst_lbl} posted no sales this period."})
             elif best["sales"] >= worst["sales"] * 2:
                 out.append({"level": "warning",
-                            "text": (f"{best['branch']} is outselling {worst['branch']} "
+                            "text": (f"{best_lbl} is outselling {worst_lbl} "
                                      f"by more than 2×.")})
     elif tool_name == "approvals.pending":
         if data.get("count"):
@@ -120,8 +122,10 @@ def summarise(tool_name, data):
         rows = data.get("rows") or []
         if not rows:
             return "No branch data for this period."
-        return (f"{data['best']} leads with {_fmt(rows[0]['sales'])}; "
-                f"{data['weakest']} is lowest at {_fmt(rows[-1]['sales'])}.")
+        best = data.get("best_label") or data.get("best")
+        weakest = data.get("weakest_label") or data.get("weakest")
+        return (f"{best} leads with {_fmt(rows[0]['sales'])}; "
+                f"{weakest} is lowest at {_fmt(rows[-1]['sales'])}.")
     if tool_name == "inventory.low_stock":
         c = data.get("counts", {})
         return f"{c.get('out',0)} out of stock, {c.get('low',0)} below minimum."

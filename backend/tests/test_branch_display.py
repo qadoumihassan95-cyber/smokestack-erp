@@ -90,3 +90,40 @@ def test_missing_display_name_falls_back_to_key():
             db.rollback()                                                 # never persist the clear
         finally:
             db.close()
+
+
+def test_assistant_sales_by_branch_sentence_uses_business_names():
+    """The assistant's per-branch answer keeps internal keys in `branch`/`best`/`weakest`
+    but exposes business names in `*_label`, and the composed sentence never leaks a key."""
+    from app.assistant import tools as T, engine as E
+    with TestClient(app):
+        db = SessionLocal()
+        try:
+            user = db.get(models.User, "U-owner")
+            data = T.run("sales.by_branch", db, user, period_kind="year")
+            for row in data["rows"]:
+                assert row["branch"] in EXPECTED                        # internal key preserved
+                assert row["branch_label"] == EXPECTED[row["branch"]]   # label applied
+            assert data["best"] in EXPECTED
+            assert data["best_label"] == EXPECTED[data["best"]]
+            sentence = E.summarise("sales.by_branch", data)
+            assert "Store " not in sentence                             # no raw key in prose
+            assert data["best_label"] in sentence                       # business name shown
+        finally:
+            db.close()
+
+
+def test_assistant_global_search_subtitle_shows_business_name():
+    """Search cards show the store's business name, not the internal key (seed: Sam Rivera @ Store A)."""
+    from app.assistant import tools as T
+    with TestClient(app):
+        db = SessionLocal()
+        try:
+            user = db.get(models.User, "U-owner")
+            data = T.run("search.global", db, user, q="Rivera")
+            subtitles = [r["subtitle"] for g in data["groups"] for r in g["rows"]]
+            joined = " | ".join(subtitles)
+            assert "GM Tobacco Duncanville" in joined                   # label present
+            assert "Store A" not in joined                              # key not leaked
+        finally:
+            db.close()

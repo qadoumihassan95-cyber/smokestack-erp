@@ -142,15 +142,22 @@ def sales_summary(db, user, period_kind="today", branch=None, **_):
 def sales_by_branch(db, user, period_kind="month", **_):
     brs = scope(db, user)
     d0, d1, label = period(period_kind, db)
+    labels = S.branch_labels(db)          # internal key -> human label (display-only)
     rows = []
     for b in brs:
         cp = C._costs_profit(db, [b], d0, d1)
-        rows.append({"branch": b, "sales": money(cp["revenue"]),
+        # `branch` stays the internal key (used for drill-down/relations); `branch_label`
+        # is the human name shown in assistant sentences and Telegram answers.
+        rows.append({"branch": b, "branch_label": labels.get(b, b),
+                     "sales": money(cp["revenue"]),
                      "profit": money(cp["profit"]) if P.can(user.role, "view_profit") else None})
     rows.sort(key=lambda r: r["sales"] or 0, reverse=True)
+    best = rows[0]["branch"] if rows else None
+    weakest = rows[-1]["branch"] if rows else None
     return {"period": label, "rows": rows,
-            "best": rows[0]["branch"] if rows else None,
-            "weakest": rows[-1]["branch"] if rows else None,
+            "best": best, "weakest": weakest,
+            "best_label": labels.get(best, best) if best else None,
+            "weakest_label": labels.get(weakest, weakest) if weakest else None,
             "explain": {"steps": [f"Ranked {len(rows)} branch(es) by sales for {label}"],
                         "engine": "routers.core._costs_profit per branch"}}
 
@@ -462,6 +469,7 @@ def search_global(db, user, q="", **_):
         raise ToolError("Type at least two characters to search.")
     brs = scope(db, user)
     like = f"%{q.lower()}%"
+    blabel = S.branch_labels(db)          # internal key -> human label (display-only)
     groups = []
 
     prods = (db.query(models.Product)
@@ -484,7 +492,7 @@ def search_global(db, user, q="", **_):
                     func.lower(models.Employee.name).like(like)).limit(6).all())
     if emps:
         groups.append({"group": "Employees", "rows": [
-            {"title": e.name, "subtitle": f"{e.title or 'Staff'} · {e.branch}",
+            {"title": e.name, "subtitle": f"{e.title or 'Staff'} · {blabel.get(e.branch, e.branch)}",
              "view": "workhours", "ref": e.id} for e in emps]})
 
     custs = (db.query(models.Customer)
@@ -510,7 +518,7 @@ def search_global(db, user, q="", **_):
     if purch:
         groups.append({"group": "Purchases", "rows": [
             {"title": f"{p.vendor} — {money(p.amount):,.2f}",
-             "subtitle": f"{p.branch} · {p.status}", "view": "purchases", "ref": p.id}
+             "subtitle": f"{blabel.get(p.branch, p.branch)} · {p.status}", "view": "purchases", "ref": p.id}
             for p in purch]})
 
     if P.can(user.role, "view_all_branches"):
@@ -519,7 +527,7 @@ def search_global(db, user, q="", **_):
                         func.lower(models.License.name).like(like)).limit(5).all())
         if lics:
             groups.append({"group": "Licenses", "rows": [
-                {"title": l.name, "subtitle": f"{l.branch} · expires {l.expiry_date}",
+                {"title": l.name, "subtitle": f"{blabel.get(l.branch, l.branch)} · expires {l.expiry_date}",
                  "view": "licenses", "ref": str(l.id)} for l in lics]})
 
     total = sum(len(g["rows"]) for g in groups)
