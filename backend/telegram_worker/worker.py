@@ -2140,6 +2140,22 @@ async def reminder_tick(bot):
             await _send_reminder(bot, job["tg_id"], job.get("message") or "", job["idem_key"])
 
 
+async def noactivity_tick(bot):
+    """One pass of the No-Activity Alert scanner.
+
+    The server reconciles incidents (opens new inactivity incidents, auto-resolves
+    ones that regained activity) and returns any Telegram messages that are due.
+    Idempotency is enforced server-side by the reminder_deliveries ledger, so the
+    60s cadence never double-sends: a re-scan of the same incident returns nothing
+    to send. Delivery reuses the same send+complete primitive as reminders."""
+    st_, res = await _req("POST", "/api/telegram/noactivity/scan",
+                          headers={"X-Bot-Token": TOKEN})
+    if st_ == 200 and res:
+        for job in res.get("queued", []):
+            log.info("sending no-activity alert to %s", job["tg_id"])
+            await _send_reminder(bot, job["tg_id"], job.get("message") or "", job["idem_key"])
+
+
 async def _send_schedule(bot, tg_id, text, idem_key):
     """Deliver one work-schedule message with backoff, then log the outcome."""
     ok, err, mid = False, None, ""
@@ -2204,6 +2220,8 @@ async def report_scheduler(bot):
             await reminder_tick(bot)
             # work-schedule deliveries share it too
             await schedule_tick(bot)
+            # no-activity alerts share it too (detection + owner/accountant notify)
+            await noactivity_tick(bot)
         except Exception as e:  # noqa: BLE001
             log.warning("report scheduler tick failed: %s", e)
         await asyncio.sleep(60)

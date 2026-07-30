@@ -1,9 +1,11 @@
-from fastapi import APIRouter, Depends
+import json
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from ..database import get_db
-from .. import models, security as S, permissions as P
+from .. import models, security as S, permissions as P, noactivity as NA
+from ..reports_tg import company_tz
 
 router = APIRouter(prefix="/api", tags=["core"])
 
@@ -315,3 +317,107 @@ def comparisons(branch: str = "all", db: Session = Depends(get_db),
                          "disclaimer": "Calculated forecast, not a guaranteed figure."},
             "history": [round(h, 2) for h in hist],
             "recommendations": recs}
+
+
+# =========================================================================
+# NO-ACTIVITY ALERT — read-only dashboard feed + acknowledgement + per-branch
+# config. Detection/telegram is worker-driven (see routers/telegram.py scan);
+# these endpoints only surface incident state the user is authorized to see and
+# let an operator acknowledge (which stops reminders but never resolves).
+# =========================================================================
+
+@router.get("/reports/no-activity-alerts")
+def no_activity_alerts(branch: str = "all", db: Session = Depends(get_db),
+                       user: models.User = Depends(S.require("view"))):
+    """Active (open|acknowledged) inactivity incidents for branches the caller may
+    see. RBAC: strictly intersected with the user's branch scope."""
+    brs = S.scope_branches(user, db) if branch == "all" else [branch]
+    if branch != "all":
+        brs = [b for b in brs if b in S.scope_branches(user, db)]
+    incidents = (db.query(models.NoActivityIncident)
+                 .filter(models.NoActivityIncident.status.in_(NA.ACTIVE_INCIDENT_STATES),
+                         models.NoActivityIncident.branch.in_(brs))
+                 .order_by(models.NoActivityIncident.opened_at.asc()).all())
+    now = datetime.now(timezone.utc)
+    items = NA.public_view(db, incidents, now, company_tz(db))
+    return {"count": len(items), "items": items,
+            "default_threshold_hours": NA.DEFAULT_THRESHOLD_HOURS}
+
+
+@router.post("/reports/no-activity-alerts/{branch}/acknowledge")
+def acknowledge_no_activity(branch: str, db: Session = Depends(get_db),
+                            user: models.User = Depends(S.require("view"))):
+    """Acknowledge a branch's inactivity incident: stops repeat Telegram reminders
+    but does NOT mark the problem resolved (only new activity auto-resolves it)."""
+    S.assert_branch(user, db, branch)
+    inc = (db.query(models.NoActivityIncident)
+           .filter(models.NoActivityIncident.branch == branch,
+                   models.NoActivityIncident.status.in_(NA.ACTIVE_INCIDENT_STATES))
+           .order_by(models.NoActivityIncident.id.desc()).first())
+    if not inc:
+        raise HTTPException(404, "No active inactivity incident for this branch")
+    if inc.status != "acknowledged":
+        inc.status = "acknowledged"
+        inc.acknowledged_by = user.id
+        inc.acknowledged_at = datetime.now(timezone.utc)
+        db.commit()
+        S.audit(db, user, "no_activity_acknowledged", "branch", branch,
+                detail=f"incident={inc.id} still-inactive (not resolved)")
+    return {"ok": True, "branch": branch, "branch_display": S.branch_label(db, branch),
+            "status": inc.status, "acknowledged_by": inc.acknowledged_by}
+
+
+@router.get("/branches/{branch}/inactivity-config")
+def get_inactivity_config(branch: str, db: Session = Depends(get_db),
+                          user: models.User = Depends(S.require("view"))):
+    """Per-branch operating schedule + alert config. Reports schedule_source so a
+    caller can see whether the documented safe default is in effect."""
+    S.assert_branch(user, db, branch)
+    b = db.get(models.Branch, branch)
+    if not b:
+        raise HTTPException(404, "Unknown branch")
+    open_hm, close_hm, days, threshold, source = NA.branch_schedule(b)
+    return {
+        "branch": branch, "branch_display": S.branch_label(db, branch),
+        "alert_enabled": bool(b.inactivity_alert_enabled if b.inactivity_alert_enabled is not None else True),
+        "threshold_hours": threshold,
+        "open_time": b.open_time or NA.DEFAULT_OPEN,
+        "close_time": b.close_time or NA.DEFAULT_CLOSE,
+        "open_days": sorted(days),
+        "schedule_source": source,
+        "timezone": company_tz(db),
+        "defaults": {"open_time": NA.DEFAULT_OPEN, "close_time": NA.DEFAULT_CLOSE,
+                     "open_days": NA.DEFAULT_DAYS, "threshold_hours": NA.DEFAULT_THRESHOLD_HOURS},
+    }
+
+
+@router.put("/branches/{branch}/inactivity-config")
+def set_inactivity_config(branch: str, body: dict, db: Session = Depends(get_db),
+                          user: models.User = Depends(S.require("manage_branches"))):
+    """Update a branch's alert config. Display-safe: never touches the branch key or
+    any relationship — only the additive schedule/alert columns."""
+    S.assert_branch(user, db, branch)
+    b = db.get(models.Branch, branch)
+    if not b:
+        raise HTTPException(404, "Unknown branch")
+    if "alert_enabled" in body:
+        b.inactivity_alert_enabled = bool(body["alert_enabled"])
+    if body.get("threshold_hours") is not None:
+        th = int(body["threshold_hours"])
+        if not (1 <= th <= 168):
+            raise HTTPException(422, "threshold_hours must be 1..168")
+        b.inactivity_threshold_hours = th
+    if "open_time" in body:
+        b.open_time = str(body["open_time"])[:5] or None
+    if "close_time" in body:
+        b.close_time = str(body["close_time"])[:5] or None
+    if "open_days" in body:
+        days = body["open_days"]
+        if not isinstance(days, list) or any(int(d) not in range(7) for d in days):
+            raise HTTPException(422, "open_days must be a list of weekdays 0..6")
+        b.open_days = json.dumps(sorted({int(d) for d in days}))
+    db.commit()
+    S.audit(db, user, "set_inactivity_config", "branch", branch,
+            detail=f"enabled={b.inactivity_alert_enabled} threshold={b.inactivity_threshold_hours} "
+                   f"hours={b.open_time}-{b.close_time} days={b.open_days}")
+    return get_inactivity_config(branch, db, user)
