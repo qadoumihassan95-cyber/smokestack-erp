@@ -18,7 +18,9 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..config import settings
 from .. import models, security as S, permissions as P, tg_caps as C
+from .. import noactivity as NA
 from ..schemas import LinkVerifyIn
+import os
 
 router = APIRouter(prefix="/api/telegram", tags=["telegram"])
 
@@ -1190,3 +1192,91 @@ def reminder_complete(body: dict, x_bot_token: str = Header(None), db: Session =
                            branch=None, ip="telegram"))
     db.commit()
     return {"ok": True, "status": row.status}
+
+
+# -------------------------------------------------------------------------
+# NO-ACTIVITY ALERT — worker scan. Reuses the reminder_deliveries ledger for
+# idempotent Telegram (kind='noactivity'), the shared /reminders/complete for
+# outcome logging, and the worker's existing send primitive. Called once per
+# 60s worker cycle; server-side dedup guarantees one initial message per
+# incident and at most one reminder per 24h.
+# -------------------------------------------------------------------------
+
+APP_URL = os.environ.get("SMOKESTACK_APP_URL", "https://smokestack-erp.onrender.com")
+
+
+@router.post("/noactivity/scan")
+def noactivity_scan(x_bot_token: str = Header(None), db: Session = Depends(get_db)):
+    """Reconcile inactivity incidents across all branches and queue any due Telegram
+    alerts (initial + optional 24h reminders) to the authorized owner + accountant.
+    Returns the queued rows for the worker to deliver; sending is idempotent."""
+    if not settings.bot_token or x_bot_token != settings.bot_token:
+        raise HTTPException(403, "Forbidden")
+    now = datetime.now(timezone.utc)
+    tzname = R.company_tz(db)
+    branches = db.query(models.Branch).all()
+    active = NA.reconcile(db, branches, now, tzname)   # opens/resolves incidents (idempotent)
+
+    recipients = NA.resolve_alert_recipients(db)       # owner + accountant, linked & active
+    labels = {b.name: (b.display_name or b.name) for b in branches}
+    queued = []
+    opened = reminded = 0
+
+    for inc in active:
+        if inc.status == "acknowledged":
+            # Acknowledgement stops repeat notifications (but the incident stays open).
+            continue
+        display = labels.get(inc.branch, inc.branch)
+        state = {"business_hours_idle": float(inc.business_hours_idle or 0),
+                 "threshold_hours": inc.threshold_hours,
+                 "last_activity_at": inc.last_activity_at,
+                 "last_activity_type": inc.last_activity_type,
+                 "last_activity_by": inc.last_activity_by}
+
+        # 1) Initial notification — once per incident (notified_at guard + UNIQUE idem_key).
+        if inc.notified_at is None:
+            body = NA.render_message(display, state, APP_URL, reminder=False)
+            any_q = False
+            for r in recipients:
+                key = f"noactivity|{inc.id}|initial|{r['tg_id']}"
+                row = _reminder_row(db, key, run_at=now, kind="noactivity", tg_id=r["tg_id"],
+                                    recipient=r["name"], message=body, status="queued")
+                if row:
+                    queued.append({"idem_key": key, "tg_id": r["tg_id"], "message": body})
+                    any_q = True
+            inc.notified_at = now
+            db.commit()
+            if any_q:
+                opened += 1
+                db.add(models.AuditLog(source="SYSTEM", action="no_activity_notified",
+                                       entity="branch", ref=inc.branch,
+                                       detail=f"incident={inc.id} recipients={len(recipients)}",
+                                       result="ok"))
+                db.commit()
+
+        # 2) Optional 24h reminder while inactivity continues (open, not acknowledged).
+        #    Measured from the LAST notification (initial or prior reminder) so a
+        #    reminder never fires on the cycle right after the initial message.
+        elif (now - NA._aware(inc.last_reminder_at or inc.notified_at)
+              ) >= timedelta(hours=NA.REMINDER_INTERVAL_HOURS):
+            body = NA.render_message(display, state, APP_URL, reminder=True)
+            stamp = now.strftime("%Y%m%d")
+            any_q = False
+            for r in recipients:
+                key = f"noactivity|{inc.id}|reminder|{stamp}|{r['tg_id']}"
+                row = _reminder_row(db, key, run_at=now, kind="noactivity", tg_id=r["tg_id"],
+                                    recipient=r["name"], message=body, status="queued")
+                if row:
+                    queued.append({"idem_key": key, "tg_id": r["tg_id"], "message": body})
+                    any_q = True
+            if any_q:
+                inc.last_reminder_at = now
+                reminded += 1
+                db.add(models.AuditLog(source="SYSTEM", action="no_activity_reminder",
+                                       entity="branch", ref=inc.branch,
+                                       detail=f"incident={inc.id}", result="ok"))
+                db.commit()
+
+    return {"scanned": True, "active_incidents": len(active),
+            "opened": opened, "reminded": reminded,
+            "recipients": len(recipients), "queued": queued}

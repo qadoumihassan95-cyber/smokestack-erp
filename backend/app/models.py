@@ -20,6 +20,14 @@ class Branch(Base):
     grace_min = Column(Integer, default=10)
     allow_override = Column(Boolean, default=True)
     attendance_active = Column(Boolean, default=True)
+    # --- No-Activity Alert: per-branch operating schedule + alert config (additive & nullable).
+    # When open_time/close_time/open_days are NULL the app uses a DOCUMENTED SAFE DEFAULT
+    # (08:00–22:00, Mon–Sat) and reports schedule_source="default". Keys/relations untouched.
+    open_time = Column(String, nullable=True)                  # "HH:MM" local business open
+    close_time = Column(String, nullable=True)                 # "HH:MM" local business close
+    open_days = Column(Text, nullable=True)                    # JSON list of weekdays 0=Mon..6=Sun
+    inactivity_alert_enabled = Column(Boolean, default=True)   # per-branch on/off for the alert
+    inactivity_threshold_hours = Column(Integer, default=12)   # business-hours threshold (default 12)
 
 
 class Attendance(Base):
@@ -763,3 +771,36 @@ class PolicyOverride(Base):
     active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     expires_at = Column(DateTime(timezone=True))
+
+
+class NoActivityIncident(Base):
+    """One open incident per branch while it has recorded NO meaningful activity for
+    >= its business-hours threshold. Meaningful = sales/expenses/purchases/payroll
+    (Ledger), inventory movements (Movement), attendance (Attendance). NOT logins,
+    views, searches or settings. Lifecycle: open -> (acknowledged) -> resolved.
+
+    Acknowledgement STOPS repeat Telegram reminders but never marks the inactivity
+    resolved — only new meaningful activity auto-resolves it. Telegram idempotency
+    is enforced by the shared reminder_deliveries ledger (idem_key
+    `noactivity|<incident_id>|initial|<tg_id>` / `...|reminder|<YYYYMMDD>|<tg_id>`),
+    so a restart or a second worker instance can never double-send.
+    """
+    __tablename__ = "no_activity_incidents"
+    company_id = Column(Integer, index=True, nullable=True, server_default="1")
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    branch = Column(String, index=True)                        # INTERNAL branch key (never the label)
+    status = Column(String, default="open", index=True)        # open | acknowledged | resolved
+    threshold_hours = Column(Integer)                          # branch threshold at open time
+    business_hours_idle = Column(Numeric(7, 2))                # business hours since last activity
+    schedule_source = Column(String)                           # configured | default
+    last_activity_at = Column(DateTime(timezone=True))         # UTC; NULL if the branch never had any
+    last_activity_type = Column(String)                        # sale|expense|purchase|payroll|movement|attendance
+    last_activity_by = Column(String)                          # user/employee who recorded it, when known
+    opened_at = Column(DateTime(timezone=True), server_default=func.now())
+    notified_at = Column(DateTime(timezone=True))              # initial Telegram queued (dedup guard)
+    last_reminder_at = Column(DateTime(timezone=True))         # last 24h reminder queued
+    acknowledged_at = Column(DateTime(timezone=True))
+    acknowledged_by = Column(String)
+    resolved_at = Column(DateTime(timezone=True))
+    resolved_activity_type = Column(String)                    # the activity that cleared it
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
