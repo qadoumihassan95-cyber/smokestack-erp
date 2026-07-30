@@ -258,7 +258,7 @@ NAV = {
     "tax":        ["sales tax", "tax", "ضريبه", "الضريبه"],
     "payroll":    ["payroll page", "صفحة الرواتب"],
     "attendance": ["attendance page", "صفحة الحضور"],
-    "workhours":  ["work hours", "ساعات العمل"],
+    "workhours":  ["employee schedule", "work hours", "ساعات العمل"],
     "licenses":   ["licenses page", "صفحة الرخص"],
     "telegram":   ["telegram", "تلجرام", "تليجرام"],
     "settings":   ["settings", "الاعدادات", "اعدادات"],

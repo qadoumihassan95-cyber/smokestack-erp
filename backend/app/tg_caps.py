@@ -23,7 +23,7 @@ CAPABILITIES = [
     ("reports",        "Reports",                   ["view"]),
     ("dashboard",      "Dashboard",                 ["view"]),
     ("attendance",     "Attendance",                ["view"]),
-    ("work_hours",     "Work Hours",                ["view"]),
+    ("work_hours",     "Employee Schedule",         ["view"]),
     ("payroll",        "Payroll",                   ["view_payroll"]),
     ("control_center", "Financial Control Center",  ["view_all_branches"]),
     ("assistant",      "AI Business Assistant",     ["view"]),
