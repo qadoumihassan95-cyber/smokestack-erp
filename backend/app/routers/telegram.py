@@ -10,6 +10,7 @@ Telegram bot (unauthenticated, uses a one-time code):
     POST /api/telegram/link/verify -> redeem a code and bind the Telegram id
     GET  /api/telegram/session/{tg_id} -> resolve a Telegram id to an ERP user (touches activity)
 """
+import hmac
 import secrets
 import json
 from datetime import datetime, timedelta, timezone
@@ -25,6 +26,22 @@ import os
 router = APIRouter(prefix="/api/telegram", tags=["telegram"])
 
 CODE_TTL_SECONDS = 300  # 5 minutes
+
+
+def _require_bot_token(x_bot_token) -> None:
+    """Fail-closed bot-to-API authentication.
+
+    Only the Telegram worker (which holds the BotFather token, shared with the
+    API as TELEGRAM_BOT_TOKEN) may call bot-facing endpoints. Fails closed when
+    the server-side token is unset, and uses a constant-time comparison so the
+    check leaks no timing information about the secret. Raises a bare 403 with no
+    body detail — callers learn only "forbidden", never anything about the token
+    or about whether any resource exists.
+    """
+    server = settings.bot_token or ""
+    provided = x_bot_token or ""
+    if not server or not hmac.compare_digest(str(provided), str(server)):
+        raise HTTPException(403, "Forbidden")
 
 DEFAULT_PREFS = {
     "daily_summary": True, "weekly_summary": True, "low_stock": True, "out_of_stock": True,
@@ -259,9 +276,16 @@ def verify(body: LinkVerifyIn, db: Session = Depends(get_db)):
 
 
 @router.get("/session/{tg_id}")
-def session(tg_id: str, db: Session = Depends(get_db)):
+def session(tg_id: str, x_bot_token: str = Header(None), db: Session = Depends(get_db)):
     """Resolve a Telegram id to its ERP user + link metadata (used by the bot's /me).
-    Returns the full linked profile so the bot doesn't have to duplicate any logic."""
+    Returns the full linked profile so the bot doesn't have to duplicate any logic.
+
+    SECURITY: bot-only, same fail-closed auth as /auth-token and the other
+    bot-facing endpoints. The token is checked BEFORE any database lookup, so an
+    unauthenticated caller receives an identical bare 403 whether or not the
+    tg_id exists — no user identity, role, branch scope, or existence signal is
+    ever disclosed anonymously."""
+    _require_bot_token(x_bot_token)
     link = db.get(models.TelegramLink, (tg_id or "").strip())
     if not link:
         return {"linked": False}

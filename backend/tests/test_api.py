@@ -147,7 +147,11 @@ def test_telegram_link_flow():
         assert ok.status_code == 200 and ok.json()["user"]["role"] == "owner"
         # one-time: reuse fails
         assert client.post("/api/telegram/link/verify", json={"tg_id": "222", "code": code}).status_code == 400
-        assert client.get("/api/telegram/session/111").json()["linked"] is True
+        # session is bot-only: supply the shared bot secret
+        from app.config import settings as _s
+        _s.bot_token = _s.bot_token or "test-bot-token"
+        assert client.get("/api/telegram/session/111",
+                          headers={"X-Bot-Token": _s.bot_token}).json()["linked"] is True
 
 def test_audit_log_written():
     with TestClient(app):

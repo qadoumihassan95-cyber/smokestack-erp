@@ -30,4 +30,6 @@ services:
       - key: CORS_ORIGINS
         value: https://smokestack-erp.onrender.com
       - key: SEED_ON_START
-        value: "true"          # set to "false" after first boot in production
+        value: "false"         # SECURITY: production must never seed demo/default accounts.
+                               # The DB is already seeded; the code also defaults this to
+                               # false for non-SQLite (prod) stores as a second safety net.
