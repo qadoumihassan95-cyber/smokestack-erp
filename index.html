@@ -876,6 +876,7 @@
       <a data-v="telegram"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 3L2.5 10.3l6.2 2.4L11.5 20 15 13.7 21 3z"/><path d="M8.7 12.7L21 3"/></svg></span>Telegram</a>
       <a data-v="chat"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg></span>Team Chat <span id="chatNavBadge" class="pill" style="display:none;margin-left:auto;background:var(--bad,#c0392b);color:#fff;font-size:10px;padding:1px 7px"></span></a>
       <a data-v="settings"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v2.6M12 18.9v2.6M4.6 4.6l1.9 1.9M17.5 17.5l1.9 1.9M2.5 12h2.6M18.9 12h2.6M4.6 19.4l1.9-1.9M17.5 6.5l1.9-1.9"/></svg></span>Settings</a>
+      <a data-v="users" id="navUsers" style="display:none"><span class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>User Management</a>
     </nav>
     <div class="foot">pfs</div>
   </aside>
@@ -1101,6 +1102,13 @@
       </div>
       <div class="card" style="margin-top:13px"><h3>What changed in V1</h3>
         <div style="font-size:13px;color:var(--muted);line-height:1.8">Removed for simplicity: Average Basket, Average Margin, Customer Management, Loyalty. The system is now accounting-first: sales, expenses, purchases, tax, payroll, reports and inventory — driven by the Business Assistant and Telegram.</div></div>
+    </section>
+    <!-- USER MANAGEMENT (Owner only; server-enforced via manage_users) -->
+    <section class="view" id="v-users">
+      <div class="top"><div><h1>User Management</h1><div class="sub">Owner-only. Create logins, assign roles &amp; branches, activate/deactivate, and reset passwords. All actions are enforced on the server.</div></div>
+        <div><button class="btn p" id="usrAddBtn" type="button">+ Add user</button></div></div>
+      <div id="usrGuard" style="display:none"><div class="card"><h3>Owner access required</h3><div style="font-size:13px;color:var(--muted);line-height:1.7">Only an Owner can manage user accounts. If you believe you should have access, contact your Owner.</div></div></div>
+      <div class="card" id="usrCard"><h3>Accounts</h3><div style="overflow:auto"><table id="usrTbl"><thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Branches</th><th>Status</th><th style="text-align:right">Actions</th></tr></thead><tbody id="usrRows"><tr><td colspan="6" style="color:var(--muted)">Loading…</td></tr></tbody></table></div></div>
     </section>
     <!-- INVENTORY -->
     <section class="view" id="v-inventory">
@@ -5030,6 +5038,10 @@ try{ empMigrate(); payRestore(); invDateRestore();
       {method:'POST',body:{current_password:cur,new_password:nw}});},
     listUsers:function(){return call('/api/users');},
     createUser:function(b){return call('/api/users',{method:'POST',body:b});},
+    updateUser:function(id,b){return call('/api/users/'+encodeURIComponent(id),{method:'PUT',body:b});},
+    activateUser:function(id){return call('/api/users/'+encodeURIComponent(id)+'/activate',{method:'POST'});},
+    deactivateUser:function(id){return call('/api/users/'+encodeURIComponent(id)+'/deactivate',{method:'POST'});},
+    resetUserPassword:function(id){return call('/api/users/'+encodeURIComponent(id)+'/reset-password',{method:'POST'});},
     // --- Team Chat (internal messaging, short-polled) ---
     chatRooms:function(){return call('/api/chat/rooms');},
     chatCreateRoom:function(b){return call('/api/chat/rooms',{method:'POST',body:b});},
@@ -8290,6 +8302,138 @@ try{ empMigrate(); payRestore(); invDateRestore();
     try{ var cur=document.querySelector('.view.on'); if(cur&&cur.id==='v-chat') boot(); }catch(e){} });
 })();
 
+</script>
+<script>
+/* ===== Owner-only User Management (live API; server enforces manage_users) =====
+   Talks only to SS_API_LIVE. The stored password is a hash and is never fetched;
+   only a freshly generated one-time password is shown, once, on create/reset. */
+(function(){
+  if(!window.SS_API_LIVE) return;                 // demo/no-API mode: nothing to manage
+  var API=window.SS_API_LIVE;
+  var ROLES=['owner','admin','accountant','branch_manager','manager','inventory_manager','cashier','employee'];
+  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+  function branchesList(){ return (window.STORES&&STORES.length)?STORES.slice():['Store A','Store B','Store C']; }
+  function label(k){ return (typeof storeLabel==='function')?storeLabel(k):k; }
+  function isOwner(){ return !!(window.ROLE && ROLE.kind==='owner'); }
+  function tt(m){ if(typeof toast==='function')toast(m); }
+
+  function syncNav(){ var el=document.getElementById('navUsers'); if(el) el.style.display=isOwner()?'':'none'; }
+
+  // ---- lightweight modal (self-contained; styled with existing tokens) ----
+  function modal(html){
+    var wrap=document.createElement('div');
+    wrap.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(15,20,30,.55);display:flex;align-items:center;justify-content:center;padding:18px';
+    wrap.innerHTML='<div class="card" style="max-width:520px;width:100%;max-height:88vh;overflow:auto">'+html+'</div>';
+    wrap.addEventListener('mousedown',function(e){ if(e.target===wrap) close(); });
+    function close(){ if(wrap.parentNode) wrap.parentNode.removeChild(wrap); document.removeEventListener('keydown',onKey); }
+    function onKey(e){ if(e.key==='Escape') close(); }
+    document.addEventListener('keydown',onKey);
+    document.body.appendChild(wrap);
+    return {el:wrap, close:close};
+  }
+  function branchChecks(sel){ sel=sel||[]; return branchesList().map(function(k){
+    return '<label style="display:inline-flex;align-items:center;gap:6px;margin:2px 10px 2px 0;font-size:13px"><input type="checkbox" class="usrBr" value="'+esc(k)+'"'+(sel.indexOf(k)>=0?' checked':'')+'> '+esc(label(k))+'</label>'; }).join(''); }
+  function roleOpts(cur){ return ROLES.map(function(r){ return '<option value="'+r+'"'+(r===cur?' selected':'')+'>'+r+'</option>'; }).join(''); }
+  function readChecks(root){ return Array.prototype.slice.call(root.querySelectorAll('.usrBr:checked')).map(function(c){return c.value;}); }
+
+  function showTempPassword(u){
+    var m=modal('<h3>Temporary password for '+esc(u.username)+'</h3>'
+      +'<div style="font-size:13px;color:var(--muted);line-height:1.6;margin:6px 0 10px">Share this with the user over a secure channel. They must change it at first sign-in. It is shown <b>once</b> and is never stored in readable form.</div>'
+      +'<div style="display:flex;gap:8px;align-items:center"><code id="usrTmpPw" style="flex:1;background:var(--bg2,#0d1420);color:var(--txt);padding:10px 12px;border-radius:8px;font-size:15px;letter-spacing:.5px;word-break:break-all">'+esc(u.temp_password)+'</code>'
+      +'<button class="btn g" id="usrCopyPw" type="button">Copy</button></div>'
+      +'<div style="text-align:right;margin-top:14px"><button class="btn p" id="usrTmpOk" type="button">Done</button></div>');
+    m.el.querySelector('#usrCopyPw').onclick=function(){ try{ navigator.clipboard.writeText(u.temp_password); tt('Copied'); }catch(e){ tt('Copy failed — select manually'); } };
+    m.el.querySelector('#usrTmpOk').onclick=m.close;
+  }
+
+  function addUserForm(){
+    var m=modal('<h3>Add user</h3>'
+      +'<label>Full name</label><input id="uaName" placeholder="e.g. Jane Owner">'
+      +'<label style="margin-top:8px">Username <span style="color:var(--muted2);font-weight:400">(optional — auto from name)</span></label><input id="uaUser" placeholder="e.g. jane.owner">'
+      +'<label style="margin-top:8px">Email <span style="color:var(--muted2);font-weight:400">(optional)</span></label><input id="uaEmail" type="email" placeholder="name@company.com">'
+      +'<label style="margin-top:8px">Role</label><select id="uaRole">'+roleOpts('owner')+'</select>'
+      +'<label style="margin-top:8px">Branches</label><div id="uaBr">'+branchChecks(branchesList())+'</div>'
+      +'<div id="uaErr" style="color:var(--bad);font-size:12.5px;margin-top:8px;display:none"></div>'
+      +'<div style="text-align:right;margin-top:14px"><button class="btn g" id="uaCancel" type="button">Cancel</button> <button class="btn p" id="uaSave" type="button">Create user</button></div>');
+    m.el.querySelector('#uaCancel').onclick=m.close;
+    m.el.querySelector('#uaSave').onclick=function(){
+      var name=m.el.querySelector('#uaName').value.trim();
+      var err=m.el.querySelector('#uaErr');
+      if(!name){ err.style.display='block'; err.textContent='A full name is required.'; return; }
+      var body={ name:name, role:m.el.querySelector('#uaRole').value,
+        branches:readChecks(m.el), username:(m.el.querySelector('#uaUser').value.trim()||undefined),
+        email:(m.el.querySelector('#uaEmail').value.trim()||undefined) };
+      m.el.querySelector('#uaSave').disabled=true;
+      API.createUser(body).then(function(u){ m.close(); render(); showTempPassword(u); })
+        .catch(function(e){ err.style.display='block'; err.textContent=apiMsg(e); m.el.querySelector('#uaSave').disabled=false; });
+    };
+  }
+
+  function editUserForm(u){
+    var m=modal('<h3>Edit '+esc(u.username)+'</h3>'
+      +'<label>Full name</label><input id="ueName" value="'+esc(u.name)+'">'
+      +'<label style="margin-top:8px">Role</label><select id="ueRole">'+roleOpts(u.role)+'</select>'
+      +'<label style="margin-top:8px">Branches</label><div id="ueBr">'+branchChecks(u.branches||[])+'</div>'
+      +'<div id="ueErr" style="color:var(--bad);font-size:12.5px;margin-top:8px;display:none"></div>'
+      +'<div style="text-align:right;margin-top:14px"><button class="btn g" id="ueCancel" type="button">Cancel</button> <button class="btn p" id="ueSave" type="button">Save changes</button></div>');
+    m.el.querySelector('#ueCancel').onclick=m.close;
+    m.el.querySelector('#ueSave').onclick=function(){
+      var err=m.el.querySelector('#ueErr');
+      var body={ name:m.el.querySelector('#ueName').value.trim(), role:m.el.querySelector('#ueRole').value, branches:readChecks(m.el) };
+      m.el.querySelector('#ueSave').disabled=true;
+      API.updateUser(u.username, body).then(function(){ m.close(); render(); tt('Saved'); })
+        .catch(function(e){ err.style.display='block'; err.textContent=apiMsg(e); m.el.querySelector('#ueSave').disabled=false; });
+    };
+  }
+
+  function apiMsg(e){ try{ return (e&&e.data&&e.data.detail)||(e&&e.message)||'Something went wrong.'; }catch(_e){ return 'Something went wrong.'; } }
+
+  function confirmThen(msg, fn){
+    var m=modal('<h3>Please confirm</h3><div style="font-size:13px;color:var(--muted);line-height:1.6;margin:6px 0 12px">'+esc(msg)+'</div>'
+      +'<div style="text-align:right"><button class="btn g" id="cfNo" type="button">Cancel</button> <button class="btn p" id="cfYes" type="button">Confirm</button></div>');
+    m.el.querySelector('#cfNo').onclick=m.close;
+    m.el.querySelector('#cfYes').onclick=function(){ m.close(); fn(); };
+  }
+
+  function rowHtml(u){
+    var br=(u.branches&&u.branches.length)?u.branches.map(label).join(', '):'<span style="color:var(--muted2)">all / none</span>';
+    var st=u.status==='active'?'<span class="chip ok">active</span>':'<span class="chip">'+esc(u.status||'inactive')+'</span>';
+    if(u.must_change_password) st+=' <span class="chip" title="Must change password at next sign-in">reset</span>';
+    var acts='<button class="btn g usrEdit" data-u="'+esc(u.username)+'" type="button">Edit</button>'
+      +' <button class="btn g usrReset" data-u="'+esc(u.username)+'" type="button">Reset&nbsp;pw</button>'
+      +(u.status==='active'
+          ? ' <button class="btn g usrDeact" data-u="'+esc(u.username)+'" type="button">Deactivate</button>'
+          : ' <button class="btn g usrAct" data-u="'+esc(u.username)+'" type="button">Activate</button>');
+    return '<tr><td><code>'+esc(u.username)+'</code></td><td>'+esc(u.name)+'</td><td>'+esc(u.role)+'</td><td>'+br+'</td><td>'+st+'</td><td style="text-align:right;white-space:nowrap">'+acts+'</td></tr>';
+  }
+
+  function render(){
+    var guard=document.getElementById('usrGuard'), card=document.getElementById('usrCard'),
+        rows=document.getElementById('usrRows'), addBtn=document.getElementById('usrAddBtn');
+    if(!rows) return;
+    API.listUsers().then(function(list){
+      if(guard)guard.style.display='none'; if(card)card.style.display=''; if(addBtn)addBtn.style.display='';
+      rows.innerHTML=(list&&list.length)?list.map(rowHtml).join(''):'<tr><td colspan="6" style="color:var(--muted)">No accounts.</td></tr>';
+      rows.querySelectorAll('.usrEdit').forEach(function(b){ b.onclick=function(){ var u=list.filter(function(x){return x.username===b.dataset.u;})[0]; if(u)editUserForm(u); }; });
+      rows.querySelectorAll('.usrReset').forEach(function(b){ b.onclick=function(){ confirmThen('Issue a new one-time password for '+b.dataset.u+'? Their current password stops working and they must set a new one at next sign-in.',function(){ API.resetUserPassword(b.dataset.u).then(function(u){ render(); showTempPassword(u); }).catch(function(e){ tt(apiMsg(e)); }); }); }; });
+      rows.querySelectorAll('.usrDeact').forEach(function(b){ b.onclick=function(){ confirmThen('Deactivate '+b.dataset.u+'? They will no longer be able to sign in (reversible).',function(){ API.deactivateUser(b.dataset.u).then(function(){ render(); tt('Deactivated'); }).catch(function(e){ tt(apiMsg(e)); }); }); }; });
+      rows.querySelectorAll('.usrAct').forEach(function(b){ b.onclick=function(){ API.activateUser(b.dataset.u).then(function(){ render(); tt('Activated'); }).catch(function(e){ tt(apiMsg(e)); }); }; });
+    }).catch(function(e){
+      // 403 (not owner) or other → show the guard, hide management surface
+      if(guard)guard.style.display=''; if(card)card.style.display='none'; if(addBtn)addBtn.style.display='none';
+    });
+  }
+
+  function init(){
+    var addBtn=document.getElementById('usrAddBtn'); if(addBtn) addBtn.onclick=addUserForm;
+    syncNav();
+    // reveal/refresh the nav on every navigation (role is known after login/hydrate)
+    if(typeof window.go==='function'){ var _go=window.go; window.go=function(v){ _go.apply(this,arguments); syncNav(); if(v==='users') render(); }; }
+    // catch post-login boot without requiring a click
+    var n=0, iv=setInterval(function(){ syncNav(); if(isOwner()||++n>40) clearInterval(iv); }, 750);
+  }
+  if(document.readyState!=='loading') init(); else document.addEventListener('DOMContentLoaded', init);
+})();
 </script>
 </body>
 </html>

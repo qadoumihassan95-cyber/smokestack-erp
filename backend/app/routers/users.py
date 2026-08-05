@@ -127,6 +127,119 @@ def create_user(body: dict, db: Session = Depends(get_db),
     return out
 
 
+def _active_owner_count(db, exclude=None):
+    """Login-capable, active Owners. Used to refuse any change that would leave
+    the system with zero — you can never lock everyone out of ownership."""
+    q = db.query(models.User).filter(
+        models.User.role == "owner",
+        models.User.status == "active",
+        models.User.can_login.is_(True))
+    if exclude:
+        q = q.filter(models.User.id != exclude)
+    return q.count()
+
+
+def _target(db, actor, username):
+    """Fetch the target account, scoped to the actor's company (never cross-tenant)."""
+    u = db.get(models.User, username)
+    if not u:
+        raise HTTPException(404, "User not found")
+    ac = getattr(actor, "company_id", None)
+    tc = getattr(u, "company_id", None)
+    if ac is not None and tc is not None and ac != tc:
+        raise HTTPException(404, "User not found")
+    return u
+
+
+@router.put("/users/{username}")
+def update_user(username: str, body: dict, db: Session = Depends(get_db),
+                actor: models.User = Depends(S.require("manage_users"))):
+    """Update an account's name, role and/or branch scope. Server-enforced:
+    role must be known, branches must exist and be held by the actor, and the
+    last active Owner can never be demoted."""
+    u = _target(db, actor, username)
+    body = body or {}
+
+    if "role" in body and body["role"] is not None:
+        role = str(body["role"]).strip()
+        if role not in P.PERMS:
+            raise HTTPException(422, f"Unknown role: {role}")
+        if u.role == "owner" and role != "owner" and _active_owner_count(db, exclude=u.id) == 0:
+            raise HTTPException(409, "Cannot change the role of the last active Owner.")
+        u.role = role
+
+    if "name" in body and body["name"] is not None:
+        name = str(body["name"]).strip()
+        if not name:
+            raise HTTPException(422, "Name cannot be empty.")
+        u.name = name
+
+    if "email" in body:
+        u.email = (body.get("email") or None)
+
+    if "branches" in body:
+        branches = body.get("branches") or []
+        if isinstance(branches, str):
+            branches = [branches]
+        known = set(S.all_branch_names(db))
+        for b in branches:
+            if b not in known:
+                raise HTTPException(422, f"Unknown branch: {b}")
+            S.assert_branch(actor, db, b)   # cannot grant a branch you don't hold
+        db.query(models.UserBranch).filter(models.UserBranch.user_id == u.id).delete()
+        for b in branches:
+            db.add(models.UserBranch(user_id=u.id, branch=b))
+
+    db.commit()
+    S.audit(db, actor, "update_user", "user", u.id,
+            detail=f"role={u.role} · branches={','.join(u.branch_names) or 'none'}")
+    return _user_out(db, u)
+
+
+@router.post("/users/{username}/deactivate")
+def deactivate_user(username: str, db: Session = Depends(get_db),
+                    actor: models.User = Depends(S.require("manage_users"))):
+    """Disable sign-in for an account. Refuses to disable your own account or the
+    last active Owner (prevents lockout). Reversible via /activate."""
+    u = _target(db, actor, username)
+    if u.id == actor.id:
+        raise HTTPException(409, "You cannot deactivate your own account.")
+    if (u.role == "owner" and u.status == "active" and u.can_login
+            and _active_owner_count(db, exclude=u.id) == 0):
+        raise HTTPException(409, "Cannot deactivate the last active Owner.")
+    u.status = "inactive"
+    db.commit()
+    S.audit(db, actor, "deactivate_user", "user", u.id)
+    return _user_out(db, u)
+
+
+@router.post("/users/{username}/activate")
+def activate_user(username: str, db: Session = Depends(get_db),
+                  actor: models.User = Depends(S.require("manage_users"))):
+    u = _target(db, actor, username)
+    u.status = "active"
+    db.commit()
+    S.audit(db, actor, "activate_user", "user", u.id)
+    return _user_out(db, u)
+
+
+@router.post("/users/{username}/reset-password")
+def reset_password(username: str, db: Session = Depends(get_db),
+                   actor: models.User = Depends(S.require("manage_users"))):
+    """Issue a NEW one-time password and force a change at next login. The stored
+    password is a hash and is never revealed; only the freshly generated
+    temporary password is returned, exactly once."""
+    u = _target(db, actor, username)
+    pw = temp_password()
+    u.password_hash = S.hash_pw(pw)
+    u.must_change_password = True
+    db.commit()
+    S.audit(db, actor, "reset_password", "user", u.id)
+    out = _user_out(db, u)
+    out["temp_password"] = pw     # shown once; never stored in plain text
+    return out
+
+
 @router.post("/auth/change-password")
 def change_password(body: dict, db: Session = Depends(get_db),
                     user: models.User = Depends(S.get_current_user)):
