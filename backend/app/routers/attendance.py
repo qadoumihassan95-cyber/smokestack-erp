@@ -359,3 +359,59 @@ def set_branch_attendance(name: str, body: dict, db: Session = Depends(get_db),
     S.audit(db, user, "update_branch_attendance", "branch", name,
             f"lat={b.lat} lng={b.lng} r={b.radius_m}")
     return _branch_att(b)
+
+
+# --------------------------------------------------------- evidence review (RBAC)
+# Managers/owners review the location + selfie captured at clock-in, ONLY for
+# branches within their scope. Selfies are served from these authenticated,
+# branch-scoped endpoints — never a public URL, never written to logs.
+from fastapi import Response  # noqa: E402
+
+REVIEW_ROLES = {"owner", "admin", "accountant", "branch_manager", "manager"}
+
+
+def _assert_can_review(user, db, branch):
+    if user.role not in REVIEW_ROLES:
+        raise HTTPException(403, "You are not permitted to review attendance evidence.")
+    if branch not in S.scope_branches(user, db):
+        raise HTTPException(403, "That branch is not within your scope.")
+
+
+def _evidence_out(db, ev):
+    return {"id": ev.id, "attempt_id": ev.attempt_id, "employee": ev.employee_name,
+            "branch": ev.branch, "branch_display": S.branch_label(db, ev.branch),
+            "status": ev.status, "attendance_id": ev.attendance_id,
+            "lat": float(ev.lat) if ev.lat is not None else None,
+            "lng": float(ev.lng) if ev.lng is not None else None,
+            "distance_m": ev.dist_m, "out_of_area": bool(ev.out_of_area),
+            "captured_at": _iso(ev.selfie_at or ev.loc_at),
+            "has_selfie": ev.selfie is not None,
+            "selfie_url": (f"/api/attendance/evidence/{ev.id}/selfie" if ev.selfie is not None else None),
+            "note": "Location + selfie are supporting evidence only; they do not prove identity."}
+
+
+@router.get("/{aid}/evidence")
+def attendance_evidence(aid: int, db: Session = Depends(get_db),
+                        user: models.User = Depends(S.require("view"))):
+    a = db.get(models.Attendance, aid)
+    if not a:
+        raise HTTPException(404, "Attendance record not found")
+    _assert_can_review(user, db, a.branch)
+    ev = (db.query(models.AttendanceEvidence)
+          .filter(models.AttendanceEvidence.attendance_id == aid).first())
+    if not ev:
+        return {"attendance_id": aid, "branch": a.branch, "has_evidence": False}
+    return {"attendance_id": aid, "has_evidence": True, **_evidence_out(db, ev)}
+
+
+@router.get("/evidence/{eid}/selfie")
+def attendance_selfie(eid: int, db: Session = Depends(get_db),
+                      user: models.User = Depends(S.require("view"))):
+    ev = db.get(models.AttendanceEvidence, eid)
+    if not ev or ev.selfie is None:
+        raise HTTPException(404, "Selfie not found")
+    _assert_can_review(user, db, ev.branch)
+    return Response(content=bytes(ev.selfie), media_type=(ev.selfie_mime or "image/jpeg"),
+                    headers={"Cache-Control": "private, no-store",
+                             "Content-Disposition": 'inline; filename="selfie.jpg"',
+                             "X-Content-Type-Options": "nosniff"})

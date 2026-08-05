@@ -1,7 +1,7 @@
 """SQLAlchemy models — one table per ERP module. The `movements` table is the
 immutable stock ledger used for history + as-of reporting."""
 from sqlalchemy import (Column, Integer, BigInteger, String, Numeric, Boolean,
-                        Date, DateTime, ForeignKey, Text, UniqueConstraint, func)
+                        Date, DateTime, ForeignKey, Text, LargeBinary, UniqueConstraint, func)
 from sqlalchemy.orm import relationship
 from .database import Base
 
@@ -446,6 +446,65 @@ class ChatAnnouncement(Base):
     created_by = Column(String)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     active = Column(Boolean, default=True)
+
+
+class ChatAttachment(Base):
+    """Durable image attachment for Team Chat. Bytes live in Postgres (not the
+    ephemeral filesystem, never a public URL, never base64 in the message JSON).
+    The stored bytes are the RE-ENCODED, metadata-stripped canonical image; a
+    small thumbnail is kept alongside. Served only via authenticated, membership-
+    and branch-scoped endpoints."""
+    __tablename__ = "chat_attachments"
+    company_id = Column(Integer, index=True, nullable=True, server_default="1")
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    message_id = Column(BigInteger, index=True)     # owning chat message
+    room_id = Column(BigInteger, index=True)        # denormalized for scope checks
+    uploader_id = Column(String, index=True)
+    kind = Column(String, default="image")          # image (only, for now)
+    mime = Column(String)                           # image/jpeg | image/png | image/webp
+    filename = Column(String)                       # sanitized display name only
+    size_bytes = Column(Integer)
+    width = Column(Integer)
+    height = Column(Integer)
+    sha256 = Column(String, index=True)             # of the stored (clean) bytes
+    data = Column(LargeBinary)                       # clean, re-encoded image
+    thumb = Column(LargeBinary)                      # small preview
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    deleted = Column(Boolean, default=False)
+
+
+class AttendanceEvidence(Base):
+    """One short-lived Telegram clock-in attempt binding a location + a freshly
+    captured selfie to an attendance record. The attempt expires quickly, is
+    single-use (consumed), and rejects reused locations/selfies/messages. The
+    selfie bytes live in Postgres and are served only via authenticated, branch-
+    scoped endpoints — never a public URL and never written to logs.
+
+    We do NOT claim GPS or a selfie proves identity or prevents spoofing; this is
+    supporting evidence, flagged when outside the configured geofence."""
+    __tablename__ = "attendance_evidence"
+    company_id = Column(Integer, index=True, nullable=True, server_default="1")
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    attempt_id = Column(String, unique=True, index=True)   # opaque per-attempt nonce
+    employee_id = Column(String, index=True)
+    employee_name = Column(String)
+    tg_id = Column(String, index=True)
+    branch = Column(String, index=True)
+    attendance_id = Column(BigInteger, index=True)         # set once clock-in completes
+    status = Column(String, default="pending_location")    # pending_location|pending_selfie|complete|expired|cancelled
+    # location
+    lat = Column(Numeric(10, 6)); lng = Column(Numeric(10, 6))
+    loc_msg_id = Column(String); loc_at = Column(DateTime(timezone=True))
+    dist_m = Column(Integer); out_of_area = Column(Boolean, default=False)
+    # selfie
+    selfie_msg_id = Column(String); selfie_file_id = Column(String)
+    selfie_mime = Column(String); selfie = Column(LargeBinary)
+    selfie_sha256 = Column(String); selfie_at = Column(DateTime(timezone=True))
+    # lifecycle
+    consumed = Column(Boolean, default=False)              # single-use guard
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    expires_at = Column(DateTime(timezone=True))
+    retain_until = Column(DateTime(timezone=True))         # selfie deletion horizon
 
 
 # =========================================================================

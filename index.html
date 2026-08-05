@@ -5035,6 +5035,24 @@ try{ empMigrate(); payRestore(); invDateRestore();
     chatCreateRoom:function(b){return call('/api/chat/rooms',{method:'POST',body:b});},
     chatMessages:function(id,before){return call('/api/chat/rooms/'+id+'/messages'+(before?('?before='+before):''));},
     chatSend:function(id,b){return call('/api/chat/rooms/'+id+'/messages',{method:'POST',body:b});},
+    /* Image attachment: multipart upload (XHR for progress), authenticated blob
+       fetch (no public URL), and delete. */
+    chatUpload:function(id,fileObj,caption,onProgress){
+      return new Promise(function(res,rej){
+        var fd=new FormData(); fd.append('file',fileObj); fd.append('caption',caption||'');
+        var xhr=new XMLHttpRequest();
+        xhr.open('POST', T.base+'/api/chat/rooms/'+id+'/attachments');
+        if(T.token)xhr.setRequestHeader('Authorization','Bearer '+T.token);
+        if(onProgress&&xhr.upload)xhr.upload.onprogress=function(e){if(e.lengthComputable)onProgress(e.loaded/e.total);};
+        xhr.onload=function(){ if(xhr.status>=200&&xhr.status<300){try{res(JSON.parse(xhr.responseText));}catch(_e){res(null);}}
+          else {var er;try{er=JSON.parse(xhr.responseText);}catch(_e){er={};} rej({status:xhr.status,data:er});} };
+        xhr.onerror=function(){rej({status:0,data:null});};
+        xhr.send(fd);
+      });
+    },
+    chatAttachmentBlob:function(url){ return fetch(T.base+url,{headers:(T.token?{'Authorization':'Bearer '+T.token}:{})})
+      .then(function(r){ if(!r.ok)throw {status:r.status}; return r.blob(); }); },
+    chatDeleteAttachment:function(aid){return call('/api/chat/attachments/'+aid,{method:'DELETE'});},
     chatPoll:function(id,after){return call('/api/chat/poll?room_id='+id+'&after='+(after||0));},
     chatReact:function(mid,e){return call('/api/chat/messages/'+mid+'/react',{method:'POST',body:{emoji:e}});},
     chatEdit:function(mid,b){return call('/api/chat/messages/'+mid,{method:'PATCH',body:{body:b}});},
@@ -7809,7 +7827,8 @@ try{ empMigrate(); payRestore(); invDateRestore();
    ========================================================================== */
 (function(){
   var api=function(){ return window.SS_API_LIVE; };
-  var C={rooms:[],room:null,msgs:[],lastId:0,poll:null,busy:false,replyTo:null,typingTimer:null,mounted:false};
+  var C={rooms:[],room:null,msgs:[],lastId:0,poll:null,busy:false,replyTo:null,typingTimer:null,mounted:false,pending:[]};
+  var ALLOWED_ATT_MIME={'image/jpeg':1,'image/png':1,'image/webp':1};
   function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){
     return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
   function say(m){ if(typeof toast==='function') toast(m); }
@@ -7841,9 +7860,12 @@ try{ empMigrate(); payRestore(); invDateRestore();
         +'<div id="chatTyping" style="height:18px;padding:1px 16px;font-size:11.5px;color:var(--muted)"></div>'
         +'<div id="chatCompose" style="padding:10px 12px;border-top:1px solid var(--line,#e2e6ea);display:none">'
           +'<div id="chatReplyBar"></div>'
+          +'<div id="chatAttPreview" style="display:none;gap:8px;flex-wrap:wrap;margin-bottom:7px"></div>'
           +'<div style="display:flex;gap:8px;align-items:flex-end">'
+            +'<button class="btn g" id="chatAttachBtn" title="Attach image (JPEG/PNG/WebP)" style="padding:8px 11px">🖼</button>'
+            +'<input type="file" id="chatAttachInput" accept="image/jpeg,image/png,image/webp" multiple style="display:none">'
             +'<button class="btn g" id="chatShareErp" title="Share an ERP record" style="padding:8px 11px">＋</button>'
-            +'<textarea id="chatInput" rows="1" placeholder="Message…  (@ to mention, Enter to send)" '
+            +'<textarea id="chatInput" rows="1" placeholder="Message…  (@ to mention, drag an image here, Enter to send)" '
               +'style="flex:1;resize:none;border:1px solid var(--line,#e2e6ea);border-radius:10px;padding:9px 11px;font-size:14px;font-family:inherit;max-height:120px"></textarea>'
             +'<button class="btn p" id="chatSendBtn" style="padding:9px 17px">Send</button></div></div>'
       +'</div></div>';
@@ -7851,6 +7873,17 @@ try{ empMigrate(); payRestore(); invDateRestore();
     document.getElementById('chatAnnBtn').onclick=announceDialog;
     document.getElementById('chatShareErp').onclick=shareErpDialog;
     document.getElementById('chatSendBtn').onclick=sendMsg;
+    var attBtn=document.getElementById('chatAttachBtn'), attInput=document.getElementById('chatAttachInput');
+    if(attBtn&&attInput){
+      attBtn.onclick=function(){ attInput.click(); };
+      attInput.onchange=function(){ stageFiles(attInput.files); attInput.value=''; };
+    }
+    var msgsDrop=document.getElementById('chatMsgs');
+    if(msgsDrop){
+      ['dragenter','dragover'].forEach(function(ev){ msgsDrop.addEventListener(ev,function(e){ e.preventDefault(); msgsDrop.style.outline='2px dashed var(--accent,#2f6fed)'; msgsDrop.style.outlineOffset='-6px'; }); });
+      ['dragleave','drop'].forEach(function(ev){ msgsDrop.addEventListener(ev,function(e){ e.preventDefault(); msgsDrop.style.outline=''; }); });
+      msgsDrop.addEventListener('drop',function(e){ if(e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files.length) stageFiles(e.dataTransfer.files); });
+    }
     var inp=document.getElementById('chatInput');
     inp.addEventListener('input',function(){ inp.style.height='auto'; inp.style.height=Math.min(inp.scrollHeight,120)+'px';
       if(C.room){ clearTimeout(C.typingTimer); C.typingTimer=setTimeout(function(){ api().chatTyping(C.room.id).catch(function(){}); },300); } });
@@ -7912,6 +7945,18 @@ try{ empMigrate(); payRestore(); invDateRestore();
     }
     var body=m.deleted? '<i style="color:var(--muted)">message deleted</i>'
       : esc(m.body).replace(/@([\w.]+)/g,'<b style="color:'+(mine?'#fff':'var(--accent,#2f6fed)')+'">@$1</b>');
+    var attHtml='';
+    if(!m.deleted && m.attachments && m.attachments.length){
+      attHtml='<div class="chatAtts" style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px">'
+       +m.attachments.map(function(a){
+          return '<div class="chatAtt" data-aid="'+a.id+'" style="position:relative;line-height:0">'
+            +'<img class="chatAttImg" data-thumb="'+esc(a.thumb_url)+'" data-full="'+esc(a.url)+'" alt="'+esc(a.filename||'image')+'" '
+              +'style="max-width:180px;max-height:180px;border-radius:9px;border:1px solid var(--line,#e2e6ea);cursor:pointer;display:block;background:var(--panel2,#eef1f4)">'
+            +((mine||window.__canDeleteChat)?'<span class="chatAttDel" data-aid="'+a.id+'" title="Delete image" '
+              +'style="position:absolute;top:3px;right:3px;background:rgba(0,0,0,.55);color:#fff;border-radius:50%;width:20px;height:20px;line-height:20px;text-align:center;cursor:pointer;font-size:12px">×</span>':'')
+            +'</div>';
+       }).join('')+'</div>';
+    }
     return '<div class="chatMsg" data-mid="'+m.id+'" style="display:flex;gap:9px;margin-bottom:12px;'+(mine?'flex-direction:row-reverse':'')+'">'
       +'<div title="'+esc((m.user&&m.user.name)||'')+'" style="width:34px;height:34px;border-radius:50%;flex:0 0 34px;'
         +'background:var(--accent-bg,#e8eefc);color:var(--accent,#2f6fed);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700">'
@@ -7922,7 +7967,7 @@ try{ empMigrate(); payRestore(); invDateRestore();
           +' · '+tfmt(m.at)+(m.edited?' · edited':'')+(m.pinned?' · 📌':'')+'</div>'
         +reply
         +'<div style="background:'+(mine?'var(--accent,#2f6fed);color:#fff':'var(--card,#fff)')+';border:1px solid var(--line,#e2e6ea);'
-          +'border-radius:12px;padding:8px 11px;font-size:14px;line-height:1.45;word-wrap:break-word;overflow-wrap:anywhere">'+body+card+'</div>'
+          +'border-radius:12px;padding:8px 11px;font-size:14px;line-height:1.45;word-wrap:break-word;overflow-wrap:anywhere">'+body+card+attHtml+'</div>'
         +reactHtml
         +'<div class="chatActs" style="font-size:11px;color:var(--muted);margin-top:3px;display:flex;gap:10px'+(mine?';justify-content:flex-end':'')+'">'
           +'<span class="chatAct" data-a="react" data-mid="'+m.id+'" style="cursor:pointer">React</span>'
@@ -7957,6 +8002,42 @@ try{ empMigrate(); payRestore(); invDateRestore();
       r.onclick=function(){ api().chatReact(parseInt(r.getAttribute('data-mid'),10), r.getAttribute('data-e')).then(function(){ reloadRoom(); }).catch(function(e){ say(er(e)); }); }; });
     [].forEach.call(el.querySelectorAll('.chatErpCard'),function(c){
       c.onclick=function(){ var v=c.getAttribute('data-view'); if(v && typeof go==='function'){ try{ go(v); }catch(e){} } }; });
+    hydrateAtts(el);
+    [].forEach.call(el.querySelectorAll('.chatAttImg'),function(img){
+      img.onclick=function(){ viewImage(img.getAttribute('data-full')); }; });
+    [].forEach.call(el.querySelectorAll('.chatAttDel'),function(x){
+      x.onclick=function(ev){ ev.stopPropagation();
+        if(!window.confirm('Delete this image?')) return;
+        api().chatDeleteAttachment(parseInt(x.getAttribute('data-aid'),10))
+          .then(function(){ reloadRoom(); }).catch(function(e){ say(er(e)); }); }; });
+  }
+
+  /* Fetch each thumbnail as an authenticated blob (no public URL) and set it as
+     the image src; blob object-URLs are revoked when the element is replaced. */
+  function hydrateAtts(el){
+    [].forEach.call(el.querySelectorAll('.chatAttImg'),function(img){
+      if(img.getAttribute('data-loaded')) return;
+      img.setAttribute('data-loaded','1');
+      api().chatAttachmentBlob(img.getAttribute('data-thumb')).then(function(b){
+        var u=URL.createObjectURL(b); img.src=u;
+        img.addEventListener('load',function(){ /* keep until re-render */ });
+      }).catch(function(){ img.alt='(image unavailable)'; img.style.opacity=.5; });
+    });
+  }
+
+  function viewImage(fullUrl){
+    var ov=document.createElement('div');
+    ov.setAttribute('role','dialog'); ov.setAttribute('aria-label','Image viewer');
+    ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.86);z-index:99999;display:flex;'
+      +'align-items:center;justify-content:center;cursor:zoom-out';
+    ov.innerHTML='<div style="color:#fff;font-size:13px">Loading…</div>';
+    ov.onclick=function(){ document.body.removeChild(ov); };
+    document.addEventListener('keydown',function esc(e){ if(e.key==='Escape'){ try{document.body.removeChild(ov);}catch(_e){} document.removeEventListener('keydown',esc); } });
+    document.body.appendChild(ov);
+    api().chatAttachmentBlob(fullUrl).then(function(b){
+      var u=URL.createObjectURL(b);
+      ov.innerHTML='<img src="'+u+'" alt="image" style="max-width:94vw;max-height:92vh;border-radius:8px;box-shadow:0 8px 40px rgba(0,0,0,.5)">';
+    }).catch(function(){ ov.innerHTML='<div style="color:#fff">Could not load image.</div>'; });
   }
 
   async function msgAction(a,mid){
@@ -7979,16 +8060,58 @@ try{ empMigrate(); payRestore(); invDateRestore();
     var x=document.getElementById('chatCancelReply'); if(x) x.onclick=function(){ C.replyTo=null; renderReplyBar(); };
   }
 
+  /* ---- staged image attachments (client-side validation + preview) ---- */
+  function stageFiles(files){
+    C.pending=C.pending||[];
+    [].forEach.call(files,function(f){
+      if(!ALLOWED_ATT_MIME[f.type]){ say('Only JPEG, PNG or WebP images are allowed.'); return; }
+      if(f.size>5*1024*1024){ say('Image too large (max 5 MB): '+f.name); return; }
+      if(C.pending.length>=6){ say('You can attach up to 6 images at once.'); return; }
+      C.pending.push(f);
+    });
+    renderAttPreview();
+  }
+  function renderAttPreview(){
+    var el=document.getElementById('chatAttPreview'); if(!el) return;
+    C.pending=C.pending||[];
+    if(!C.pending.length){ el.style.display='none'; el.innerHTML=''; return; }
+    el.style.display='flex';
+    el.innerHTML=C.pending.map(function(f,i){
+      var u=URL.createObjectURL(f);
+      return '<div style="position:relative"><img src="'+u+'" alt="preview" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line,#e2e6ea)">'
+        +'<span data-i="'+i+'" class="chatAttRm" title="Remove" style="position:absolute;top:-6px;right:-6px;background:#c0392b;color:#fff;border-radius:50%;width:18px;height:18px;line-height:18px;text-align:center;cursor:pointer;font-size:12px">×</span></div>';
+    }).join('');
+    [].forEach.call(el.querySelectorAll('.chatAttRm'),function(x){ x.onclick=function(){ C.pending.splice(parseInt(x.getAttribute('data-i'),10),1); renderAttPreview(); }; });
+  }
+
   async function sendMsg(){
     var inp=document.getElementById('chatInput'); if(!inp) return;
-    var t=inp.value.trim(); if(!t || !C.room || C.busy) return;
+    var t=inp.value.trim();
+    var files=(C.pending||[]).slice();
+    if((!t && !files.length) || !C.room || C.busy) return;
     var mentions=(t.match(/@([\w.]+)/g)||[]).map(function(x){return x.slice(1);});
-    C.busy=true;
+    var sendBtn=document.getElementById('chatSendBtn');
+    C.busy=true; if(sendBtn) sendBtn.disabled=true;
     try{
-      await api().chatSend(C.room.id,{body:t,reply_to:C.replyTo,mentions:mentions});
+      if(files.length){
+        for(var i=0;i<files.length;i++){
+          var caption=(i===0? t : '');
+          try{
+            await api().chatUpload(C.room.id, files[i], caption,
+              function(p){ if(sendBtn) sendBtn.textContent='Uploading '+Math.round(p*100)+'%'; });
+          }catch(e){
+            say(er(e));
+            if(window.confirm('Upload failed for "'+files[i].name+'". Retry?')){ i--; continue; }
+          }
+          if(sendBtn) sendBtn.textContent='Send';
+        }
+        C.pending=[]; renderAttPreview();
+      } else {
+        await api().chatSend(C.room.id,{body:t,reply_to:C.replyTo,mentions:mentions});
+      }
       inp.value=''; inp.style.height='auto'; C.replyTo=null; renderReplyBar(); await refreshNow();
     }catch(e){ say(er(e)); }
-    finally{ C.busy=false; }
+    finally{ C.busy=false; if(sendBtn){ sendBtn.disabled=false; sendBtn.textContent='Send'; } }
   }
 
   async function openRoom(id){
