@@ -4257,8 +4257,16 @@ go=function(v,opts){
   if(opts.back){var p=NAV.pos['v-'+v];if(p)requestAnimationFrame(function(){if(main)main.scrollTop=p.m;window.scrollTo(0,p.w);});}
   return true;
 };
+/* A drilled-in report (e.g. Profit & Loss) is a SUB-VIEW of Reports, not a NAV
+   view of its own — opening one only sets REP.current and re-renders, so the NAV
+   stack still shows whatever preceded Reports (usually Dashboard). Without this
+   guard, global Back / browser Back / swipe-back would skip the Reports list and
+   jump to the Dashboard. Returning true here means "Back closes the report and
+   returns to the Reports list", matching the in-panel "‹ Back to {cat}" button. */
+function _reportOpen(){try{return _view()==='reports'&&typeof REP!=='undefined'&&!!REP.current;}catch(e){return false;}}
 function goBack(){
   if(_anyOverlay()){uiCloseAll();return;}
+  if(_reportOpen()){repBackCat();return;}   // close P&L/report → back to Reports list (not Dashboard)
   if(NAV.stack.length){go(NAV.stack.pop(),{back:true});}
   else{go('dash',{back:true});}
 }
@@ -4286,6 +4294,10 @@ function copCloseAssistant(){
 /* browser history + Escape */
 window.addEventListener('popstate',function(e){
   if(_anyOverlay()){uiCloseAll();return;}
+  // Browser Back behaves like the visible Back button: if a report is open, close
+  // it and stay on the Reports page (re-assert the reports history entry) rather
+  // than navigating away to the Dashboard.
+  if(_reportOpen()){repBackCat();try{history.pushState({v:'reports'},'','#reports');}catch(_e){}return;}
   var v=(e.state&&e.state.v)||(location.hash?location.hash.slice(1):'dash');
   if(document.getElementById('v-'+v))go(v,{back:true,noHistory:true});
 });
