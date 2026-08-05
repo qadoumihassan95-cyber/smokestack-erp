@@ -8312,9 +8312,12 @@ try{ empMigrate(); payRestore(); invDateRestore();
   var API=window.SS_API_LIVE;
   var ROLES=['owner','admin','accountant','branch_manager','manager','inventory_manager','cashier','employee'];
   function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
-  function branchesList(){ return (window.STORES&&STORES.length)?STORES.slice():['Store A','Store B','Store C']; }
+  // ROLE and STORES are top-level `let` bindings in the main script: they live in
+  // the GLOBAL LEXICAL scope (shared across classic scripts) but are NOT properties
+  // of `window`. Read them by bare identifier (typeof-guarded), never via window.*.
+  function branchesList(){ try{ if(typeof STORES!=='undefined' && STORES && STORES.length) return STORES.slice(); }catch(e){} return ['Store A','Store B','Store C']; }
   function label(k){ return (typeof storeLabel==='function')?storeLabel(k):k; }
-  function isOwner(){ return !!(window.ROLE && ROLE.kind==='owner'); }
+  function isOwner(){ try{ return typeof ROLE!=='undefined' && !!ROLE && ROLE.kind==='owner'; }catch(e){ return false; } }
   function tt(m){ if(typeof toast==='function')toast(m); }
 
   function syncNav(){ var el=document.getElementById('navUsers'); if(el) el.style.display=isOwner()?'':'none'; }

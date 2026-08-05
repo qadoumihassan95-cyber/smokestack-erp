@@ -35,25 +35,36 @@ ok(/showTempPassword/.test(mod) && /temp_password/.test(mod), 'one-time password
 ok(/API\.createUser\(body\)/.test(mod) && /API\.resetUserPassword/.test(mod) && /API\.deactivateUser/.test(mod) && /API\.updateUser/.test(mod), 'all management actions call the API client');
 ok(/if\(guard\)guard\.style\.display=''/.test(mod), 'a 403 (non-owner) reveals the Owner-access-required guard');
 ok(!/password_hash/.test(mod), 'UI never references stored password hashes');
+// Regression guard: ROLE is a top-level `let` (global lexical, NOT on window), so
+// the gate must read the bare identifier, never window.ROLE (which is undefined).
+ok(!/window\.ROLE/.test(mod), 'gate does not depend on window.ROLE (top-level let is not a window property)');
+ok(!/window\.STORES/.test(mod), 'branch list does not depend on window.STORES');
 
-// 4) Behavioural: extract the REAL isOwner()/syncNav() and prove the gate works.
-const s = mod.indexOf('function esc(');           // start of helper block
+// 4) Behavioural: run the REAL isOwner()/syncNav() with window.ROLE UNDEFINED (as in
+//    the browser) and ROLE provided as a global lexical binding — proves the gate works.
 const iso = mod.indexOf('function isOwner(');
 const syncEnd = mod.indexOf('// ---- lightweight modal');
 const src = mod.slice(iso, syncEnd);              // isOwner + tt + syncNav
-const fakeEl = { style: { display: 'START' } };
-global.window = global;                            // window.ROLE === ROLE (both global)
-global.document = { getElementById: (id) => (id === 'navUsers' ? fakeEl : null) };
-global.toast = function () {};
-// eslint-disable-next-line no-eval
-eval(src + '\nglobal.__syncNav = syncNav;');
-global.ROLE = { kind: 'owner' }; global.__syncNav();
-ok(fakeEl.style.display === '', 'owner -> nav link shown');
-global.ROLE = { kind: 'employee' }; global.__syncNav();
-ok(fakeEl.style.display === 'none', 'non-owner -> nav link hidden');
-global.ROLE = null; global.__syncNav();
-ok(fakeEl.style.display === 'none', 'no role yet -> nav link hidden');
-void s;
+function makeMod(roleVal) {
+  const fakeEl = { style: { display: 'START' } };
+  const win = {};                                 // window has NO ROLE property (real browser behaviour)
+  const doc = { getElementById: (id) => (id === 'navUsers' ? fakeEl : null) };
+  // ROLE/STORES/toast passed as params so the extracted source resolves them as
+  // bare identifiers — exactly like the shared global lexical scope in the page.
+  const factory = new Function('window', 'document', 'ROLE', 'STORES', 'toast',
+    src + '\nreturn { isOwner: isOwner, syncNav: syncNav };');
+  const m = factory(win, doc, roleVal, ['Store A', 'Store B', 'Store C'], function () {});
+  m.el = fakeEl; m.win = win;
+  return m;
+}
+const asOwner = makeMod({ kind: 'owner' }); asOwner.syncNav();
+ok(asOwner.win.ROLE === undefined, 'reproduces the browser: window.ROLE is undefined');
+ok(asOwner.isOwner() === true, 'isOwner() true for owner via bare ROLE (not window.ROLE)');
+ok(asOwner.el.style.display === '', 'owner -> nav link shown');
+const asEmp = makeMod({ kind: 'employee' }); asEmp.syncNav();
+ok(asEmp.el.style.display === 'none', 'non-owner -> nav link hidden');
+const asNone = makeMod(null); asNone.syncNav();
+ok(asNone.el.style.display === 'none', 'no role yet -> nav link hidden');
 
 console.log(`\n=== USER MANAGEMENT UI WIRING: PASS ${pass}  FAIL ${fail.length} ===`);
 if (fail.length) { fail.forEach(f => console.log('  FAIL:', f)); process.exit(1); }
