@@ -45,6 +45,26 @@ def _clear_active(uid="U-owner"):
         db.close()
 
 
+@pytest.fixture(autouse=True)
+def _no_leaked_state():
+    """This module clocks U-owner in as the test employee. Under CI's single
+    process + shared SQLite DB, a leaked ACTIVE clock-in (or the telegram
+    links/evidence rows created here) would poison later tests (e.g. a downstream
+    clock-in seeing 409). Clean up our own footprint after every test so the
+    module preserves shared-state isolation without weakening any assertion."""
+    yield
+    db = SessionLocal()
+    try:
+        db.query(models.Attendance).filter(models.Attendance.user_id == "U-owner",
+                                            models.Attendance.status == "active").delete()
+        db.query(models.AttendanceEvidence).filter(
+            models.AttendanceEvidence.tg_id.like("9100%")).delete()
+        db.query(models.TelegramLink).filter(models.TelegramLink.tg_id.like("9100%")).delete()
+        db.commit()
+    finally:
+        db.close()
+
+
 def test_happy_path_within_area_creates_attendance():
     with TestClient(app):
         _link("910001"); _clear_active()
