@@ -74,7 +74,7 @@ def test_many_accounts_link_without_disconnecting_each_other():
             assert r.status_code == 200, r.text
             # after EVERY new link, all previously linked accounts must still resolve
             for j, prev in enumerate(USERS[:i + 1]):
-                s = client.get(f"/api/telegram/session/{90000 + j}").json()
+                s = client.get(f"/api/telegram/session/{90000 + j}", headers=_bot()).json()
                 assert s["linked"] is True, f"{prev} was disconnected when linking {uid}"
         accts = client.get("/api/telegram/accounts", headers=_tok("U-owner")).json()
         # scoped to this module's ids: the suite shares one database, so other
@@ -111,7 +111,7 @@ def test_second_device_is_rejected_never_silently_replaces():
         assert len(accts) == n_before, "a rejected link must not change anything"
         # everyone else still linked
         for j, uid in enumerate(USERS):
-            assert client.get(f"/api/telegram/session/{90000 + j}").json()["linked"] is True
+            assert client.get(f"/api/telegram/session/{90000 + j}", headers=_bot()).json()["linked"] is True
 
 
 def test_duplicate_telegram_id_is_rejected():
@@ -130,7 +130,7 @@ def test_disable_enable_remove_affect_only_one_account():
         # disabled account is refused everywhere
         assert client.post("/api/telegram/auth-token", json={"tg_id": target},
                            headers=_bot()).status_code == 403
-        assert client.get(f"/api/telegram/session/{target}").json()["linked"] is False
+        assert client.get(f"/api/telegram/session/{target}", headers=_bot()).json()["linked"] is False
         # every other account still works
         assert client.post("/api/telegram/auth-token", json={"tg_id": "90000"},
                            headers=_bot()).status_code == 200
@@ -254,7 +254,7 @@ def test_backward_compatibility_legacy_row_without_status():
             db.commit()
         finally:
             db.close()
-        assert client.get("/api/telegram/session/70001").json()["linked"] is True
+        assert client.get("/api/telegram/session/70001", headers=_bot()).json()["linked"] is True
         assert client.post("/api/telegram/auth-token", json={"tg_id": "70001"},
                            headers=_bot()).status_code == 200
         row = next(a for a in client.get("/api/telegram/accounts", headers=_tok("U-owner")).json()
@@ -265,7 +265,7 @@ def test_backward_compatibility_legacy_row_without_status():
 def test_existing_commands_still_work_for_a_linked_user():
     """The bot's existing flows (session, prefs, clock-in) are unchanged."""
     with TestClient(app):
-        assert client.get("/api/telegram/session/90000").json()["linked"] is True
+        assert client.get("/api/telegram/session/90000", headers=_bot()).json()["linked"] is True
         tok = client.post("/api/telegram/auth-token", json={"tg_id": "90000"},
                           headers=_bot()).json()["access_token"]
         h = {"Authorization": "Bearer " + tok, "Content-Type": "application/json"}

@@ -51,9 +51,12 @@ def _link(tg_id, username="hassan"):
 
 
 def test_session_linked_returns_full_profile():
+    from app.config import settings
+    settings.bot_token = "TESTBOT"  # session is bot-only; supply the shared secret
+    BOT = {"X-Bot-Token": "TESTBOT"}
     with TestClient(app):
         _link("999001", username="hassan")
-        s = client.get("/api/telegram/session/999001").json()
+        s = client.get("/api/telegram/session/999001", headers=BOT).json()
         assert s["linked"] is True
         assert s["user"]["name"] and s["user"]["role"] == "owner"
         assert "branches" in s["user"]
@@ -63,15 +66,21 @@ def test_session_linked_returns_full_profile():
 
 
 def test_session_unlinked_user():
+    from app.config import settings
+    settings.bot_token = "TESTBOT"
+    BOT = {"X-Bot-Token": "TESTBOT"}
     with TestClient(app):
-        s = client.get("/api/telegram/session/424242").json()
+        s = client.get("/api/telegram/session/424242", headers=BOT).json()
         assert s == {"linked": False}
 
 
 def test_session_invalid_tg_id():
+    from app.config import settings
+    settings.bot_token = "TESTBOT"
+    BOT = {"X-Bot-Token": "TESTBOT"}
     with TestClient(app):
         # non-numeric / bogus id must degrade gracefully, never 500
-        r = client.get("/api/telegram/session/not-a-real-id")
+        r = client.get("/api/telegram/session/not-a-real-id", headers=BOT)
         assert r.status_code == 200
         assert r.json() == {"linked": False}
 
