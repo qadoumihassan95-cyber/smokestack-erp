@@ -14,13 +14,17 @@ storage, which this host lacks. The message model has no binary column; when
 storage exists an `attachments` table slots in without touching messaging.
 """
 import json
+import io
+import re
+import hashlib
 from datetime import datetime, timezone, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_
 
 from ..database import get_db
+from ..config import settings
 from .. import models, security as S, permissions as P
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -90,6 +94,23 @@ def _require_member(db, user, room_id):
     raise HTTPException(403, "You are not a member of this conversation.")
 
 
+def _att_out(a):
+    """Attachment metadata only — bytes are fetched via the authenticated endpoints
+    below (never a public URL, never inline base64)."""
+    return {"id": a.id, "mime": a.mime, "filename": a.filename,
+            "width": a.width, "height": a.height, "size": a.size_bytes,
+            "url": f"/api/chat/attachments/{a.id}",
+            "thumb_url": f"/api/chat/attachments/{a.id}/thumb"}
+
+
+def _attachments_for(db, message_id):
+    rows = (db.query(models.ChatAttachment)
+            .filter(models.ChatAttachment.message_id == message_id,
+                    models.ChatAttachment.deleted == False)  # noqa: E712
+            .order_by(models.ChatAttachment.id).all())
+    return [_att_out(a) for a in rows]
+
+
 def _msg_out(db, m, reactions_by_msg=None):
     prof = _profile(db, m.user_id)
     react = (reactions_by_msg or {}).get(m.id, {})
@@ -100,6 +121,7 @@ def _msg_out(db, m, reactions_by_msg=None):
             "erp_ref": (json.loads(m.erp_ref) if m.erp_ref else None),
             "mentions": (json.loads(m.mentions) if m.mentions else []),
             "reactions": react,
+            "attachments": ([] if m.deleted else _attachments_for(db, m.id)),
             "at": (m.created_at.isoformat() if m.created_at else None)}
 
 
@@ -237,8 +259,145 @@ def delete(mid: int, db: Session = Depends(get_db),
     _require_member(db, user, m.room_id)
     m.deleted = True
     m.body = ""
+    # Cascade cleanup: purge attachment bytes so deleted media leaves no orphan.
+    for a in (db.query(models.ChatAttachment)
+              .filter(models.ChatAttachment.message_id == mid).all()):
+        a.deleted = True
+        a.data = None
+        a.thumb = None
     db.commit()
     S.audit(db, user, "chat_delete_message", "chat_message", mid,
+            detail=("own" if own else "moderated"))
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------- attachments
+# Durable image attachments stored in Postgres. The stored bytes are a clean,
+# re-encoded (metadata-stripped) copy of the image — never the raw upload — so
+# EXIF, trailing polyglot payloads and script-bearing/SVG files are eliminated.
+ALLOWED_IMAGE = {"JPEG": "image/jpeg", "PNG": "image/png", "WEBP": "image/webp"}
+_EXT = {"JPEG": ".jpg", "PNG": ".png", "WEBP": ".webp"}
+
+
+def _safe_name(name, fmt):
+    base = re.sub(r"[^A-Za-z0-9._-]", "_", (name or "image").rsplit("/", 1)[-1].rsplit("\\", 1)[-1])
+    base = (base[:64] or "image")
+    stem = base.rsplit(".", 1)[0] if "." in base else base
+    return (stem or "image") + _EXT[fmt]
+
+
+def _process_image(raw: bytes):
+    """Validate real image CONTENT (not extension) and return a clean, re-encoded
+    copy + thumbnail. Rejects non-images, SVG, script/polyglot, malformed,
+    oversized, and over-dimension files."""
+    from PIL import Image, UnidentifiedImageError
+    if not raw:
+        raise HTTPException(422, "Empty file.")
+    if len(raw) > settings.chat_attach_max_bytes:
+        raise HTTPException(413, "Image is too large.")
+    try:
+        probe = Image.open(io.BytesIO(raw))
+        probe.verify()                       # structural integrity
+        im = Image.open(io.BytesIO(raw))     # reopen (verify() leaves it unusable)
+        fmt = (im.format or "").upper()
+    except UnidentifiedImageError:
+        raise HTTPException(422, "File is not a valid image.")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(422, "File is not a valid image.")
+    if fmt not in ALLOWED_IMAGE:
+        raise HTTPException(415, "Only JPEG, PNG, and WebP images are allowed.")
+    w, h = im.size
+    if w <= 0 or h <= 0:
+        raise HTTPException(422, "Invalid image dimensions.")
+    if w > settings.chat_attach_max_dim or h > settings.chat_attach_max_dim:
+        raise HTTPException(422, f"Image exceeds {settings.chat_attach_max_dim}px per side.")
+    save_fmt = "PNG" if fmt == "PNG" else ("WEBP" if fmt == "WEBP" else "JPEG")
+    im = im.convert("RGBA" if save_fmt == "PNG" else "RGB")
+    out = io.BytesIO()
+    im.save(out, format=save_fmt, quality=88)   # re-encode → strips metadata/polyglot
+    clean = out.getvalue()
+    tim = im.copy()
+    tim.thumbnail((settings.chat_thumb_dim, settings.chat_thumb_dim))
+    tout = io.BytesIO()
+    tim.save(tout, format=save_fmt, quality=80)
+    return clean, tout.getvalue(), ALLOWED_IMAGE[fmt], w, h, fmt
+
+
+@router.post("/rooms/{room_id}/attachments", status_code=201)
+def upload_attachment(room_id: int, file: UploadFile = File(...), caption: str = Form(""),
+                      db: Session = Depends(get_db),
+                      user: models.User = Depends(S.require("chat_send"))):
+    _require_member(db, user, room_id)
+    raw = file.file.read()
+    clean, thumb, mime, w, h, fmt = _process_image(raw)
+    m = models.ChatMessage(room_id=room_id, user_id=user.id, body=(caption or "").strip(),
+                           kind="image", mentions=json.dumps([]))
+    db.add(m)
+    db.flush()
+    att = models.ChatAttachment(
+        message_id=m.id, room_id=room_id, uploader_id=user.id, kind="image", mime=mime,
+        filename=_safe_name(file.filename, fmt), size_bytes=len(clean), width=w, height=h,
+        sha256=hashlib.sha256(clean).hexdigest(), data=clean, thumb=thumb)
+    db.add(att)
+    mem = (db.query(models.ChatMember)
+           .filter(models.ChatMember.room_id == room_id,
+                   models.ChatMember.user_id == user.id).first())
+    if mem:
+        db.flush()
+        mem.last_read_id = m.id
+    _touch(db, user)
+    db.commit()
+    S.audit(db, user, "chat_attach", "chat_attachment", att.id, detail=f"{mime} {w}x{h}")
+    return _msg_out(db, m)
+
+
+def _serve(db, user, aid, thumb=False):
+    att = db.get(models.ChatAttachment, aid)
+    if not att or att.deleted:
+        raise HTTPException(404, "Attachment not found")
+    _require_member(db, user, att.room_id)   # membership + branch scope
+    blob = att.thumb if thumb else att.data
+    if not blob:
+        raise HTTPException(404, "Attachment not found")
+    return Response(content=bytes(blob), media_type=att.mime,
+                    headers={"Cache-Control": "private, max-age=3600",
+                             "Content-Disposition": f'inline; filename="{att.filename}"',
+                             "X-Content-Type-Options": "nosniff"})
+
+
+@router.get("/attachments/{aid}")
+def get_attachment(aid: int, db: Session = Depends(get_db),
+                   user: models.User = Depends(S.require("chat_view"))):
+    return _serve(db, user, aid, thumb=False)
+
+
+@router.get("/attachments/{aid}/thumb")
+def get_attachment_thumb(aid: int, db: Session = Depends(get_db),
+                         user: models.User = Depends(S.require("chat_view"))):
+    return _serve(db, user, aid, thumb=True)
+
+
+@router.delete("/attachments/{aid}")
+def delete_attachment(aid: int, db: Session = Depends(get_db),
+                      user: models.User = Depends(S.require("chat_view"))):
+    att = db.get(models.ChatAttachment, aid)
+    if not att or att.deleted:
+        raise HTTPException(404, "Attachment not found")
+    own = att.uploader_id == user.id
+    if not own and not P.can(user.role, "chat_delete_message"):
+        raise HTTPException(403, "You may not delete others' attachments.")
+    _require_member(db, user, att.room_id)
+    att.deleted = True
+    att.data = None
+    att.thumb = None
+    m = db.get(models.ChatMessage, att.message_id)
+    if m and not (m.body or "").strip():   # image-only message → drop it too
+        m.deleted = True
+        m.body = ""
+    db.commit()
+    S.audit(db, user, "chat_attach_delete", "chat_attachment", aid,
             detail=("own" if own else "moderated"))
     return {"ok": True}
 

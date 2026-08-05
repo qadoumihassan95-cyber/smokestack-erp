@@ -34,5 +34,13 @@ class Settings:
     # Shared secret between the API and the Telegram worker. When set (== the
     # BotFather token), the worker can exchange a linked tg_id for that user's JWT.
     bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    # --- Team Chat image attachments (durable Postgres storage) ---
+    chat_attach_max_bytes: int = int(os.getenv("CHAT_ATTACH_MAX_BYTES", str(5 * 1024 * 1024)))  # 5 MB
+    chat_attach_max_dim: int = int(os.getenv("CHAT_ATTACH_MAX_DIM", "4096"))                     # px per side
+    chat_thumb_dim: int = int(os.getenv("CHAT_THUMB_DIM", "320"))                                # thumbnail box
+    # --- Telegram attendance evidence (location + selfie) ---
+    att_attempt_ttl_min: int = int(os.getenv("ATT_ATTEMPT_TTL_MIN", "10"))     # attempt expiry (short)
+    att_selfie_retention_days: int = int(os.getenv("ATT_SELFIE_RETENTION_DAYS", "90"))  # deletion
+    att_selfie_max_bytes: int = int(os.getenv("ATT_SELFIE_MAX_BYTES", str(8 * 1024 * 1024)))  # 8 MB
 
 settings = Settings()

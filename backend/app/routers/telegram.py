@@ -14,12 +14,13 @@ import hmac
 import secrets
 import json
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException, Header, UploadFile, File, Form
 from sqlalchemy.orm import Session
 from ..database import get_db
 from ..config import settings
 from .. import models, security as S, permissions as P, tg_caps as C
 from .. import noactivity as NA
+from .. import attendance_evidence as AE
 from ..schemas import LinkVerifyIn
 import os
 
@@ -1304,3 +1305,66 @@ def noactivity_scan(x_bot_token: str = Header(None), db: Session = Depends(get_d
     return {"scanned": True, "active_incidents": len(active),
             "opened": opened, "reminded": reminded,
             "recipients": len(recipients), "queued": queued}
+
+
+# ==========================================================================
+# ATTENDANCE EVIDENCE (location + selfie) — bot-facing, fail-closed bot-token.
+# The Telegram worker drives the two-step flow and posts the downloaded selfie
+# bytes here. Every response is a single, clear ok/error (no duplicates).
+# ==========================================================================
+@router.post("/attendance/start")
+def att_start(body: dict, x_bot_token: str = Header(None), db: Session = Depends(get_db)):
+    _require_bot_token(x_bot_token)
+    try:
+        ev, first_use = AE.start_attempt(db, (body or {}).get("tg_id"))
+    except AE.EvidenceError as e:
+        return {"ok": False, "error": str(e)}
+    out = {"ok": True, "attempt_id": ev.attempt_id, "status": ev.status,
+           "expires_at": _iso(ev.expires_at), "first_use": first_use}
+    if first_use:
+        out["privacy_notice"] = AE.PRIVACY_NOTICE
+    return out
+
+
+@router.post("/attendance/location")
+def att_location(body: dict, x_bot_token: str = Header(None), db: Session = Depends(get_db)):
+    _require_bot_token(x_bot_token)
+    b = body or {}
+    try:
+        ev = AE.submit_location(db, b.get("tg_id"), b.get("attempt_id"),
+                                b.get("lat"), b.get("lng"), b.get("msg_id"),
+                                live=b.get("live", True))
+    except AE.EvidenceError as e:
+        return {"ok": False, "error": str(e)}
+    return {"ok": True, "status": ev.status, "branch": ev.branch,
+            "branch_display": S.branch_label(db, ev.branch),
+            "distance_m": ev.dist_m, "out_of_area": bool(ev.out_of_area),
+            "need": "selfie"}
+
+
+@router.post("/attendance/selfie")
+def att_selfie(tg_id: str = Form(...), attempt_id: str = Form(...),
+               file_id: str = Form(""), msg_id: str = Form(""),
+               file: UploadFile = File(...), x_bot_token: str = Header(None),
+               db: Session = Depends(get_db)):
+    _require_bot_token(x_bot_token)
+    raw = file.file.read()
+    try:
+        ev, rec = AE.submit_selfie(db, tg_id, attempt_id, file_id, msg_id,
+                                   file.content_type or "image/jpeg", raw)
+    except AE.EvidenceError as e:
+        return {"ok": False, "error": str(e)}
+    S.audit(db, None, "attendance_clock_in", "attendance", rec.id,
+            detail=f"branch={ev.branch} dist={ev.dist_m}m out_of_area={ev.out_of_area}",
+            source="TELEGRAM")
+    return {"ok": True, "status": ev.status, "attendance_id": rec.id,
+            "branch": ev.branch, "branch_display": S.branch_label(db, ev.branch),
+            "distance_m": ev.dist_m, "out_of_area": bool(ev.out_of_area),
+            "clock_in_at": _iso(rec.clock_in_at)}
+
+
+@router.post("/attendance/cancel")
+def att_cancel(body: dict, x_bot_token: str = Header(None), db: Session = Depends(get_db)):
+    _require_bot_token(x_bot_token)
+    AE.cancel_attempt(db, (body or {}).get("tg_id"), (body or {}).get("attempt_id"))
+    return {"ok": True, "status": "cancelled"}
