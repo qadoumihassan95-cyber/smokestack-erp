@@ -61,6 +61,28 @@ async def _req(method, path, token=None, body=None, headers=None):
         return r.status_code, data
 
 
+async def _bot_req(method, path, body=None):
+    """Bot-to-API call authenticated with the shared TELEGRAM_BOT_TOKEN (the same
+    secret the API holds). Used for the attendance-evidence endpoints."""
+    async with httpx.AsyncClient(timeout=25) as c:
+        r = await c.request(method, API_BASE + path, json=body, headers={"X-Bot-Token": TOKEN})
+        try:
+            return r.status_code, (r.json() if r.text else None)
+        except Exception:  # noqa: BLE001
+            return r.status_code, r.text
+
+
+async def _bot_upload(path, fields, file_bytes, filename, mime):
+    """Multipart upload (the downloaded selfie bytes) to a bot-token endpoint."""
+    async with httpx.AsyncClient(timeout=40) as c:
+        r = await c.post(API_BASE + path, headers={"X-Bot-Token": TOKEN}, data=fields,
+                         files={"file": (filename, file_bytes, mime)})
+        try:
+            return r.status_code, (r.json() if r.text else None)
+        except Exception:  # noqa: BLE001
+            return r.status_code, r.text
+
+
 def st(tg_id):
     return STATE.setdefault(str(tg_id), {"stack": [], "lists": {}, "last_cb": None})
 
@@ -1559,12 +1581,28 @@ async def handle_att_location_cb(update, ctx, tg_id, data):
     s = st(tg_id)
     s["att_await"] = mode
     s["att_ts"] = time.time()
+    s.pop("ev_attempt", None)
+    s.pop("ev_await_selfie", None)
+    # Clock-IN now requires a location AND a freshly captured selfie, bound to one
+    # short-lived, single-use attempt (started on the API). Clock-OUT is unchanged.
+    if mode == "in":
+        sc, ev = await _bot_req("POST", "/api/telegram/attendance/start", {"tg_id": tg_id})
+        if sc == 200 and isinstance(ev, dict) and ev.get("ok"):
+            s["ev_attempt"] = ev.get("attempt_id")
+            if ev.get("first_use") and ev.get("privacy_notice"):
+                await ctx.bot.send_message(chat_id=update.effective_chat.id,
+                                           text=ev["privacy_notice"], parse_mode=ParseMode.HTML)
+        else:
+            s.pop("att_await", None)
+            await ctx.bot.send_message(chat_id=update.effective_chat.id,
+                                       text="❌ Couldn't start attendance check-in. Please try again.")
+            return
     rk = ReplyKeyboardMarkup([[KeyboardButton("📍 Share Current Location", request_location=True)], ["❌ Cancel"]],
                              one_time_keyboard=True, resize_keyboard=True)
-    verb = "clock in" if mode == "in" else "clock out"
-    await ctx.bot.send_message(chat_id=update.effective_chat.id,
-                               text=f"📍 Tap <b>Share Current Location</b> below to {verb}. "
-                                    "Your location is used only for this punch.",
+    hint = ("📍 Tap <b>Share Current Location</b> below. Right after, I'll ask for a quick <b>selfie</b> to finish."
+            if mode == "in" else
+            "📍 Tap <b>Share Current Location</b> below to clock out. Your location is used only for this punch.")
+    await ctx.bot.send_message(chat_id=update.effective_chat.id, text=hint,
                                reply_markup=rk, parse_mode=ParseMode.HTML)
 
 
@@ -1585,6 +1623,24 @@ async def on_location(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     live = not bool(update.message.forward_date)               # forwarded pin != live GPS
     s.pop("att_await", None)
     s["att_last_loc"] = (loc.latitude, loc.longitude)
+    # Clock-IN evidence flow: record the location on the bound attempt, then ask
+    # for the selfie. (Clock-OUT keeps the original single-step behavior.)
+    if mode == "in" and s.get("ev_attempt"):
+        sc, d = await _bot_req("POST", "/api/telegram/attendance/location",
+                               {"tg_id": tg_id, "attempt_id": s.get("ev_attempt"),
+                                "lat": loc.latitude, "lng": loc.longitude,
+                                "msg_id": str(update.message.message_id), "live": live})
+        if sc != 200 or not (isinstance(d, dict) and d.get("ok")):
+            s.pop("ev_attempt", None)
+            err = (d.get("error") if isinstance(d, dict) else None) or "Please open Attendance and try again."
+            await update.message.reply_text("❌ " + err, reply_markup=ReplyKeyboardRemove())
+            return
+        s["ev_await_selfie"] = True
+        s["att_ts"] = time.time()
+        await update.message.reply_text(
+            "📍 Location received. Now send a quick <b>selfie</b> photo to finish clocking in.",
+            reply_markup=ReplyKeyboardRemove(), parse_mode=ParseMode.HTML)
+        return
     await update.message.reply_text("📍 Location received — verifying…", reply_markup=ReplyKeyboardRemove())
     text, markup, _ = await attendance_submit(tg_id, mode, loc.latitude, loc.longitude, live)
     await ctx.bot.send_message(chat_id=update.effective_chat.id, text=text, reply_markup=markup,
@@ -1909,6 +1965,41 @@ async def on_media(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     s = st(tg_id)
     f = flow(tg_id)
     msg = update.message
+    # Attendance selfie: complete a clock-in that already has its location.
+    if s.get("ev_await_selfie"):
+        if time.time() - s.get("att_ts", 0) > 300:
+            s.pop("ev_await_selfie", None)
+            s.pop("ev_attempt", None)
+            await msg.reply_text("That selfie request expired — open Attendance and tap Clock In again.")
+            return
+        if not msg.photo:
+            await msg.reply_text("Please send a <b>photo</b> selfie (not a file or document).",
+                                 parse_mode=ParseMode.HTML)
+            return
+        p = msg.photo[-1]
+        attempt = s.get("ev_attempt")
+        s.pop("ev_await_selfie", None)
+        s.pop("ev_attempt", None)
+        try:
+            tf = await ctx.bot.get_file(p.file_id)
+            ba = await tf.download_as_bytearray()
+        except Exception:  # noqa: BLE001
+            await msg.reply_text("❌ Couldn't fetch the photo. Please open Attendance and try again.")
+            return
+        sc, d = await _bot_upload(
+            "/api/telegram/attendance/selfie",
+            {"tg_id": tg_id, "attempt_id": attempt or "", "file_id": p.file_id,
+             "msg_id": str(msg.message_id)}, bytes(ba), "selfie.jpg", "image/jpeg")
+        if sc == 200 and isinstance(d, dict) and d.get("ok"):
+            extra = ("\n⚠️ You're outside the permitted area — this punch was sent for manager approval."
+                     if d.get("out_of_area") else "")
+            await msg.reply_text(
+                f"✅ Clocked in at <b>{html.escape(str(d.get('branch_display') or d.get('branch') or ''))}</b>."
+                + extra, parse_mode=ParseMode.HTML)
+        else:
+            err = (d.get("error") if isinstance(d, dict) else None) or "Please try again."
+            await msg.reply_text("❌ " + err)
+        return
     # barcode photo: be honest — we don't decode images
     if s.get("await_barcode") and msg.photo:
         await msg.reply_text("I can't reliably read barcodes from photos yet — please type the barcode number.")
