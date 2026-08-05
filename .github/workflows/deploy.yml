@@ -8,7 +8,7 @@ name: PFS Deploy (gated)
 #   RENDER_DEPLOY_HOOK_STAGING   RENDER_DEPLOY_HOOK_PROD
 #   STAGING_URL                  PROD_URL
 # Recommended: also enable Render "Auto-Deploy: After CI checks pass" so ordinary
-# pushes only deploy when PFS CI is green.
+# pushes only deploy when SmokeStack CI is green.
 
 on:
   workflow_dispatch:

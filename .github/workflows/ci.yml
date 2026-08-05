@@ -1,6 +1,6 @@
-name: PFS CI
+name: SmokeStack CI
 
-# Production-grade CI for the PFS backend. Every push and PR runs the full gate.
+# Production-grade CI for the SmokeStack backend. Every push and PR runs the full gate.
 # The pipeline FAILS FAST — any required job failing blocks the whole run, and
 # (with Render "auto-deploy after checks pass" enabled) blocks deployment.
 #
