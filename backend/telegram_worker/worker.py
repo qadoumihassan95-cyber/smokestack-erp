@@ -46,6 +46,34 @@ def money(v):
         return "$0"
 
 
+# --- Branch DISPLAY names ----------------------------------------------------
+# Internal branch KEYS (Store A/B/C) are immutable and used for every API call,
+# callback and relation. User-facing text shows the business display name from
+# the API's canonical /api/branches/labels endpoint (never a second hardcoded
+# map), falling back to the key. Cached briefly so a burst of renders doesn't
+# re-fetch.
+_BLABELS = {}
+_BLABELS_AT = 0.0
+
+
+async def load_blabels(token):
+    """Refresh the key -> business-display-name map from the canonical API endpoint."""
+    global _BLABELS_AT
+    if token and (time.time() - _BLABELS_AT > 180 or not _BLABELS):
+        try:
+            sc, d = await _req("GET", "/api/branches/labels", token=token)
+            if sc == 200 and isinstance(d, dict):
+                _BLABELS.update(d)
+                _BLABELS_AT = time.time()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def blabel(key):
+    """Business display name for an internal branch key (falls back to the key)."""
+    return _BLABELS.get(key, key) if key else key
+
+
 # ----------------------------------------------------------------------------- API
 async def _req(method, path, token=None, body=None, headers=None):
     h = dict(headers or {})
@@ -104,6 +132,7 @@ async def get_ctx(tg_id):
     s = st(tg_id)
     now = time.time()
     if s.get("token") and s.get("token_exp", 0) > now:
+        await load_blabels(s["token"])
         return s["token"], s["user"], s.get("prefs", {})
     status, data = await _req("POST", "/api/telegram/auth-token",
                               body={"tg_id": str(tg_id)}, headers={"X-Bot-Token": TOKEN})
@@ -113,6 +142,7 @@ async def get_ctx(tg_id):
         s["prefs"] = data.get("prefs", {})
         s["token_exp"] = now + 600
         s["disabled"] = False
+        await load_blabels(s["token"])
         return s["token"], s["user"], s["prefs"]
     # 403 means the account exists but an administrator disabled it — remember
     # that so we can explain it instead of showing the generic "not linked" screen.
@@ -185,7 +215,7 @@ async def render_licenses(tg_id):
         for i in al.get("items", [])[:12]:
             d = i.get("days_to_expiry")
             when = "expired" if (d is not None and d < 0) else (f"{d} days left" if d is not None else "no date")
-            lines.append(f"• <b>{html.escape(i.get('name') or '')}</b> ({html.escape(i.get('branch') or 'All')}) — {when}")
+            lines.append(f"• <b>{html.escape(i.get('name') or '')}</b> ({html.escape(blabel(i.get('branch')) or 'All')}) — {when}")
     return ("\n".join(lines), kb(footer(refresh="nav:lic")), None)
 
 
@@ -305,7 +335,7 @@ async def render_sales(tg_id, key):
     if cur["by_branch"]:
         lines.append("\n<b>By branch</b>")
         for b, v in sorted(cur["by_branch"].items(), key=lambda x: -x[1]):
-            lines.append(f"• {html.escape(b)}: {money(v)}")
+            lines.append(f"• {html.escape(blabel(b))}: {money(v)}")
     extra = [[("📄 PDF", f"rep:sales:{key}:pdf"), ("📊 Excel", f"rep:sales:{key}:csv")]]
     return ("\n".join(lines), kb(footer(extra, refresh=f"sales:{key}")), None)
 
@@ -319,7 +349,7 @@ async def render_sales_branch(tg_id):
     cur = agg_sales(in_range(rows or [], start, end))
     lines = ["📊 <b>Sales by branch · This Month</b>", ""]
     for b, v in sorted(cur["by_branch"].items(), key=lambda x: -x[1]):
-        lines.append(f"• {html.escape(b)}: <b>{money(v)}</b>")
+        lines.append(f"• {html.escape(blabel(b))}: <b>{money(v)}</b>")
     if not cur["by_branch"]:
         lines.append("No sales in range.")
     return ("\n".join(lines), kb(footer(refresh="sales:branch")), None)
@@ -428,7 +458,7 @@ async def render_exp(tg_id, key):
         srt = list(reversed(srt))
     lines = [f"💸 <b>{'Latest' if key == 'latest' else 'Largest'} expenses</b>", ""]
     for x in srt[:8]:
-        lines.append(f"• {money(x.get('amount'))} — {html.escape(x.get('category') or 'Other')} · {html.escape(x.get('branch') or '')} · {x.get('date', '')[:10]}")
+        lines.append(f"• {money(x.get('amount'))} — {html.escape(x.get('category') or 'Other')} · {html.escape(blabel(x.get('branch')) or '')} · {x.get('date', '')[:10]}")
     if not srt:
         lines.append("No expenses recorded.")
     return ("\n".join(lines), kb(footer(refresh=f"exp:{key}")), None)
@@ -474,7 +504,7 @@ async def render_inv_branch(tg_id):
     lines = ["📦 <b>Stock by branch</b>", ""]
     for b in (branches or []):
         u = sum((p.get("stock") or {}).get(b, 0) for p in (prods or []))
-        lines.append(f"• {html.escape(b)}: <b>{u}</b> units")
+        lines.append(f"• {html.escape(blabel(b))}: <b>{u}</b> units")
     return ("\n".join(lines), kb(footer(refresh="inv:branch")), None)
 
 
@@ -490,7 +520,7 @@ async def render_moves(tg_id, mtype):
     for m in mv[:8]:
         chg = m.get("change", 0)
         sign = "+" if chg >= 0 else ""
-        lines.append(f"• {html.escape(m.get('sku', ''))} {sign}{chg} @ {html.escape(m.get('branch', ''))} · {str(m.get('date', ''))[:10]}")
+        lines.append(f"• {html.escape(m.get('sku', ''))} {sign}{chg} @ {html.escape(blabel(m.get('branch', '')))} · {str(m.get('date', ''))[:10]}")
     if len(lines) == 2:
         lines.append("Nothing recent.")
     return ("\n".join(lines), kb(footer(refresh=f"inv:{ {'receive':'recv','adjust':'adj','transfer':'xfer'}[mtype] }")), None)
@@ -572,7 +602,7 @@ async def render_product(tg_id, sku):
         lines.append(f"Price: {money(p.get('price'))}")
     lines.append("\n<b>Stock by branch</b>")
     for b, q in (p.get("stock") or {}).items():
-        lines.append(f"• {html.escape(b)}: <b>{q}</b>")
+        lines.append(f"• {html.escape(blabel(b))}: <b>{q}</b>")
     lines.append(f"\nLast received: {str(last_recv['date'])[:10] if last_recv else '—'}")
     actions = [
         [("📥 Receive", f"opf:recv:{sku}"), ("🧮 Adjust", f"opf:adj:{sku}")],
@@ -591,7 +621,7 @@ async def render_history(tg_id, sku):
     for m in mine:
         chg = m.get("change", 0)
         sign = "+" if chg >= 0 else ""
-        lines.append(f"• {m.get('type')}: {sign}{chg} → {m.get('after')} @ {html.escape(m.get('branch',''))} · {str(m.get('date',''))[:10]}")
+        lines.append(f"• {m.get('type')}: {sign}{chg} → {m.get('after')} @ {html.escape(blabel(m.get('branch','')))} · {str(m.get('date',''))[:10]}")
     if len(lines) == 2:
         lines.append("No movements recorded.")
     return ("\n".join(lines), kb(footer(refresh=f"hist:{sku}")), None)
@@ -602,7 +632,7 @@ async def render_branches(tg_id):
     if not token:
         return await render_home(tg_id)
     _, branches = await _req("GET", "/api/branches", token=token)
-    rows = [[(f"🏪 {b}", f"br:{b}")] for b in (branches or [])]
+    rows = [[(f"🏪 {blabel(b)}", f"br:{b}")] for b in (branches or [])]
     return ("🏪 <b>Branches</b>\nPick a branch:", kb(footer(rows)), None)
 
 
@@ -613,7 +643,7 @@ async def render_branch(tg_id, branch):
     ok, _ = await can_see_cost(tg_id, token)
     _, dash = await _req("GET", f"/api/reports/dashboard?branch={quote(branch, safe='')}", token=token)
     dash = dash or {}
-    lines = [f"🏪 <b>{html.escape(branch)} · Today</b>", ""]
+    lines = [f"🏪 <b>{html.escape(blabel(branch))} · Today</b>", ""]
     lines.append(f"Sales: <b>{money(dash.get('sales_today'))}</b>")
     lines.append(f"Expenses: {money(dash.get('expenses_today'))}")
     if ok:
@@ -644,7 +674,7 @@ async def build_report(tg_id, name, period):
         rows = [["Sales", money(a["total"])], ["Transactions", a["tx"]],
                 ["Avg ticket", money(a["avg"])], ["Sales tax", money(a["tax"])]]
         for b, v in sorted(a["by_branch"].items()):
-            rows.append([f"Branch {b}", money(v)])
+            rows.append([f"{blabel(b)}", money(v)])
         return f"Sales report · {label}", rows
     if name == "exp":
         start, end, label = period_range(period if period in ("today", "week", "month") else "month")
@@ -1013,7 +1043,7 @@ async def flow_render(tg_id):
         if "exclude" in stp:
             branches = [b for b in branches if b != f["data"].get(stp["exclude"])]
         f["data"]["_branches"] = branches
-        rows = [[(f"🏪 {b}", f"f:pick:{idx}")] for idx, b in enumerate(branches)]
+        rows = [[(f"🏪 {blabel(b)}", f"f:pick:{idx}")] for idx, b in enumerate(branches)]
         f["_awaiting"] = None
         return (head, kb(rows + op_footer()), None)
     if kind == "choice":
@@ -1046,25 +1076,25 @@ async def flow_confirm_screen(tg_id):
         L.append(f"{k}: <b>{html.escape(str(v))}</b>")
 
     if name == "exp":
-        add("Branch", d["branch"]); add("Category", d["category"]); add("Amount", money(d["amount"]))
+        add("Branch", blabel(d["branch"])); add("Category", d["category"]); add("Amount", money(d["amount"]))
         if d["category"] == "Other":
             add("Description", d.get("memo") or "—")
         add("Payment", d.get("account") or "—"); add("Notes", d.get("memo") or "—")
         add("Receipt", "attached" if d.get("receipt") else "none")
     elif name == "recv":
-        add("Product", d["pname"]); add("Branch", d["branch"]); add("Quantity", d["qty"])
+        add("Product", d["pname"]); add("Branch", blabel(d["branch"])); add("Quantity", d["qty"])
         add("Unit cost", money(d["unit_cost"]) if d.get("unit_cost") is not None else "—")
         add("Supplier", d.get("supplier") or "—"); add("Invoice", d.get("invoice") or "—")
         add("File", "attached" if d.get("receipt") else "none")
     elif name == "adj":
         tt = {"inc": "Increase", "dec": "Decrease", "set": "Set exact"}[d["adjtype"]]
-        add("Product", d["pname"]); add("Branch", d["branch"]); add("Type", tt)
+        add("Product", d["pname"]); add("Branch", blabel(d["branch"])); add("Type", tt)
         add("Quantity", d["qty"]); add("Reason", d["reason"]); add("Notes", d.get("memo") or "—")
     elif name == "xfer":
-        add("Product", d["pname"]); add("From", d["from"]); add("To", d["to"])
+        add("Product", d["pname"]); add("From", blabel(d["from"])); add("To", blabel(d["to"]))
         add("Quantity", d["qty"]); add("Notes", d.get("memo") or "—")
     elif name == "pur":
-        add("Branch", d["branch"]); add("Vendor", d["vendor"]); add("Amount", money(d["amount"]))
+        add("Branch", blabel(d["branch"])); add("Vendor", d["vendor"]); add("Amount", money(d["amount"]))
         add("Invoice", d.get("invoice") or "—")
     kbb = kb([[("✅ Confirm", "f:go"), ("✏️ Edit", "f:edit")], [("❌ Cancel", "f:cancel")]])
     return ("\n".join(L), kbb, None)
@@ -1135,7 +1165,7 @@ async def flow_submit(tg_id):
             await bot_audit(tg_id, user, "create", "expense", rid,
                             f"{label} {money(d['amount'])} @ {d['branch']} pay:{d.get('account')}")
             what = "expense"; ref = f"#{rid}"
-            _lines = [f"{d['category']}: {money(d['amount'])} @ {d['branch']}"]
+            _lines = [f"{d['category']}: {money(d['amount'])} @ {blabel(d['branch'])}"]
             if custom:
                 _lines.append(f"Description: {html.escape(custom)}")
         elif name == "recv":
@@ -1152,7 +1182,7 @@ async def flow_submit(tg_id):
             await bot_audit(tg_id, user, "receive", "product", d["sku"],
                             f"+{d['qty']} @ {d['branch']} new={res.get('new_stock')}")
             what = "stock receipt"; ref = html.escape(str(d["sku"]))
-            _lines = [f"+{d['qty']} {d['pname']} @ {d['branch']}",
+            _lines = [f"+{d['qty']} {d['pname']} @ {blabel(d['branch'])}",
                       f"New stock: {res.get('new_stock')}"]
         elif name == "adj":
             cur = await _product_qty(token, d["sku"], d["branch"])
@@ -1170,13 +1200,13 @@ async def flow_submit(tg_id):
             await bot_audit(tg_id, user, "adjust", "product", d["sku"],
                             f"{cur}->{res.get('new_stock')} @ {d['branch']} ({d['reason']})")
             what = "stock adjustment"; ref = html.escape(str(d["sku"]))
-            _lines = [f"{d['pname']} @ {d['branch']}",
+            _lines = [f"{d['pname']} @ {blabel(d['branch'])}",
                       f"{cur} → new stock {res.get('new_stock')}",
                       f"Reason: {d['reason']}"]
         elif name == "xfer":
             avail = await _product_qty(token, d["sku"], d["from"])
             if int(d["qty"]) > avail:
-                raise FlowErr(f"Only {avail} available at {d['from']} — reduce the quantity.")
+                raise FlowErr(f"Only {avail} available at {blabel(d['from'])} — reduce the quantity.")
             stx, res = await _req("POST", "/api/transfers", token=token,
                                   body={"sku": d["sku"], "from_branch": d["from"], "to_branch": d["to"], "qty": int(d["qty"])})
             if stx >= 400:
@@ -1184,7 +1214,7 @@ async def flow_submit(tg_id):
             await bot_audit(tg_id, user, "create", "transfer", res.get("id"),
                             f"{d['qty']}x {d['sku']} {d['from']}->{d['to']}")
             what = "transfer"; ref = f"#{res.get('id')}"
-            _lines = [f"{d['qty']}× {d['pname']}", f"{d['from']} → {d['to']}",
+            _lines = [f"{d['qty']}× {d['pname']}", f"{blabel(d['from'])} → {blabel(d['to'])}",
                       f"Status: {res.get('status')} · awaiting manager approval"]
         elif name == "pur":
             stx, res = await _req("POST", "/api/purchases", token=token,
@@ -1194,7 +1224,7 @@ async def flow_submit(tg_id):
             await bot_audit(tg_id, user, "create", "purchase", res.get("id"),
                             f"{d['vendor']} {money(d['amount'])} @ {d['branch']}")
             what = "purchase"; ref = f"#{res.get('id')}"
-            _lines = [f"{d['vendor']}: {money(d['amount'])} @ {d['branch']}",
+            _lines = [f"{d['vendor']}: {money(d['amount'])} @ {blabel(d['branch'])}",
                       f"Status: {res.get('status')} · awaiting approval"]
         else:
             what = "operation"; ref = "#—"; _lines = None
@@ -1401,7 +1431,7 @@ async def render_att_today(tg_id):
     stt = d.get("state", "none")
     lines = ["📅 <b>Today’s status</b>", "", f"State: <b>{labels.get(stt, stt)}</b>"]
     if stt != "none":
-        lines.append(f"Branch: {html.escape(str(d.get('branch') or '—'))}")
+        lines.append(f"Branch: {html.escape(str(blabel(d.get('branch')) or '—'))}")
         if d.get("clock_in"):
             lines.append(f"Clock-in: {_hm(d['clock_in'])}")
         if d.get("clock_out"):
@@ -1423,7 +1453,7 @@ async def render_att_me(tg_id, period):
     for a in (rows or [])[:10]:
         wm = a.get("worked_minutes")
         dur = f"{wm // 60}h{wm % 60}m" if wm is not None else "—"
-        lines.append(f"• {str(a.get('clock_in'))[:10]} {html.escape(a['branch'])} · {a['status']} ({dur})")
+        lines.append(f"• {str(a.get('clock_in'))[:10]} {html.escape(blabel(a['branch']))} · {a['status']} ({dur})")
     if len(lines) == 2:
         lines.append("No records.")
     tabs = [[("Today", "att:me:today"), ("This Week", "att:me:week"), ("This Month", "att:me:month")]]
@@ -1440,7 +1470,7 @@ async def render_att_branch(tg_id):
         _, s = await _req("GET", f"/api/attendance/branch/{quote(b)}", token=token)
         if s:
             coords = "set" if s.get("lat") is not None else "not set"
-            lines.append(f"• {html.escape(b)} — radius {s['radius_m']} m · coords {coords} · "
+            lines.append(f"• {html.escape(blabel(b))} — radius {s['radius_m']} m · coords {coords} · "
                          f"verify {'on' if s.get('loc_verify') else 'off'}")
     return ("\n".join(lines), kb(footer(refresh="att:branch")), None)
 
@@ -1456,7 +1486,7 @@ async def render_att_pending(tg_id):
     lines = ["⚠️ <b>Attendance approvals</b>", ""]
     btns = []
     for a in rows[:6]:
-        lines.append(f"• {html.escape(a['employee'] or '')} @ {html.escape(a['branch'])} — "
+        lines.append(f"• {html.escape(a['employee'] or '')} @ {html.escape(blabel(a['branch']))} — "
                      f"{a.get('ci_dist')} m · {html.escape(a.get('reason') or 'no reason')}")
         btns.append([(f"✅ #{a['id']}", f"att:appr:{a['id']}"), (f"❌ #{a['id']}", f"att:rej:{a['id']}")])
     return ("\n".join(lines), kb(footer(btns, refresh="att:pending")), None)
@@ -1466,6 +1496,7 @@ async def attendance_submit(tg_id, mode, lat, lng, live, branch=None):
     token, user, _ = await get_ctx(tg_id)
     if not token:
         return await render_home(tg_id)
+    await load_blabels(token)
     path = "/api/attendance/clock-" + ("in" if mode == "in" else "out")
     body = {"lat": lat, "lng": lng, "live": bool(live)}
     if branch:
@@ -1481,28 +1512,28 @@ async def attendance_submit(tg_id, mode, lat, lng, live, branch=None):
                 kb([[("🔁 Try Again", f"att:{mode}")], [("🏠 Main Menu", "att:menu")]]), None)
     if mode == "out":
         wm = d.get("worked_minutes", 0) or 0
-        return (f"✅ <b>Clock-out successful</b>\nBranch: {html.escape(d['branch'])}\n"
+        return (f"✅ <b>Clock-out successful</b>\nBranch: {html.escape(blabel(d['branch']))}\n"
                 f"Clock-in: {_hm(d.get('clock_in'))}\nClock-out: {_hm(d.get('clock_out'))}\n"
                 f"Worked: <b>{wm // 60}h {wm % 60}m</b>\nStatus: Completed",
                 kb([[("📅 View Today", "att:today")], [("🏠 Main Menu", "att:menu")]]), None)
     r = d.get("result")
     if r == "choose":
-        rows = [[(f"{c['branch']} — {c['distance']} m", f"att:choose:{c['branch']}")] for c in d["candidates"]]
+        rows = [[(f"{blabel(c['branch'])} — {c['distance']} m", f"att:choose:{c['branch']}")] for c in d["candidates"]]
         return ("Choose your branch:", kb(rows + [[("❌ Cancel", "att:menu")]]), None)
     if r == "in":
         return (f"✅ <b>Clock-in successful</b>\nEmployee: {html.escape(user['name'])}\n"
-                f"Branch: {html.escape(d['branch'])}\nTime: {_hm(d.get('time'))}\n"
+                f"Branch: {html.escape(blabel(d['branch']))}\nTime: {_hm(d.get('time'))}\n"
                 f"Distance from branch: {d['distance']} meters\n"
                 f"Status: {'Late' if d.get('late') else 'On time'}",
                 kb([[("🕒 View Today", "att:today")], [("🏠 Main Menu", "att:menu")]]), None)
     if r == "pending":
         await notify_approvers(tg_id, user, d)
-        return (f"🕒 <b>Clock-in submitted for approval</b>\nBranch: {html.escape(d['branch'])}\n"
+        return (f"🕒 <b>Clock-in submitted for approval</b>\nBranch: {html.escape(blabel(d['branch']))}\n"
                 f"Your distance: {d['distance']} m (allowed {d['radius']} m)\n"
                 f"A manager has been notified — you'll be updated once reviewed.",
                 kb([[("🏠 Main Menu", "att:menu")]]), None)
     # outside (override disabled)
-    return (f"❌ You are outside the allowed attendance area.\nNearest branch: {html.escape(d['branch'])}\n"
+    return (f"❌ You are outside the allowed attendance area.\nNearest branch: {html.escape(blabel(d['branch']))}\n"
             f"Your distance: {d['distance']} m\nAllowed radius: {d['radius']} m",
             kb([[("🔄 Share Location Again", "att:in")], [("🏠 Main Menu", "att:menu")]]), None)
 
@@ -1517,7 +1548,7 @@ async def notify_approvers(tg_id, user, d):
             if str(a["tg_id"]) == str(tg_id):
                 continue
             txt = (f"⚠️ <b>Attendance approval request</b>\nEmployee: {html.escape(user['name'])}\n"
-                   f"Branch: {html.escape(d['branch'])}\nDistance: {d['distance']} m "
+                   f"Branch: {html.escape(blabel(d['branch']))}\nDistance: {d['distance']} m "
                    f"(allowed {d['radius']} m)\nTap to decide:")
             mk = kb([[("✅ Approve", f"att:appr:{d['id']}"), ("❌ Reject", f"att:rej:{d['id']}")]])
             await _APP.bot.send_message(chat_id=int(a["tg_id"]), text=txt, reply_markup=mk,
@@ -1994,7 +2025,7 @@ async def on_media(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             extra = ("\n⚠️ You're outside the permitted area — this punch was sent for manager approval."
                      if d.get("out_of_area") else "")
             await msg.reply_text(
-                f"✅ Clocked in at <b>{html.escape(str(d.get('branch_display') or d.get('branch') or ''))}</b>."
+                f"✅ Clocked in at <b>{html.escape(str(d.get('branch_display') or blabel(d.get('branch')) or ''))}</b>."
                 + extra, parse_mode=ParseMode.HTML)
         else:
             err = (d.get("error") if isinstance(d, dict) else None) or "Please try again."
