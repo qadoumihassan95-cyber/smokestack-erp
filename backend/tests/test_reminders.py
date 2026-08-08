@@ -95,7 +95,11 @@ def test_rbac_only_privileged_roles_can_read_or_change():
         ch = client.post("/api/auth/login",
                          data={"username": cu["username"], "password": pw})
         assert ch.status_code == 200
-        ct = {"Authorization": "Bearer " + ch.json()["access_token"]}
+        # complete the forced first-login change so the session is usable, then RBAC applies
+        _cr = client.post("/api/auth/change-password",
+                          headers={"Authorization": "Bearer " + ch.json()["access_token"]},
+                          json={"new_password": "RemCashier#2026"})
+        ct = {"Authorization": "Bearer " + _cr.json()["access_token"]}
         assert client.get("/api/telegram/reminders/settings", headers=ct).status_code == 403
         assert client.put("/api/telegram/reminders/settings", headers=ct,
                           json={"enabled": True}).status_code == 403

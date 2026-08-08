@@ -210,9 +210,12 @@ def test_employee_is_read_only_and_sees_only_own():
             "employee_id": "SC-RO", "start": str(MON), "weeks": 1, "recurrence": "weekdays"})
         cu = client.post("/api/users", headers=h, json={"username": "sched.rita",
                          "name": "RO Rita", "role": "employee", "employee_id": "SC-RO"}).json()
-        eh = {"Authorization": "Bearer " + client.post(
-            "/api/auth/login", data={"username": cu["username"], "password": cu["temp_password"]}
-        ).json()["access_token"]}
+        _t0 = client.post("/api/auth/login",
+                          data={"username": cu["username"], "password": cu["temp_password"]}).json()["access_token"]
+        # complete the forced first-login change so the employee session is usable
+        _cr = client.post("/api/auth/change-password", headers={"Authorization": "Bearer " + _t0},
+                          json={"new_password": "SchedRita#2026"})
+        eh = {"Authorization": "Bearer " + _cr.json()["access_token"]}
         # cannot create / publish / send / view the delivery log
         assert client.post("/api/schedule/entries", headers=eh, json={"employee_id": "SC-RO", "dates": [str(MON)]}).status_code == 403
         assert client.post("/api/schedule/publish", headers=eh, json={"week_start": str(MON)}).status_code == 403
