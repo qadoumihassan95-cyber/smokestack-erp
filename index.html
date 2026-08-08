@@ -5166,10 +5166,8 @@ try{ empMigrate(); payRestore(); invDateRestore();
     overlay('<div style="background:var(--card,#fff);padding:28px;border-radius:14px;max-width:420px;width:100%">'
       +'<h2 style="margin:0 0 6px">Choose a new password</h2>'
       +'<div style="font-size:13px;color:var(--muted);margin-bottom:18px">'
-      +(name?('Welcome, '+name+'. '):'')+'Your account uses a temporary password. '
-      +'Set your own before continuing.</div>'
-      +'<input id="pcCur" type="password" placeholder="Temporary password" '
-      +'style="width:100%;padding:10px;margin-bottom:8px;border:1px solid var(--line,#e2e6ea);border-radius:8px">'
+      +(name?('Welcome, '+name+'. '):'')+'You signed in with a temporary password. '
+      +'Choose your own to continue.</div>'
       +'<input id="pcNew" type="password" placeholder="New password (min 10 characters)" '
       +'style="width:100%;padding:10px;margin-bottom:8px;border:1px solid var(--line,#e2e6ea);border-radius:8px">'
       +'<input id="pcNew2" type="password" placeholder="Repeat new password" '
@@ -5178,12 +5176,16 @@ try{ empMigrate(); payRestore(); invDateRestore();
       +'<button class="btn p" id="pcGo" style="width:100%">Set password and continue</button></div>');
     var err=document.getElementById('pcErr');
     document.getElementById('pcGo').onclick=async function(){
-      var cur=document.getElementById('pcCur').value;
       var a=document.getElementById('pcNew').value, b=document.getElementById('pcNew2').value;
       if(a!==b){ err.textContent='The two new passwords do not match.'; return; }
       if((a||'').length<10){ err.textContent='Use at least 10 characters.'; return; }
       var btn=document.getElementById('pcGo'); btn.disabled=true; btn.textContent='Saving…';
-      try{ await SS_API_LIVE.changePassword(cur,a); hideOverlay(); await apiBoot(); }
+      // The temporary password was already verified at sign-in, so the authenticated
+      // first-login session authorizes this change — no need to re-type it. The server
+      // returns a rotated token; adopt it before booting the app.
+      try{ var res=await SS_API_LIVE.changePassword(undefined,a);
+           if(res&&res.access_token){ T.token=res.access_token; try{ sessionStorage.setItem('ss_token',T.token); }catch(_e){} }
+           hideOverlay(); await apiBoot(); }
       catch(e){ err.textContent=(window.__apiErr?window.__apiErr(e):'Could not change the password.');
                 btn.disabled=false; btn.textContent='Set password and continue'; }
     };

@@ -63,6 +63,17 @@ def _create(owner_h, username, role="employee", branches=None, name=None):
     return r.json()
 
 
+def _first_login(created, username, new_pw):
+    """Sign in with the temporary password and complete the forced first-login
+    change (no re-typing the temp). Returns the auth header with the rotated token."""
+    r = client.post("/api/auth/login", data={"username": username, "password": created["temp_password"]})
+    assert r.status_code == 200 and r.json()["must_change_password"] is True
+    h = {"Authorization": "Bearer " + r.json()["access_token"]}
+    r2 = client.post("/api/auth/change-password", headers=h, json={"new_password": new_pw})
+    assert r2.status_code == 200, r2.text
+    return {"Authorization": "Bearer " + r2.json()["access_token"]}
+
+
 # --------------------------------------------------------------- RBAC gate
 def test_manage_users_is_owner_only():
     with TestClient(app):
@@ -183,8 +194,88 @@ def test_last_active_owner_cannot_be_demoted():
         assert "owner" in r.json()["detail"].lower()
         # add a second active Owner, then demotion of U-owner is allowed
         o2 = _create(owner, "UM-owner2", role="owner", branches=BRANCHES)
-        owner2 = tok("UM-owner2", o2["temp_password"])
-        # UM-owner2 must set a password before acting? login works; token is valid for RBAC.
+        owner2 = _first_login(o2, "UM-owner2", "Owner2NewPass!!")   # complete forced change → usable session
         assert client.put("/api/users/U-owner", json={"role": "admin"}, headers=owner2).status_code == 200
         # restore U-owner as owner via the second owner (teardown also re-asserts this)
         assert client.put("/api/users/U-owner", json={"role": "owner"}, headers=owner2).status_code == 200
+
+
+# --------------------------------------------------- forced first-login password change
+def test_forced_first_login_change_without_current_preserves_owner_and_branches():
+    """The reported production bug: a new Owner on a temporary password reaches the
+    forced-change screen and must set a new password. It must NOT require re-typing
+    the single-use temp (already verified at sign-in); role + branches are preserved."""
+    with TestClient(app):
+        owner = tok("U-owner")
+        u = _create(owner, "UM-laith", role="owner", branches=BRANCHES, name="Laith Owner")
+        r = client.post("/api/auth/login", data={"username": "UM-laith", "password": u["temp_password"]})
+        assert r.status_code == 200 and r.json()["must_change_password"] is True
+        h = {"Authorization": "Bearer " + r.json()["access_token"]}
+        # forced change with ONLY a new password (no current) — the session authorizes it
+        r2 = client.post("/api/auth/change-password", headers=h, json={"new_password": "LaithStrong#2026"})
+        assert r2.status_code == 200, r2.text
+        assert r2.json()["must_change_password"] is False
+        assert r2.json().get("access_token")                 # session rotated
+        assert "password_hash" not in r2.json() and "new_password" not in r2.json()
+        # a normal login with the NEW password now works and is no longer forced
+        r3 = client.post("/api/auth/login", data={"username": "UM-laith", "password": "LaithStrong#2026"})
+        assert r3.status_code == 200 and r3.json()["must_change_password"] is False
+        # role + all three branches preserved
+        row = [x for x in client.get("/api/users", headers=tok("U-owner")).json() if x["username"] == "UM-laith"][0]
+        assert row["role"] == "owner" and sorted(row["branches"]) == sorted(BRANCHES)
+
+
+def test_first_login_blocks_other_endpoints_until_changed():
+    with TestClient(app):
+        owner = tok("U-owner")
+        u = _create(owner, "UM-fl", role="owner", branches=BRANCHES)
+        r = client.post("/api/auth/login", data={"username": "UM-fl", "password": u["temp_password"]})
+        h = {"Authorization": "Bearer " + r.json()["access_token"]}
+        # allowlisted during first login
+        assert client.get("/api/auth/me", headers=h).status_code == 200
+        # every other protected endpoint is blocked while on the temporary password
+        assert client.get("/api/users", headers=h).status_code == 403
+        assert client.get("/api/branches", headers=h).status_code == 403
+        # after the forced change (rotated token), the owner can use the app
+        r2 = client.post("/api/auth/change-password", headers=h, json={"new_password": "FlNewPass#2026"})
+        h2 = {"Authorization": "Bearer " + r2.json()["access_token"]}
+        assert client.get("/api/users", headers=h2).status_code == 200
+        assert client.get("/api/branches", headers=h2).status_code == 200
+
+
+def test_forced_change_rejects_weak_new_password():
+    with TestClient(app):
+        owner = tok("U-owner")
+        u = _create(owner, "UM-weak", role="employee", branches=["Store A"])
+        r = client.post("/api/auth/login", data={"username": "UM-weak", "password": u["temp_password"]})
+        h = {"Authorization": "Bearer " + r.json()["access_token"]}
+        assert client.post("/api/auth/change-password", headers=h,
+                           json={"new_password": "short"}).status_code == 422
+
+
+def test_forced_change_if_current_supplied_it_must_match():
+    with TestClient(app):
+        owner = tok("U-owner")
+        u = _create(owner, "UM-cur", role="employee", branches=["Store A"])
+        r = client.post("/api/auth/login", data={"username": "UM-cur", "password": u["temp_password"]})
+        h = {"Authorization": "Bearer " + r.json()["access_token"]}
+        assert client.post("/api/auth/change-password", headers=h,
+                           json={"current_password": "definitely-wrong",
+                                 "new_password": "GoodPass#2026"}).status_code == 403
+
+
+def test_self_service_change_still_requires_current_password():
+    with TestClient(app):
+        owner = tok("U-owner")
+        u = _create(owner, "UM-ss", role="employee", branches=["Store A"])
+        h = _first_login(u, "UM-ss", "FirstPass#2026")   # clears must_change → self-service rules
+        # without the current password → rejected
+        assert client.post("/api/auth/change-password", headers=h,
+                           json={"new_password": "AnotherPass#9"}).status_code == 403
+        # wrong current → rejected
+        assert client.post("/api/auth/change-password", headers=h,
+                           json={"current_password": "nope", "new_password": "AnotherPass#9"}).status_code == 403
+        # correct current → ok
+        assert client.post("/api/auth/change-password", headers=h,
+                           json={"current_password": "FirstPass#2026",
+                                 "new_password": "AnotherPass#9"}).status_code == 200

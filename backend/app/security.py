@@ -14,6 +14,17 @@ from . import models, permissions as P
 pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2 = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
+# While an account is still on its temporary password (must_change_password), the
+# session may reach ONLY these endpoints — replace the password, read its own
+# identity, or sign out. Every other protected route is blocked until the flag is
+# cleared. (The temp-password login already proved the current password, so the
+# change endpoint is reachable with this restricted session.)
+FIRST_LOGIN_ALLOWED = {
+    "/api/auth/change-password",
+    "/api/auth/me",
+    "/api/auth/logout",
+}
+
 # bcrypt hashes at most the first 72 BYTES of a password. Rather than let the
 # hasher silently truncate (a real security footgun), we validate up front and
 # raise a clear error so a caller never believes a >72-byte password was stored
@@ -88,6 +99,13 @@ def get_current_user(request: Request = None, token: str = Depends(oauth2),
             request.state.impersonation = bool(user._impersonation)
         except Exception:
             pass
+    # FIRST-LOGIN LOCKOUT: an account still on its temporary password can reach only
+    # the password-change / identity / logout endpoints until it sets a new password.
+    if getattr(user, "must_change_password", False):
+        path = request.url.path if request is not None else ""
+        if path not in FIRST_LOGIN_ALLOWED:
+            raise HTTPException(status.HTTP_403_FORBIDDEN,
+                                "Set a new password before continuing.")
     # POLICY PIPELINE (layers 2-3 + read-only): evaluated ONCE here, the single ERP
     # auth chokepoint. Blocks suspended/archived/provisioning/maintenance, enforces
     # read-only + expired-subscription write-blocking. No-op for active companies.

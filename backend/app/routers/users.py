@@ -243,17 +243,32 @@ def reset_password(username: str, db: Session = Depends(get_db),
 @router.post("/auth/change-password")
 def change_password(body: dict, db: Session = Depends(get_db),
                     user: models.User = Depends(S.get_current_user)):
-    """Any signed-in user replaces their own password, clearing the reset flag."""
-    current = (body or {}).get("current_password") or ""
-    new = (body or {}).get("new_password") or ""
-    if not S.verify_pw(current, user.password_hash):
-        raise HTTPException(403, "Your current password is not correct.")
+    """Replace your own password and clear the temporary-password flag.
+
+    Normal (self-service) changes require the current password. During a FORCED
+    first-login change (must_change_password=True) the authenticated temp-password
+    session is itself the proof of the current password — it was verified at login
+    to mint this token — so a single-use temporary password need not be re-typed on
+    a second screen. A fresh token is returned (session rotation)."""
+    body = body or {}
+    current = body.get("current_password") or ""
+    new = body.get("new_password") or ""
+    forced = bool(user.must_change_password)
+    # Verify the current password: always for self-service; for a forced change only
+    # if one was supplied (the restricted session already authorizes the change).
+    if not forced or current:
+        if not S.verify_pw(current, user.password_hash):
+            raise HTTPException(403, "Your current password is not correct.")
     if len(new) < 10:
         raise HTTPException(422, "Choose a password of at least 10 characters.")
-    if new == current:
-        raise HTTPException(422, "The new password must be different.")
+    if S.verify_pw(new, user.password_hash):
+        raise HTTPException(422, "The new password must be different from the current one.")
     user.password_hash = S.hash_pw(new)
     user.must_change_password = False
     db.commit()
-    S.audit(db, user, "change_password", "user", user.id)
-    return {"ok": True, "must_change_password": False}
+    S.audit(db, user, "change_password", "user", user.id,
+            detail=("forced_first_login" if forced else "self_service"))
+    # Rotate the session so the caller drops the temporary-password token.
+    token = S.make_token(user, company_id=getattr(user, "_company_id", None))
+    return {"ok": True, "must_change_password": False,
+            "access_token": token, "token_type": "bearer"}

@@ -102,9 +102,13 @@ def test_password_change_rejects_wrong_current_and_weak_new():
 def test_permissions_come_from_the_rbac_engine_not_the_account():
     b = _create("Perm Test").json()
     assert b["permissions"] == P.PERMS["branch_manager"]
-    h = {"Authorization": "Bearer " + client.post(
-        "/api/auth/login", data={"username": b["username"],
-                                 "password": b["temp_password"]}).json()["access_token"]}
+    # a new account is on a temporary password; complete the forced first-login
+    # change so its session is no longer restricted, then exercise RBAC.
+    _t = client.post("/api/auth/login", data={"username": b["username"],
+                                              "password": b["temp_password"]}).json()["access_token"]
+    _r = client.post("/api/auth/change-password", headers={"Authorization": "Bearer " + _t},
+                     json={"new_password": "PermChanged#2026"})
+    h = {"Authorization": "Bearer " + _r.json()["access_token"]}
     # branch_manager may view costs but NOT payroll or user management
     assert client.get("/api/reports/kpi?period=month&branch=all", headers=h).status_code == 200
     assert client.get("/api/payroll?start=2026-07-01&end=2026-07-31", headers=h).status_code == 403
@@ -113,9 +117,12 @@ def test_permissions_come_from_the_rbac_engine_not_the_account():
 
 def test_role_boundaries_differ_by_role():
     emp = _create("Emp Role", role="employee", branches=["Store A"]).json()
-    h = {"Authorization": "Bearer " + client.post(
-        "/api/auth/login", data={"username": emp["username"],
-                                 "password": emp["temp_password"]}).json()["access_token"]}
+    # complete the forced first-login change so the session is usable, then test RBAC
+    _t = client.post("/api/auth/login", data={"username": emp["username"],
+                                              "password": emp["temp_password"]}).json()["access_token"]
+    _r = client.post("/api/auth/change-password", headers={"Authorization": "Bearer " + _t},
+                     json={"new_password": "EmpChanged#2026"})
+    h = {"Authorization": "Bearer " + _r.json()["access_token"]}
     kpi = client.get("/api/reports/kpi?period=month&branch=all", headers=h).json()
     assert kpi.get("can_view_profit") is False
     assert client.post("/api/expenses", headers=h,
