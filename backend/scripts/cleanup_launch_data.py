@@ -194,11 +194,19 @@ def run(db, verified_owner_id, apply=False, backup_confirmed=False):
         db.execute(text(sql))  # nosec B608
         deleted[t] = before
         if is_pg and t in RESET_SEQUENCES_FOR:
-            # Reset identity sequence if one exists; never touches keys/relationships.
-            db.execute(text(
-                "SELECT setval(pg_get_serial_sequence(:t, 'id'), 1, false) "
-                "WHERE pg_get_serial_sequence(:t, 'id') IS NOT NULL"
-            ), {"t": t})
+            # Reset the identity sequence if one exists; never touches keys/relationships.
+            # Some wiped tables have no integer 'id' column (e.g. composite-key tables
+            # like chat_presence); pg_get_serial_sequence() RAISES on those rather than
+            # returning NULL, so run each reset in its own SAVEPOINT and swallow the
+            # failure — the sequence reset is cosmetic and must never abort the wipe.
+            try:
+                with db.begin_nested():
+                    db.execute(text(
+                        "SELECT setval(pg_get_serial_sequence(:t, 'id'), 1, false) "
+                        "WHERE pg_get_serial_sequence(:t, 'id') IS NOT NULL"
+                    ), {"t": t})
+            except Exception:  # noqa: BLE001 — cosmetic reset only; wipe already applied
+                pass
     # Defense in depth (still inside the transaction, before commit): the verified
     # owner must still exist, be an active owner, and — if it had one — still own
     # its employee record. Any failure raises, so the transaction rolls back.
