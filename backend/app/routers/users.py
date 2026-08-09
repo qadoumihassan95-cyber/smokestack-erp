@@ -10,7 +10,7 @@ import secrets
 import string
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -22,6 +22,20 @@ router = APIRouter(prefix="/api", tags=["users"])
 _PW_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789"
 _PW_SYMBOLS = "!@#$%&*?"
 
+# Minimum length for any password we accept. Matches the self-service change rule.
+_MIN_PW_LEN = 10
+
+# A small deny-list of obviously weak / common passwords. Compared case-insensitively
+# and against the stripped value; membership is rejected outright. Kept intentionally
+# short — the length + variety checks below catch most weak inputs.
+_WEAK_PASSWORDS = frozenset({
+    "password", "password1", "password12", "password123", "passw0rd", "passw0rd1",
+    "1234567890", "12345678", "123456789", "0123456789", "qwertyuiop", "qwerty123",
+    "letmein123", "welcome123", "iloveyou12", "changeme12", "administrator",
+    "smokestack", "smokestack1", "smokeshop1", "abcdefghij", "aaaaaaaaaa",
+    "1qaz2wsx3e", "test123456", "demo123456", "adminadmin",
+})
+
 
 def temp_password(length=14):
     """A strong one-time password the holder must replace at first login."""
@@ -32,6 +46,42 @@ def temp_password(length=14):
         if (any(c.islower() for c in pw) and any(c.isupper() for c in pw)
                 and any(c.isdigit() for c in pw) and any(c in _PW_SYMBOLS for c in pw)):
             return pw
+
+
+def _validate_manual_password(pw, confirm=None):
+    """Server-side validation for an Owner-assigned manual password.
+
+    Errors are deliberately generic and NEVER echo the password. The password is
+    only ever read here and passed straight to the hashing helper by the caller.
+    """
+    if not isinstance(pw, str) or not pw:
+        raise HTTPException(422, "A password is required.")
+    if confirm is not None and pw != confirm:
+        raise HTTPException(422, "Passwords do not match.")
+    if len(pw) < _MIN_PW_LEN:
+        raise HTTPException(422, f"Choose a password of at least {_MIN_PW_LEN} characters.")
+    # bcrypt only considers the first 72 bytes; refuse longer so nobody is misled
+    # into thinking the tail was stored.
+    if len(pw.encode("utf-8")) > S.BCRYPT_MAX_BYTES:
+        raise HTTPException(422, f"Password is too long: use at most {S.BCRYPT_MAX_BYTES} bytes.")
+    if pw.strip().lower() in _WEAK_PASSWORDS or len(set(pw)) < 4:
+        raise HTTPException(422, "Choose a stronger, less predictable password.")
+
+
+def _resolve_password(body):
+    """Resolve the (password, must_change, is_manual) triple from a request body,
+    honouring `password_mode` while staying backward-compatible with the old
+    generated-temporary-password default. Never returns anything to the caller."""
+    body = body or {}
+    mode = str(body.get("password_mode") or "generated").strip().lower()
+    if mode == "manual":
+        pw = body.get("password")
+        _validate_manual_password(pw, body.get("confirm_password"))
+        return pw, bool(body.get("must_change_password", False)), True
+    if mode not in ("generated", ""):
+        raise HTTPException(422, "Unknown password option.")
+    # generated: cryptographically secure one-time password, forced change at first login
+    return temp_password(), True, False
 
 
 def _slug(text):
@@ -93,11 +143,15 @@ def create_user(body: dict, db: Session = Depends(get_db),
     if db.get(models.User, username):
         raise HTTPException(409, f"Username already exists: {username}")
 
-    pw = temp_password()
+    # Owner chooses: a generated one-time password (default, backward-compatible) or
+    # a manually assigned password that may be permanent or forced-change. The plain
+    # password is resolved here and hashed immediately below; it is never stored,
+    # returned (manual mode), logged or audited.
+    pw, must_change, is_manual = _resolve_password(body)
     u = models.User(id=username, name=name, role=role,
                     email=(body or {}).get("email"),
                     password_hash=S.hash_pw(pw), status="active",
-                    can_login=True, must_change_password=True)
+                    can_login=True, must_change_password=must_change)
     db.add(u)
     db.flush()
     for b in branches:
@@ -120,9 +174,13 @@ def create_user(body: dict, db: Session = Depends(get_db),
     db.commit()
 
     S.audit(db, actor, "create_user", "user", username,
-            detail=f"{name} · role={role} · branches={','.join(branches) or 'none'}")
+            detail=(f"{name} · role={role} · branches={','.join(branches) or 'none'} "
+                    f"· pw={'manual' if is_manual else 'generated'}"))
     out = _user_out(db, u, emp_id)
-    out["temp_password"] = pw        # shown once; never stored in plain text
+    # A generated password is surfaced EXACTLY ONCE so the Owner can deliver it.
+    # A manually assigned password is never returned — the Owner already knows it.
+    if not is_manual:
+        out["temp_password"] = pw
     out["permissions"] = P.PERMS.get(role, [])
     return out
 
@@ -224,19 +282,27 @@ def activate_user(username: str, db: Session = Depends(get_db),
 
 
 @router.post("/users/{username}/reset-password")
-def reset_password(username: str, db: Session = Depends(get_db),
+def reset_password(username: str, body: dict = Body(default=None),
+                   db: Session = Depends(get_db),
                    actor: models.User = Depends(S.require("manage_users"))):
-    """Issue a NEW one-time password and force a change at next login. The stored
-    password is a hash and is never revealed; only the freshly generated
-    temporary password is returned, exactly once."""
+    """Set a NEW password for an account. The Owner chooses either a generated
+    one-time password (default; forces a change at next login) or a manually
+    assigned password that may be permanent or forced-change.
+
+    The stored password is a hash and is never revealed. A generated password is
+    returned EXACTLY ONCE; a manually assigned password is never returned. An empty
+    body keeps the original behaviour (generated + must-change), so existing callers
+    are unaffected."""
     u = _target(db, actor, username)
-    pw = temp_password()
+    pw, must_change, is_manual = _resolve_password(body)
     u.password_hash = S.hash_pw(pw)
-    u.must_change_password = True
+    u.must_change_password = must_change
     db.commit()
-    S.audit(db, actor, "reset_password", "user", u.id)
+    S.audit(db, actor, "reset_password", "user", u.id,
+            detail=f"pw={'manual' if is_manual else 'generated'}")
     out = _user_out(db, u)
-    out["temp_password"] = pw     # shown once; never stored in plain text
+    if not is_manual:
+        out["temp_password"] = pw     # shown once; never stored in plain text
     return out
 
 

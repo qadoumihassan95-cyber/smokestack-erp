@@ -5041,7 +5041,7 @@ try{ empMigrate(); payRestore(); invDateRestore();
     updateUser:function(id,b){return call('/api/users/'+encodeURIComponent(id),{method:'PUT',body:b});},
     activateUser:function(id){return call('/api/users/'+encodeURIComponent(id)+'/activate',{method:'POST'});},
     deactivateUser:function(id){return call('/api/users/'+encodeURIComponent(id)+'/deactivate',{method:'POST'});},
-    resetUserPassword:function(id){return call('/api/users/'+encodeURIComponent(id)+'/reset-password',{method:'POST'});},
+    resetUserPassword:function(id,b){return call('/api/users/'+encodeURIComponent(id)+'/reset-password',{method:'POST',body:(b||{})});},
     // --- Team Chat (internal messaging, short-polled) ---
     chatRooms:function(){return call('/api/chat/rooms');},
     chatCreateRoom:function(b){return call('/api/chat/rooms',{method:'POST',body:b});},
@@ -8341,6 +8341,82 @@ try{ empMigrate(); payRestore(); invDateRestore();
   function roleOpts(cur){ return ROLES.map(function(r){ return '<option value="'+r+'"'+(r===cur?' selected':'')+'>'+r+'</option>'; }).join(''); }
   function readChecks(root){ return Array.prototype.slice.call(root.querySelectorAll('.usrBr:checked')).map(function(c){return c.value;}); }
 
+  // ---- shared, secure password picker (generated | manual) --------------------
+  // A tiny front-end mirror of the server rules. The SERVER is the security
+  // boundary and re-validates everything; this only improves UX and disables the
+  // submit button until inputs are plausibly valid. Passwords never leave the
+  // password fields except in the POST body, and are wiped from the DOM on submit.
+  var _WEAK=['password','password1','password12','password123','passw0rd','12345678',
+    '123456789','1234567890','0123456789','qwertyuiop','qwerty123','letmein123',
+    'welcome123','iloveyou12','changeme12','administrator','smokestack','smokestack1',
+    'aaaaaaaaaa','adminadmin','test123456','demo123456'];
+  function pwBytes(s){ try{ return new TextEncoder().encode(s).length; }catch(e){ return s.length; } }
+  function pwStrong(pw){
+    if(typeof pw!=='string'||pw.length<10) return false;
+    if(pwBytes(pw)>72) return false;
+    if(_WEAK.indexOf(pw.trim().toLowerCase())>=0) return false;
+    var uniq={}; for(var i=0;i<pw.length;i++) uniq[pw[i]]=1;
+    return Object.keys(uniq).length>=4;
+  }
+  function pwPicker(idp,opts){
+    opts=opts||{};
+    return ''
+    +'<div style="margin-top:10px;border:1px solid var(--line,#243043);border-radius:10px;padding:10px 12px">'
+    +'<div style="font-weight:600;font-size:13px;margin-bottom:6px">Password</div>'
+    +'<label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:4px 0"><input type="radio" name="'+idp+'Mode" value="generated" checked> '+esc(opts.genLabel||'Generate a secure temporary password')+'</label>'
+    +'<label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:4px 0"><input type="radio" name="'+idp+'Mode" value="manual"> Set password manually</label>'
+    +'<div id="'+idp+'Manual" style="display:none;margin-top:8px">'
+    +'<label style="font-size:12.5px">Password</label>'
+    +'<div style="display:flex;gap:6px;align-items:center"><input id="'+idp+'Pw" type="password" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false" style="flex:1"><button class="btn g" id="'+idp+'Toggle" type="button" tabindex="-1">Show</button></div>'
+    +'<label style="font-size:12.5px;margin-top:6px">Confirm password</label>'
+    +'<input id="'+idp+'Pw2" type="password" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false">'
+    +'<div id="'+idp+'Hint" style="font-size:12px;color:var(--muted);margin-top:6px;line-height:1.5">At least 10 characters; avoid common or predictable passwords.</div>'
+    +'<label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-top:8px"><input type="checkbox" id="'+idp+'Force"'+(opts.forceDefault?' checked':'')+'> Require user to change password at '+(opts.reset?'next':'first')+' login</label>'
+    +'<div style="font-size:12px;color:var(--warn,#d1a23a);margin-top:6px;line-height:1.5">⚠ A permanent password is stored only as a hash and cannot be recovered — deliver it to the user over a secure channel.</div>'
+    +'</div></div>';
+  }
+  function wirePwPicker(root,idp,onValidChange){
+    var manual=root.querySelector('#'+idp+'Manual'),
+        pw=root.querySelector('#'+idp+'Pw'), pw2=root.querySelector('#'+idp+'Pw2'),
+        hint=root.querySelector('#'+idp+'Hint'), tog=root.querySelector('#'+idp+'Toggle'),
+        radios=root.querySelectorAll('input[name="'+idp+'Mode"]');
+    function mode(){ var r=root.querySelector('input[name="'+idp+'Mode"]:checked'); return r?r.value:'generated'; }
+    function valid(){
+      if(mode()!=='manual') return true;
+      var a=pw.value, b=pw2.value;
+      return pwStrong(a) && a===b;
+    }
+    function refresh(){
+      var isM=mode()==='manual';
+      if(manual) manual.style.display=isM?'':'none';
+      if(isM && hint){
+        var a=pw.value, b=pw2.value, msg, col;
+        if(!a){ msg='At least 10 characters; avoid common or predictable passwords.'; col='var(--muted)'; }
+        else if(!pwStrong(a)){ msg='Too short or too predictable — use 10+ varied characters.'; col='var(--bad)'; }
+        else if(b && a!==b){ msg='Passwords do not match.'; col='var(--bad)'; }
+        else if(!b){ msg='Re-enter to confirm.'; col='var(--muted)'; }
+        else { msg='✓ Looks good.'; col='var(--good,#39b36a)'; }
+        hint.textContent=msg; hint.style.color=col;
+      }
+      if(typeof onValidChange==='function') onValidChange(valid());
+    }
+    if(tog) tog.onclick=function(){ var s=pw.type==='password'; pw.type=pw2.type=s?'text':'password'; tog.textContent=s?'Hide':'Show'; };
+    Array.prototype.forEach.call(radios,function(r){ r.addEventListener('change',refresh); });
+    if(pw) pw.addEventListener('input',refresh);
+    if(pw2) pw2.addEventListener('input',refresh);
+    refresh();
+    return {
+      valid:valid,
+      read:function(){
+        if(mode()!=='manual') return {password_mode:'generated'};
+        return {password_mode:'manual', password:pw.value, confirm_password:pw2.value,
+                must_change_password:!!root.querySelector('#'+idp+'Force').checked};
+      },
+      isManual:function(){ return mode()==='manual'; },
+      clear:function(){ if(pw)pw.value=''; if(pw2)pw2.value=''; }
+    };
+  }
+
   function showTempPassword(u){
     var m=modal('<h3>Temporary password for '+esc(u.username)+'</h3>'
       +'<div style="font-size:13px;color:var(--muted);line-height:1.6;margin:6px 0 10px">Share this with the user over a secure channel. They must change it at first sign-in. It is shown <b>once</b> and is never stored in readable form.</div>'
@@ -8353,24 +8429,57 @@ try{ empMigrate(); payRestore(); invDateRestore();
 
   function addUserForm(){
     var m=modal('<h3>Add user</h3>'
-      +'<label>Full name</label><input id="uaName" placeholder="e.g. Jane Owner">'
-      +'<label style="margin-top:8px">Username <span style="color:var(--muted2);font-weight:400">(optional — auto from name)</span></label><input id="uaUser" placeholder="e.g. jane.owner">'
-      +'<label style="margin-top:8px">Email <span style="color:var(--muted2);font-weight:400">(optional)</span></label><input id="uaEmail" type="email" placeholder="name@company.com">'
+      +'<label>Full name</label><input id="uaName" placeholder="e.g. Jane Owner" autocomplete="off">'
+      +'<label style="margin-top:8px">Username <span style="color:var(--muted2);font-weight:400">(optional — auto from name)</span></label><input id="uaUser" placeholder="e.g. jane.owner" autocomplete="off">'
+      +'<label style="margin-top:8px">Email <span style="color:var(--muted2);font-weight:400">(optional)</span></label><input id="uaEmail" type="email" placeholder="name@company.com" autocomplete="off">'
       +'<label style="margin-top:8px">Role</label><select id="uaRole">'+roleOpts('owner')+'</select>'
       +'<label style="margin-top:8px">Branches</label><div id="uaBr">'+branchChecks(branchesList())+'</div>'
+      +pwPicker('ua',{genLabel:'Generate a secure temporary password (user sets their own at first login)'})
       +'<div id="uaErr" style="color:var(--bad);font-size:12.5px;margin-top:8px;display:none"></div>'
       +'<div style="text-align:right;margin-top:14px"><button class="btn g" id="uaCancel" type="button">Cancel</button> <button class="btn p" id="uaSave" type="button">Create user</button></div>');
     m.el.querySelector('#uaCancel').onclick=m.close;
-    m.el.querySelector('#uaSave').onclick=function(){
+    var saveBtn=m.el.querySelector('#uaSave');
+    var pick=wirePwPicker(m.el,'ua',function(ok){ saveBtn.disabled=!ok; });
+    saveBtn.onclick=function(){
       var name=m.el.querySelector('#uaName').value.trim();
       var err=m.el.querySelector('#uaErr');
       if(!name){ err.style.display='block'; err.textContent='A full name is required.'; return; }
+      if(!pick.valid()){ err.style.display='block'; err.textContent='Enter a matching password of at least 10 characters.'; return; }
+      var pw=pick.read();
       var body={ name:name, role:m.el.querySelector('#uaRole').value,
         branches:readChecks(m.el), username:(m.el.querySelector('#uaUser').value.trim()||undefined),
-        email:(m.el.querySelector('#uaEmail').value.trim()||undefined) };
-      m.el.querySelector('#uaSave').disabled=true;
-      API.createUser(body).then(function(u){ m.close(); render(); showTempPassword(u); })
-        .catch(function(e){ err.style.display='block'; err.textContent=apiMsg(e); m.el.querySelector('#uaSave').disabled=false; });
+        email:(m.el.querySelector('#uaEmail').value.trim()||undefined),
+        password_mode:pw.password_mode, password:pw.password,
+        confirm_password:pw.confirm_password, must_change_password:pw.must_change_password };
+      var wasManual=pick.isManual();
+      saveBtn.disabled=true;
+      API.createUser(body).then(function(u){
+        pick.clear();                                  // wipe password fields from the DOM
+        m.close(); render();
+        if(wasManual) tt('User created — password set by you.'); else showTempPassword(u);
+      }).catch(function(e){ err.style.display='block'; err.textContent=apiMsg(e); saveBtn.disabled=false; });
+    };
+  }
+
+  function resetUserForm(username){
+    var m=modal('<h3>Reset password — '+esc(username)+'</h3>'
+      +'<div style="font-size:12.5px;color:var(--muted);line-height:1.5;margin:2px 0 4px">The current password cannot be shown and will stop working once you save a new one.</div>'
+      +pwPicker('ur',{reset:true,forceDefault:true,genLabel:'Generate a secure temporary password (forces change at next login)'})
+      +'<div id="urErr" style="color:var(--bad);font-size:12.5px;margin-top:8px;display:none"></div>'
+      +'<div style="text-align:right;margin-top:14px"><button class="btn g" id="urCancel" type="button">Cancel</button> <button class="btn p" id="urSave" type="button">Set password</button></div>');
+    m.el.querySelector('#urCancel').onclick=m.close;
+    var saveBtn=m.el.querySelector('#urSave');
+    var pick=wirePwPicker(m.el,'ur',function(ok){ saveBtn.disabled=!ok; });
+    saveBtn.onclick=function(){
+      var err=m.el.querySelector('#urErr');
+      if(!pick.valid()){ err.style.display='block'; err.textContent='Enter a matching password of at least 10 characters.'; return; }
+      var wasManual=pick.isManual();
+      saveBtn.disabled=true;
+      API.resetUserPassword(username, pick.read()).then(function(u){
+        pick.clear();
+        m.close(); render();
+        if(wasManual) tt('Password updated.'); else showTempPassword(u);
+      }).catch(function(e){ err.style.display='block'; err.textContent=apiMsg(e); saveBtn.disabled=false; });
     };
   }
 
@@ -8420,7 +8529,7 @@ try{ empMigrate(); payRestore(); invDateRestore();
       if(guard)guard.style.display='none'; if(card)card.style.display=''; if(addBtn)addBtn.style.display='';
       rows.innerHTML=(list&&list.length)?list.map(rowHtml).join(''):'<tr><td colspan="6" style="color:var(--muted)">No accounts.</td></tr>';
       rows.querySelectorAll('.usrEdit').forEach(function(b){ b.onclick=function(){ var u=list.filter(function(x){return x.username===b.dataset.u;})[0]; if(u)editUserForm(u); }; });
-      rows.querySelectorAll('.usrReset').forEach(function(b){ b.onclick=function(){ confirmThen('Issue a new one-time password for '+b.dataset.u+'? Their current password stops working and they must set a new one at next sign-in.',function(){ API.resetUserPassword(b.dataset.u).then(function(u){ render(); showTempPassword(u); }).catch(function(e){ tt(apiMsg(e)); }); }); }; });
+      rows.querySelectorAll('.usrReset').forEach(function(b){ b.onclick=function(){ resetUserForm(b.dataset.u); }; });
       rows.querySelectorAll('.usrDeact').forEach(function(b){ b.onclick=function(){ confirmThen('Deactivate '+b.dataset.u+'? They will no longer be able to sign in (reversible).',function(){ API.deactivateUser(b.dataset.u).then(function(){ render(); tt('Deactivated'); }).catch(function(e){ tt(apiMsg(e)); }); }); }; });
       rows.querySelectorAll('.usrAct').forEach(function(b){ b.onclick=function(){ API.activateUser(b.dataset.u).then(function(){ render(); tt('Activated'); }).catch(function(e){ tt(apiMsg(e)); }); }; });
     }).catch(function(e){
