@@ -5226,13 +5226,23 @@ try{ empMigrate(); payRestore(); invDateRestore();
 
   /* ---- hydration: fill the SAME globals the renderers already use ---- */
   var _skuName={};
+  // A post-login data fetch that the current ROLE may not be permitted to read
+  // (e.g. a cashier cannot read inventory-movement history) must NOT abort sign-in.
+  // Resolve authorization failures to an empty dataset so the session still boots;
+  // only a genuine auth failure (401) is allowed to propagate. RBAC is unchanged —
+  // the server still returns 403 and the data simply isn't shown for that role.
+  async function safeList(fn){
+    try{ return await fn(); }
+    catch(e){ if(e && e.status===401) throw e; return []; }
+  }
+
   async function hydrate(){
     STORES = await API.branches();
     var u=T.user;
     ROLE = { kind:u.role, branches:(u.branches&&u.branches.length)?u.branches.slice():'all' };
     try{ localStorage.removeItem(LS.role); }catch(e){}
     // products
-    var prods = await API.products();
+    var prods = await safeList(API.products);
     INV.products = prods.map(function(p,i){ var stock={}; STORES.forEach(function(b){ stock[b]=(p.stock&&p.stock[b])||0; });
       return {id:i+1, sku:p.sku, barcode:p.barcode||'', name:p.name, cat:p.category||'General', brand:p.brand||'', supplier:p.supplier||'',
         cost:(p.cost==null?0:p.cost), price:p.price||0, stock:stock, min:p.min||0, reorder:(p.min||0)*2, uom:p.uom||'unit',
@@ -5240,18 +5250,18 @@ try{ empMigrate(); payRestore(); invDateRestore();
     INV.seq = INV.products.length; INV.inited = true;
     _skuName = {}; INV.products.forEach(function(p){ _skuName[p.sku]=p.name; });
     // movements
-    var mv = await API.movements();
+    var mv = await safeList(API.movements);
     INV.moves = mv.map(function(m){ return {id:m.id, ref:m.ref, date:m.date, product:_skuName[m.sku]||m.sku, sku:m.sku, branch:m.branch,
       type:m.type, before:m.before, change:m.change, after:m.after, cost:(m.change?Math.abs((m.value||0)/m.change):0), value:m.value, user:m.user, notes:''}; });
     // ledger (sales + expenses + purchases) → LEDGER + REP.tx
-    var sx = await Promise.all([API.sales(), API.expenses(), API.purchases()]);
+    var sx = await Promise.all([safeList(API.sales), safeList(API.expenses), safeList(API.purchases)]);
     var L=[];
     sx[0].forEach(function(x){ L.push({id:'S'+x.id, date:x.date, store:x.branch, account:x.account||'Cash', type:'sale', amount:x.amount, tax:x.tax||0, category:'Sales', product:x.product, employee:x.employee, memo:x.product||'Daily sales'}); });
     sx[1].forEach(function(x){ L.push({id:'E'+x.id, date:x.date, store:x.branch, account:x.account||'Cash', type:'expense', category:x.category, customDesc:x.custom_description||null, amount:x.amount, memo:x.memo||x.custom_description||x.category}); });
     sx[2].forEach(function(x){ L.push({id:x.id, date:x.date, store:x.branch, account:'Business Bank', type:'purchase', vendor:x.vendor, amount:x.amount, memo:x.vendor}); });
     LEDGER = L; if(typeof REP!=='undefined'&&REP) REP.tx = L; window.uid = 900000;
     // employees
-    var emps = await API.employees();
+    var emps = await safeList(API.employees);
     EMPLOYEES = emps.map(function(e){ return {id:e.id, name:e.name, store:e.branch, title:e.title||'Staff', jobRole:'employee', payType:e.pay_type||'salary',
       salary:e.salary||0, gross:e.salary||0, hourlyRate:e.hourly_rate||0, stdHours:160, otMult:1.5, transportAllow:0, otherAllow:0, deductions:0,
       fica:7.65, unemp:2, wh:0, status:e.active?'active':'inactive', active:e.active, hireDate:daysAgo(120), termDate:'', phone:'', email:'',
@@ -5280,7 +5290,18 @@ try{ empMigrate(); payRestore(); invDateRestore();
       _addLogout();
       try{ if(typeof window.__tgStartPolling==='function') window.__tgStartPolling(); }catch(e){}
       toast('Signed in as '+T.user.name+' · data from PostgreSQL');
-    }catch(e){ if(e.status===401){ apiLogout(true);} else { loginScreen(apiErr(e)); } }
+    }catch(e){
+      // Distinguish an AUTHENTICATION failure from a post-login AUTHORIZATION failure.
+      if(e && e.status===401){ apiLogout(true); }              // token invalid/expired → re-login
+      else if(e && e.status===403){
+        // The account signed in fine, but a resource this role cannot access surfaced
+        // during boot. This is NOT a login failure — never bounce back to the login
+        // screen with a misleading error. Continue with a limited session.
+        try{ hideOverlay(); _addLogout(); }catch(_e){}
+        toast('Signed in — some areas are limited for your role.');
+      }
+      else { loginScreen(apiErr(e)); }                          // network/other → show on login
+    }
   }
   function _addLogout(){ if(document.getElementById('ssLogout'))return;
     var host=document.querySelector('.side .foot'); if(host){ var b=document.createElement('button'); b.id='ssLogout'; b.className='btn g'; b.style.cssText='width:100%;margin-top:8px;font-size:12px';
