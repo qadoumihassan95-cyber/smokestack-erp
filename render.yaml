@@ -51,7 +51,10 @@ services:
       - key: CORS_ORIGINS
         value: https://smokestack-erp.onrender.com
       - key: SEED_ON_START
-        value: "true"           # set to "false" after the first successful boot
+        value: "false"          # SECURITY (SS-C-003): production must never seed demo/
+                                # default-credential accounts. The code also refuses to
+                                # seed a non-SQLite store unless SEED_ON_START is explicitly
+                                # "true", as a second safety net.
       - key: TELEGRAM_BOT_TOKEN
         sync: false             # SAME BotFather token as the worker — lets the bot exchange a tg_id for the user's JWT
 

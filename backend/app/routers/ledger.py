@@ -18,7 +18,7 @@ def _row(x):
 
 @router.get("/sales")
 def sales(branch: str = "all", db: Session = Depends(get_db), user: models.User = Depends(S.require("view"))):
-    brs = S.scope_branches(user, db) if branch == "all" else [branch]
+    brs = S.resolve_branches(user, db, branch)
     q = db.query(models.Ledger).filter(models.Ledger.type == "sale", models.Ledger.branch.in_(brs))
     return [_row(x) for x in q.order_by(models.Ledger.id.desc()).limit(200).all()]
 
@@ -46,7 +46,7 @@ def add_sale(body: SaleIn, db: Session = Depends(get_db), user: models.User = De
 
 @router.get("/expenses")
 def expenses(branch: str = "all", db: Session = Depends(get_db), user: models.User = Depends(S.require("view"))):
-    brs = S.scope_branches(user, db) if branch == "all" else [branch]
+    brs = S.resolve_branches(user, db, branch)
     q = db.query(models.Ledger).filter(models.Ledger.type == "expense", models.Ledger.branch.in_(brs))
     return [_row(x) for x in q.order_by(models.Ledger.id.desc()).limit(200).all()]
 
@@ -68,7 +68,7 @@ def add_expense(body: ExpenseIn, db: Session = Depends(get_db), user: models.Use
 
 @router.get("/purchases")
 def purchases(branch: str = "all", db: Session = Depends(get_db), user: models.User = Depends(S.require("view"))):
-    brs = S.scope_branches(user, db) if branch == "all" else [branch]
+    brs = S.resolve_branches(user, db, branch)
     q = db.query(models.Purchase).filter(models.Purchase.branch.in_(brs))
     return [{"id": p.id, "vendor": p.vendor, "branch": p.branch, "amount": float(p.amount or 0),
              "status": p.status, "date": str(p.purchase_date)} for p in q.order_by(models.Purchase.purchase_date.desc()).all()]

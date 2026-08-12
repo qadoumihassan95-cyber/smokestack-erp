@@ -17,8 +17,10 @@ def _emp(e):
 
 @router.get("/employees")
 def employees(branch: str = "all", db: Session = Depends(get_db), user: models.User = Depends(S.require("view"))):
-    brs = S.scope_branches(user, db) if branch == "all" else [branch]
-    return [_emp(e) for e in db.query(models.Employee).filter(models.Employee.branch.in_(brs)).all()]
+    brs = S.resolve_branches(user, db, branch)
+    # salary is omitted for roles without view_payroll (SS-H-002).
+    return [S.redact_financials(user, _emp(e))
+            for e in db.query(models.Employee).filter(models.Employee.branch.in_(brs)).all()]
 
 @router.post("/employees", status_code=201)
 def add_employee(body: EmployeeIn, db: Session = Depends(get_db), user: models.User = Depends(S.require("add_employee"))):
@@ -32,15 +34,19 @@ def add_employee(body: EmployeeIn, db: Session = Depends(get_db), user: models.U
                         role=(getattr(body, "role", None) or "employee"), created_by=user.id)
     db.add(e); db.commit()
     S.audit(db, user, "create", "employee", e.id, f"{e.name} @ {e.branch}")
-    return _emp(e)
+    return S.redact_financials(user, _emp(e))
 
 @router.put("/employees/{eid}")
 def update_employee(eid: str, body: EmployeeUpdate, db: Session = Depends(get_db), user: models.User = Depends(S.require("edit_employee"))):
     e = db.get(models.Employee, eid)
     if not e:
         raise HTTPException(404, "Not found")
-    # Branch permission checked against the target branch (new if changing, else current).
-    S.assert_branch(user, db, body.branch or e.branch)
+    S.assert_same_company(user, e)
+    # SS-H-006: the caller must be able to reach the employee's CURRENT branch; a
+    # reassignment additionally requires the DESTINATION branch. Authorization is
+    # never taken from the requester-supplied replacement branch alone.
+    dest = getattr(body, "branch", None) or None
+    S.assert_object_branch(user, db, e.branch, dest)
     for f in ("name", "branch", "title", "pay_type", "salary", "hourly_rate",
               "sched_start", "sched_end", "sched_days", "role"):
         v = getattr(body, f, None)
@@ -48,13 +54,15 @@ def update_employee(eid: str, body: EmployeeUpdate, db: Session = Depends(get_db
             setattr(e, f, v)
     db.commit()
     S.audit(db, user, "edit", "employee", eid)
-    return _emp(e)
+    return S.redact_financials(user, _emp(e))
 
 @router.post("/employees/{eid}/deactivate")
 def deactivate(eid: str, db: Session = Depends(get_db), user: models.User = Depends(S.require("deactivate_employee"))):
     e = db.get(models.Employee, eid)
     if not e:
         raise HTTPException(404, "Not found")
+    S.assert_same_company(user, e)
+    S.assert_object_branch(user, db, e.branch)   # SS-H-006: must hold the record's branch
     e.active = False; db.commit()
     S.audit(db, user, "deactivate", "employee", eid)
     return {"ok": True}
@@ -64,7 +72,7 @@ def payroll(start: str, end: str, branch: str = "all", db: Session = Depends(get
             user: models.User = Depends(S.require("view_payroll"))):
     # Employee tax has been removed from payroll entirely: net pay equals gross pay,
     # and there is no employee-tax column, card, or line in any output.
-    brs = S.scope_branches(user, db) if branch == "all" else [branch]
+    brs = S.resolve_branches(user, db, branch)
     emps = db.query(models.Employee).filter(models.Employee.active == True, models.Employee.branch.in_(brs)).all()
     days = max(1, (date.fromisoformat(end) - date.fromisoformat(start)).days + 1)
     rows, gross = [], 0
@@ -77,8 +85,8 @@ def payroll(start: str, end: str, branch: str = "all", db: Session = Depends(get
 @router.post("/payroll/finalize")
 def finalize(start: str, end: str, branch: str = "all", db: Session = Depends(get_db),
              user: models.User = Depends(S.require("run_payroll"))):
-    s = payroll(start, end, branch, db, user)
-    tgt = branch if branch != "all" else S.scope_branches(user, db)[0]
+    s = payroll(start, end, branch, db, user)   # resolve_branches inside 403s on an unauthorized branch
+    tgt = S.resolve_branches(user, db, branch)[0]
     db.add(models.Ledger(branch=tgt, type="payroll", amount=s["gross"],
                          memo=f"Payroll {start}->{end}", created_by=user.id))
     db.commit()
@@ -107,6 +115,7 @@ def get_tg_perms(eid: str, db: Session = Depends(get_db),
     e = db.get(models.Employee, eid)
     if not e:
         raise HTTPException(404, "Not found")
+    S.assert_same_company(user, e)
     S.assert_branch(user, db, e.branch)
     role = e.role or "employee"
     link = (db.query(models.TelegramLink)
@@ -130,6 +139,7 @@ def set_tg_perms(eid: str, body: dict, db: Session = Depends(get_db),
     e = db.get(models.Employee, eid)
     if not e:
         raise HTTPException(404, "Not found")
+    S.assert_same_company(user, e)
     S.assert_branch(user, db, e.branch)
     role = e.role or "employee"
     incoming = body.get("capabilities") or {}

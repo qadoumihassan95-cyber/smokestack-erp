@@ -43,4 +43,26 @@ class Settings:
     att_selfie_retention_days: int = int(os.getenv("ATT_SELFIE_RETENTION_DAYS", "90"))  # deletion
     att_selfie_max_bytes: int = int(os.getenv("ATT_SELFIE_MAX_BYTES", str(8 * 1024 * 1024)))  # 8 MB
 
+    # Values that must never reach a real (non-SQLite) production database.
+    _DEFAULT_JWT_SECRET = "dev-insecure-secret-change-me"
+    _DEFAULT_SEED_PASSWORD = "demo1234"
+
+    @property
+    def is_sqlite(self) -> bool:
+        return self.database_url.startswith("sqlite")
+
+    def production_secret_problems(self):
+        """List the dangerous default secrets present on a production store (SS-C-003).
+        Empty on SQLite (dev/tests). Used by startup to fail closed rather than boot a
+        production service with guessable credentials."""
+        if self.is_sqlite:
+            return []
+        problems = []
+        if not self.jwt_secret or self.jwt_secret == self._DEFAULT_JWT_SECRET:
+            problems.append("JWT_SECRET is unset or the insecure development default.")
+        if self.seed_on_start and self.seed_password == self._DEFAULT_SEED_PASSWORD:
+            problems.append("SEED_ON_START is enabled with the default SEED_PASSWORD on a "
+                            "production database — this would create default-credential accounts.")
+        return problems
+
 settings = Settings()

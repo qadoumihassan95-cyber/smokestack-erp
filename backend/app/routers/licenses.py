@@ -62,7 +62,7 @@ def _serialize(x):
 @router.get("")
 def list_licenses(branch: str = "all", db: Session = Depends(get_db),
                   user: models.User = Depends(S.require("view"))):
-    brs = S.scope_branches(user, db) if branch == "all" else [branch]
+    brs = S.resolve_branches(user, db, branch)
     rows = (db.query(models.License)
             .filter((models.License.branch.in_(brs)) | (models.License.branch.is_(None)))
             .order_by(models.License.expiry_date.asc().nullslast()).all())

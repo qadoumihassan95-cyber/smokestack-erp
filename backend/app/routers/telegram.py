@@ -14,10 +14,11 @@ import hmac
 import secrets
 import json
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Depends, HTTPException, Header, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, Header, UploadFile, File, Form, Request
 from sqlalchemy.orm import Session
 from ..database import get_db
 from ..config import settings
+from .. import ratelimit as RL
 from .. import models, security as S, permissions as P, tg_caps as C
 from .. import noactivity as NA
 from .. import attendance_evidence as AE
@@ -211,15 +212,22 @@ def unlink(db: Session = Depends(get_db), user: models.User = Depends(S.get_curr
 
 
 @router.post("/link/verify")
-def verify(body: LinkVerifyIn, db: Session = Depends(get_db)):
+def verify(body: LinkVerifyIn, request: Request = None, db: Session = Depends(get_db)):
+    # Throttle code redemption (SS-H-007): a 6-digit code is brute-forceable, so
+    # bound attempts per client IP and per target Telegram id before any lookup.
+    RL.guard(db, request, str(getattr(body, "tg_id", "") or ""), kind="tglink",
+             limit=8, window_sec=600)
     rec = db.get(models.LinkCode, body.code.strip())
     now = datetime.now(timezone.utc)
     exp = _aware(rec.expires_at) if rec else None
     if not rec:
+        RL.note_failure(db, request, str(getattr(body, "tg_id", "") or ""), kind="tglink")
         raise HTTPException(400, "Invalid code")
     if rec.used:
+        RL.note_failure(db, request, str(getattr(body, "tg_id", "") or ""), kind="tglink")
         raise HTTPException(400, "This code was already used. Generate a new one.")
     if exp and exp < now:
+        RL.note_failure(db, request, str(getattr(body, "tg_id", "") or ""), kind="tglink")
         raise HTTPException(400, "This code has expired. Generate a new one.")
     rec.used = True  # one-time: burn immediately
 
@@ -307,11 +315,14 @@ def session(tg_id: str, x_bot_token: str = Header(None), db: Session = Depends(g
 
 
 @router.post("/auth-token")
-def auth_token(body: dict, x_bot_token: str = Header(None), db: Session = Depends(get_db)):
+def auth_token(body: dict, request: Request = None, x_bot_token: str = Header(None),
+               db: Session = Depends(get_db)):
     """Exchange a linked Telegram id for that user's JWT. Only the bot (which knows
     the BotFather token, shared via the API's TELEGRAM_BOT_TOKEN env) may call this.
     The bot then reuses every existing RBAC-protected endpoint as the real user."""
-    if not settings.bot_token or x_bot_token != settings.bot_token:
+    RL.guard(db, request, "", kind="tgauth", limit=30, window_sec=300)
+    if not settings.bot_token or not hmac.compare_digest(str(x_bot_token or ""), str(settings.bot_token)):
+        RL.note_failure(db, request, "", kind="tgauth")
         raise HTTPException(403, "Forbidden")
     tg_id = (body.get("tg_id") or "").strip()
     link = db.get(models.TelegramLink, tg_id)
