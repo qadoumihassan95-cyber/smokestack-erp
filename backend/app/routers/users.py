@@ -49,23 +49,11 @@ def temp_password(length=14):
 
 
 def _validate_manual_password(pw, confirm=None):
-    """Server-side validation for an Owner-assigned manual password.
-
-    Errors are deliberately generic and NEVER echo the password. The password is
-    only ever read here and passed straight to the hashing helper by the caller.
-    """
-    if not isinstance(pw, str) or not pw:
-        raise HTTPException(422, "A password is required.")
-    if confirm is not None and pw != confirm:
-        raise HTTPException(422, "Passwords do not match.")
-    if len(pw) < _MIN_PW_LEN:
-        raise HTTPException(422, f"Choose a password of at least {_MIN_PW_LEN} characters.")
-    # bcrypt only considers the first 72 bytes; refuse longer so nobody is misled
-    # into thinking the tail was stored.
-    if len(pw.encode("utf-8")) > S.BCRYPT_MAX_BYTES:
-        raise HTTPException(422, f"Password is too long: use at most {S.BCRYPT_MAX_BYTES} bytes.")
-    if pw.strip().lower() in _WEAK_PASSWORDS or len(set(pw)) < 4:
-        raise HTTPException(422, "Choose a stronger, less predictable password.")
+    """Server-side validation for an Owner-assigned manual password. Delegates to
+    the single central password policy (security.validate_password) so every
+    password-setting path enforces identical rules; errors are generic and never
+    echo the password."""
+    S.validate_password(pw, confirm)
 
 
 def _resolve_password(body):
@@ -248,6 +236,10 @@ def update_user(username: str, body: dict, db: Session = Depends(get_db),
         for b in branches:
             db.add(models.UserBranch(user_id=u.id, branch=b))
 
+    # A role or branch-scope change must not be bypassable with an old token that
+    # still encodes the previous privileges — revoke prior sessions (SS-H-011).
+    if ("role" in body and body["role"] is not None) or ("branches" in body):
+        S.bump_token_version(db, u)
     db.commit()
     S.audit(db, actor, "update_user", "user", u.id,
             detail=f"role={u.role} · branches={','.join(u.branch_names) or 'none'}")
@@ -266,6 +258,9 @@ def deactivate_user(username: str, db: Session = Depends(get_db),
             and _active_owner_count(db, exclude=u.id) == 0):
         raise HTTPException(409, "Cannot deactivate the last active Owner.")
     u.status = "inactive"
+    # Revoke live sessions immediately (SS-H-011) — deactivation must not wait for
+    # the existing token to expire.
+    S.bump_token_version(db, u)
     db.commit()
     S.audit(db, actor, "deactivate_user", "user", u.id)
     return _user_out(db, u)
@@ -297,6 +292,9 @@ def reset_password(username: str, body: dict = Body(default=None),
     pw, must_change, is_manual = _resolve_password(body)
     u.password_hash = S.hash_pw(pw)
     u.must_change_password = must_change
+    # Session revocation (SS-H-011): a reset invalidates every token minted before
+    # it, so a previously-issued (or stolen) JWT for this account stops working.
+    S.bump_token_version(db, u)
     db.commit()
     S.audit(db, actor, "reset_password", "user", u.id,
             detail=f"pw={'manual' if is_manual else 'generated'}")
@@ -325,12 +323,14 @@ def change_password(body: dict, db: Session = Depends(get_db),
     if not forced or current:
         if not S.verify_pw(current, user.password_hash):
             raise HTTPException(403, "Your current password is not correct.")
-    if len(new) < 10:
-        raise HTTPException(422, "Choose a password of at least 10 characters.")
-    if S.verify_pw(new, user.password_hash):
-        raise HTTPException(422, "The new password must be different from the current one.")
+    # Single central password policy (length / variety / weak-list / byte-boundary /
+    # reuse), identical to every other password-setting path.
+    S.validate_password(new, body.get("confirm_password"), current_hash=user.password_hash)
     user.password_hash = S.hash_pw(new)
     user.must_change_password = False
+    # Session revocation (SS-H-011): invalidate every previously-issued token, then
+    # mint a fresh one carrying the new version so ONLY this session survives.
+    S.bump_token_version(db, user)
     db.commit()
     S.audit(db, user, "change_password", "user", user.id,
             detail=("forced_first_login" if forced else "self_service"))

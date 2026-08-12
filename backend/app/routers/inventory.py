@@ -19,14 +19,16 @@ def _prod_out(db, p, branches):
 @router.get("/products")
 def products(q: str = "", branch: str = "all", db: Session = Depends(get_db),
              user: models.User = Depends(S.require("view"))):
-    branches = [branch] if branch != "all" and branch in S.scope_branches(user, db) else S.scope_branches(user, db)
+    branches = S.resolve_branches(user, db, branch)
     query = db.query(models.Product).filter(models.Product.status != "deleted")
     if q:
         like = f"%{q.lower()}%"
         query = query.filter(func.lower(models.Product.name).like(like) |
                              func.lower(models.Product.sku).like(like) |
                              models.Product.barcode.like(f"%{q}%"))
-    return [_prod_out(db, p, branches) for p in query.order_by(models.Product.name).all()]
+    # Cost is omitted for roles without view_cost (SS-H-002); retail price stays.
+    return [S.redact_financials(user, _prod_out(db, p, branches))
+            for p in query.order_by(models.Product.name).all()]
 
 @router.get("/reorder")
 def reorder(branch: str = "all", db: Session = Depends(get_db),
@@ -39,8 +41,7 @@ def reorder(branch: str = "all", db: Session = Depends(get_db),
     from existing product/stock data (no schema change). Cost fields are hidden from
     roles lacking the ``view_cost`` capability, mirroring the product lookup.
     """
-    scope = S.scope_branches(user, db)
-    brs = [branch] if branch != "all" and branch in scope else scope
+    brs = S.resolve_branches(user, db, branch)
     show_cost = P.can(user.role, "view_cost")
     stock = {}
     for st in db.query(models.Stock).filter(models.Stock.branch.in_(brs)).all():
@@ -83,10 +84,8 @@ def by_barcode(code: str, db: Session = Depends(get_db), user: models.User = Dep
     if not p:
         raise HTTPException(404, "No product with that barcode")
     out = _prod_out(db, p, S.scope_branches(user, db))
-    if not P.can(user.role, "view_cost"):
-        out["cost"] = None
     out["fifo_cost"] = out["cost"]
-    return out
+    return S.redact_financials(user, out)   # omits cost/fifo_cost without view_cost
 
 @router.post("/products", status_code=201)
 def create_product(body: ProductIn, db: Session = Depends(get_db), user: models.User = Depends(S.require("create", "edit"))):
@@ -102,7 +101,7 @@ def create_product(body: ProductIn, db: Session = Depends(get_db), user: models.
         db.add(models.Stock(sku=p.sku, branch=b, qty=0))
     db.commit()
     S.audit(db, user, "create", "product", p.sku, f"{p.name}")
-    return _prod_out(db, p, S.scope_branches(user, db))
+    return S.redact_financials(user, _prod_out(db, p, S.scope_branches(user, db)))
 
 @router.patch("/products/{sku}")
 def update_product(sku: str, body: ProductUpdate, db: Session = Depends(get_db), user: models.User = Depends(S.require("edit"))):
@@ -115,7 +114,7 @@ def update_product(sku: str, body: ProductUpdate, db: Session = Depends(get_db),
             setattr(p, f, v)
     db.commit()
     S.audit(db, user, "edit", "product", sku, "updated")
-    return _prod_out(db, p, S.scope_branches(user, db))
+    return S.redact_financials(user, _prod_out(db, p, S.scope_branches(user, db)))
 
 @router.post("/products/{sku}/deactivate")
 def deactivate_product(sku: str, db: Session = Depends(get_db), user: models.User = Depends(S.require("edit"))):
@@ -204,7 +203,7 @@ def adjust(body: StockOp, db: Session = Depends(get_db), user: models.User = Dep
 @router.get("/movements")
 def movements(branch: str = "all", start: str = "", end: str = "", limit: int = 300,
               db: Session = Depends(get_db), user: models.User = Depends(S.require("view_inventory_history"))):
-    branches = S.scope_branches(user, db) if branch == "all" else [branch]
+    branches = S.resolve_branches(user, db, branch)
     q = db.query(models.Movement).filter(models.Movement.branch.in_(branches))
     if start:
         q = q.filter(models.Movement.moved_at >= start)
@@ -234,7 +233,7 @@ def as_of_qty(db, sku, branch, date_iso):
 @router.get("/asof")
 def asof(date: str = Query(...), branch: str = "all", db: Session = Depends(get_db),
          user: models.User = Depends(S.require("view_asof"))):
-    branches = S.scope_branches(user, db) if branch == "all" else [branch]
+    branches = S.resolve_branches(user, db, branch)
     rows = []
     for p in db.query(models.Product).filter(models.Product.status != "deleted").all():
         per = {b: as_of_qty(db, p.sku, b, date) for b in branches}

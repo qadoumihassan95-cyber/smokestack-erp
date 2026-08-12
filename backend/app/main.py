@@ -99,6 +99,15 @@ def on_startup():
     # maintenance — mark the session as an explicit system context so it is an
     # audited bypass of tenant scoping, not an accidental untagged one.
     tenancy.use_system_context(db)
+    # SS-C-003: never boot a real production service with default/guessable secrets.
+    # Skipped for SQLite (dev/tests) and while running under pytest, so the check
+    # only guards genuine production startup.
+    import sys as _sys
+    if "pytest" not in _sys.modules:
+        _problems = settings.production_secret_problems()
+        if _problems:
+            raise RuntimeError("Refusing to start with insecure production configuration: "
+                               + " ".join(_problems))
     try:
         if settings.seed_on_start:
             from .seed import seed

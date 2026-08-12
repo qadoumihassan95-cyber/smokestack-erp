@@ -249,7 +249,7 @@ def approvers(branch: str, x_bot_token: str = Header(None), db: Session = Depend
 @router.get("")
 def attendance_list(branch: str = "all", db: Session = Depends(get_db),
                     user: models.User = Depends(S.require("view"))):
-    brs = S.scope_branches(user, db) if branch == "all" else [branch]
+    brs = S.resolve_branches(user, db, branch)
     rows = (db.query(models.Attendance).filter(models.Attendance.branch.in_(brs))
             .order_by(models.Attendance.id.desc()).limit(200).all())
     return [_serialize(a) for a in rows]
@@ -269,7 +269,7 @@ def worksheet(period: str = "month", start: str = None, end: str = None, branch:
               db: Session = Depends(get_db), user: models.User = Depends(S.require("view"))):
     """Employee work schedule + Telegram attendance: joins each attendance punch with the
     employee's scheduled shift to compute late minutes, worked hours and overtime."""
-    brs = S.scope_branches(user, db) if branch == "all" else [branch]
+    brs = S.resolve_branches(user, db, branch)
     today = datetime.now(timezone.utc).date()
     # date window
     if start and end:

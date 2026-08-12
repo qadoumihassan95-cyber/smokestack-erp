@@ -65,6 +65,9 @@ class User(Base):
     # A newly provisioned account must set its own password before it can do
     # anything: the temporary one is known to whoever created the account.
     must_change_password = Column(Boolean, default=False)
+    # Monotonic session-revocation counter (SS-H-011). Every issued JWT embeds the
+    # value current at mint time; advancing it invalidates all prior tokens.
+    token_version = Column(Integer, nullable=False, server_default="0", default=0)
     employee_id = Column(String)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     branches = relationship("UserBranch", cascade="all, delete-orphan", backref="user")
@@ -863,3 +866,14 @@ class NoActivityIncident(Base):
     resolved_at = Column(DateTime(timezone=True))
     resolved_activity_type = Column(String)                    # the activity that cleared it
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class RateHit(Base):
+    """One row per throttled attempt (SS-H-007). Counting recent rows for a scope
+    key gives a DB-backed, multi-instance-safe fixed-window limiter. Old rows are
+    pruned on each check so the table never grows unboundedly. Stores only a
+    non-reversible scope key (never a raw password or Telegram code)."""
+    __tablename__ = "auth_rate_hits"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    scope_key = Column(String, nullable=False, index=True)
+    ts = Column(DateTime(timezone=True), server_default=func.now(), index=True)

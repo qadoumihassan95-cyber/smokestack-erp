@@ -75,7 +75,7 @@ def branch_labels(db: Session = Depends(get_db), user: models.User = Depends(S.r
 
 @router.get("/reports/dashboard")
 def dashboard(branch: str = "all", db: Session = Depends(get_db), user: models.User = Depends(S.require("view"))):
-    brs = S.scope_branches(user, db) if branch == "all" else [branch]
+    brs = S.resolve_branches(user, db, branch)
     today = date.today()
     def s(t):
         return float(db.query(func.coalesce(func.sum(models.Ledger.amount), 0)).filter(
@@ -115,14 +115,18 @@ def dashboard(branch: str = "all", db: Session = Depends(get_db), user: models.U
     }
     if P.can(user.role, "view_cost"):
         out_data.update({"inventory_cost": cost, "inventory_retail": retail, "potential_profit": retail - cost})
-    return out_data
+    # Omit profit/cogs/payroll/costs for roles without the matching permission
+    # (SS-H-002). Sales/expenses (transaction totals) stay visible to cashiers.
+    return S.redact_financials(user, out_data)
 
 @router.get("/reports/daily")
 def daily(branch: str = "all", db: Session = Depends(get_db), user: models.User = Depends(S.require("view"))):
     d = dashboard(branch, db, user)
+    rows = [["Sales", d.get("sales_today")], ["Expenses", d.get("expenses_today")]]
+    if "profit_today" in d:                     # only when the role may see profit (SS-H-002)
+        rows.append(["Gross profit", d["profit_today"]])
     return {"title": "Daily report", "date": str(date.today()),
-            "rows": [["Sales", d["sales_today"]], ["Expenses", d["expenses_today"]], ["Gross profit", d["profit_today"]]],
-            "generated_by": f"{user.name} ({user.role})"}
+            "rows": rows, "generated_by": f"{user.name} ({user.role})"}
 
 @router.get("/audit")
 def audit_log(limit: int = 100, db: Session = Depends(get_db), user: models.User = Depends(S.require("view_all_branches"))):
@@ -143,7 +147,7 @@ def kpi(period: str = "month", branch: str = "all", db: Session = Depends(get_db
     """Top-bar KPIs: Costs and Profit for the selected period, branch-scoped, with a
     comparison against the previous equivalent period. Values are hidden from roles
     that can't view cost/profit."""
-    brs = S.scope_branches(user, db) if branch == "all" else [branch]
+    brs = S.resolve_branches(user, db, branch)
     d0, d1, p0, p1 = _period_range(period)
     cur = _costs_profit(db, brs, d0, d1)
     prev = _costs_profit(db, brs, p0, p1)
@@ -169,7 +173,7 @@ def kpi(period: str = "month", branch: str = "all", db: Session = Depends(get_db
 def analytics(branch: str = "all", db: Session = Depends(get_db),
               user: models.User = Depends(S.require("view"))):
     """Real-data series for the dashboard/report charts."""
-    brs = S.scope_branches(user, db) if branch == "all" else [branch]
+    brs = S.resolve_branches(user, db, branch)
     today = date.today()
 
     # last 6 months buckets
@@ -252,10 +256,12 @@ def analytics(branch: str = "all", db: Session = Depends(get_db),
         elif q <= (p.min_level or 0):
             low += 1
 
-    return {"profit_trend": profit_trend, "costs_trend": costs_trend,
+    # Financial series (profit/costs trends, per-branch profit) are omitted for
+    # roles lacking the matching permission (SS-H-002); volume charts remain.
+    return S.redact_financials(user, {"profit_trend": profit_trend, "costs_trend": costs_trend,
             "branch_comparison": branch_cmp, "expenses_by_category": expenses_by_category,
             "best_products": best_products, "peak_hours": peak_hours,
-            "inventory_movement": inv_move, "low_stock": {"low": low, "out": out}}
+            "inventory_movement": inv_move, "low_stock": {"low": low, "out": out}})
 
 
 @router.get("/reports/comparisons")
@@ -264,7 +270,7 @@ def comparisons(branch: str = "all", db: Session = Depends(get_db),
     """Period-over-period comparisons plus a simple trend-based forecast and
     plain-language recommendations. Forecast values are clearly labelled as
     calculated, not guaranteed."""
-    brs = S.scope_branches(user, db) if branch == "all" else [branch]
+    brs = S.resolve_branches(user, db, branch)
 
     def block(period):
         d0, d1, p0, p1 = _period_range(period)
@@ -299,10 +305,14 @@ def comparisons(branch: str = "all", db: Session = Depends(get_db),
     slope = sum((xs[i] - mean_x) * (hist[i] - mean_y) for i in range(n)) / denom
     forecast_next = max(0, round(mean_y + slope * (n - mean_x) + slope, 2))
 
+    can_cost = P.can(user.role, "view_cost")
+    can_profit = P.can(user.role, "view_profit")
     recs = []
-    if mom["profit"]["delta_pct"] is not None and mom["profit"]["delta_pct"] < 0:
+    # Only surface a cost/profit recommendation to a role permitted to see the
+    # underlying figure (SS-H-002) — the wording itself would otherwise leak it.
+    if can_profit and mom["profit"]["delta_pct"] is not None and mom["profit"]["delta_pct"] < 0:
         recs.append("Profit is down vs last month — review your largest expense categories and supplier costs.")
-    if mom["costs"]["delta_pct"] is not None and mom["costs"]["delta_pct"] > 15:
+    if can_cost and mom["costs"]["delta_pct"] is not None and mom["costs"]["delta_pct"] > 15:
         recs.append("Costs rose more than 15% month-over-month — check purchases and payroll for the increase.")
     if slope > 0:
         recs.append("Sales trend is positive over the last 6 months — keep stock levels ahead of demand.")
@@ -311,12 +321,14 @@ def comparisons(branch: str = "all", db: Session = Depends(get_db),
     if not recs:
         recs.append("Performance is stable — no urgent action; keep monitoring weekly.")
 
-    return {"week_over_week": wow, "month_over_month": mom, "year_over_year": yoy,
+    # Omit costs/profit blocks for roles without permission (SS-H-002); revenue,
+    # the revenue-only forecast and the filtered recommendations remain.
+    return S.redact_financials(user, {"week_over_week": wow, "month_over_month": mom, "year_over_year": yoy,
             "forecast": {"metric": "revenue", "next_period": "next month",
                          "value": forecast_next, "basis": "6-month linear trend",
                          "disclaimer": "Calculated forecast, not a guaranteed figure."},
             "history": [round(h, 2) for h in hist],
-            "recommendations": recs}
+            "recommendations": recs})
 
 
 # =========================================================================
@@ -331,7 +343,7 @@ def no_activity_alerts(branch: str = "all", db: Session = Depends(get_db),
                        user: models.User = Depends(S.require("view"))):
     """Active (open|acknowledged) inactivity incidents for branches the caller may
     see. RBAC: strictly intersected with the user's branch scope."""
-    brs = S.scope_branches(user, db) if branch == "all" else [branch]
+    brs = S.resolve_branches(user, db, branch)
     if branch != "all":
         brs = [b for b in brs if b in S.scope_branches(user, db)]
     incidents = (db.query(models.NoActivityIncident)
