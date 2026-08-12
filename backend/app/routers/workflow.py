@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import update as sa_update
 from datetime import datetime
 from ..database import get_db
 from .. import models, security as S, partners_repo as PR, counters
-from ..locking import apply_ordered_movements
+from .. import transfers_service
 from ..schemas import TransferIn, ApprovalDecision, ClockIn
 
 router = APIRouter(prefix="/api", tags=["workflow"])
@@ -49,22 +50,31 @@ def _decide(db, user, aid, status, comment):
     if a.status != "pending":
         raise HTTPException(409, f"This request was already {a.status}.")
     S.assert_branch(user, db, a.branch)
+    # Atomic decision claim (compare-and-swap): approve AND reject use the SAME
+    # primitive and succeed only while the approval is still pending, so exactly one
+    # decision can ever win; the loser gets the existing conflict response. The Core
+    # UPDATE bypasses the SELECT-only scoping event, so it is scoped by company_id.
+    claimed = db.execute(
+        sa_update(models.Approval)
+        .where(models.Approval.row_id == a.row_id,
+               models.Approval.company_id == getattr(user, "_company_id", 1),
+               models.Approval.status == "pending")
+        .values(status=status, decided_by=user.name, comment=comment)
+    ).rowcount
+    if claimed != 1:
+        raise HTTPException(409, "This request was already decided.")
     # Approving must actually complete the underlying work. Previously the
     # approval row flipped to "approved" but the transfer never moved stock and
     # the purchase stayed pending forever.
+    if a.kind == "transfer" and status == "approved":
+        t = PR.get_transfer(db, a.ref)
+        if not t:
+            raise HTTPException(404, "Transfer not found")
+        # Single-transaction, race-safe completion via the shared service (TD-002).
+        return transfers_service.execute_approved_transfer(db, user, t, a, comment)
     if a.kind == "transfer":
         t = PR.get_transfer(db, a.ref)
         if t:
-            if status == "approved":
-                if t.status != "pending":
-                    raise HTTPException(409, f"Transfer already {t.status}.")
-                # multi-row stock mutation → canonical lock order (Phase 6)
-                apply_ordered_movements(db, user, [
-                    {"sku": t.sku, "branch": t.from_branch, "mtype": "transfer_out",
-                     "change": -int(t.qty), "notes": f"Transfer {t.id} -> {t.to_branch}"},
-                    {"sku": t.sku, "branch": t.to_branch, "mtype": "transfer_in",
-                     "change": int(t.qty), "notes": f"Transfer {t.id} <- {t.from_branch}"},
-                ])
             t.status = status
     elif a.kind == "purchase":
         p = PR.get_purchase(db, a.ref)
