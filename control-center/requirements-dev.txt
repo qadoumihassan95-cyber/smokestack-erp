@@ -1,0 +1,3 @@
+# Test/CI-only dependencies for the Control Center (never on the runtime).
+pytest
+httpx        # required by starlette.testclient.TestClient (test-only)

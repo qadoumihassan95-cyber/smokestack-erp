@@ -1,0 +1,18 @@
+# PFS Control Center — tooling config (independent of the ERP apps).
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = ["migrations/versions", "*.db"]
+
+[tool.ruff.lint]
+select = ["F", "E9", "B", "PLE"]
+ignore = ["B008", "B006", "B904", "F401"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S", "B", "F401", "F811"]
+"migrations/**" = ["F401"]
+
+[tool.pytest.ini_options]
+addopts = "-p no:cacheprovider"
+testpaths = ["tests"]
+pythonpath = ["."]
