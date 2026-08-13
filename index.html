@@ -5146,6 +5146,18 @@ try{ empMigrate(); payRestore(); invDateRestore();
     if(!m || m==='[object Object]') m=detailText(e&&e.data&&e.data.detail);
     return m||'Request failed';
   }
+  // Distinct, safe messages for the Telegram link flow so a denied/duplicate/
+  // inactive/rate-limited attempt never shows the generic dead-end message.
+  function tgLinkErr(e){
+    var st=e&&e.status;
+    if(st===403) return "You don't have permission to link Telegram accounts. Ask an Owner or Admin.";
+    if(st===404) return "That employee could not be found. Refresh the list and try again.";
+    if(st===409) return "This employee's Telegram account is already linked.";
+    if(st===422) return "This employee can't be linked right now (inactive or ineligible).";
+    if(st===429) return "Too many attempts. Please wait a moment, then try again.";
+    if(st===401) return "Your session expired. Please sign in again.";
+    return (e&&e.message) || "Could not generate a link code. Please try again.";
+  }
   /* Flatten any API error payload into readable text, whatever its shape. */
   function detailText(d){
     if(d==null) return '';
@@ -5475,7 +5487,7 @@ try{ empMigrate(); payRestore(); invDateRestore();
     try{ var r=await SS_API_LIVE.tgLinkCode();
       TG.code=r.code; TG.expiresAt=Date.now()+((r.expires_in||300)*1000);
       tgShowCode();
-    }catch(e){ toast(apiErr(e)); }
+    }catch(e){ toast(tgLinkErr(e)); }
     finally{ if(gb){gb.disabled=false;} if(rb){rb.disabled=false;} }
   }
   function tgCopy(){
@@ -6648,7 +6660,7 @@ try{ empMigrate(); payRestore(); invDateRestore();
       LM.poll=setInterval(lmCheck, 3000);         // auto-detect the connection
     }catch(e){
       LM.state='error';
-      LM.result=String(err(e)||'Could not generate a link code.');
+      LM.result=String(tgLinkErr(e));
       lmRender();
     }finally{ LM.busy=false; }
   }
