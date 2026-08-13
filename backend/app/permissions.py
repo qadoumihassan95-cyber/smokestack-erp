@@ -3,8 +3,8 @@ so the backend enforces the same rules the UI shows."""
 
 ALL_PERMS = [
     "view","create","edit","delete","approve","void","refund","print","export",
-    "view_cost","edit_cost","view_profit","view_payroll","manage_users","manage_permissions",
-    "manage_branches","transfer_stock","adjust_stock","close_shift","view_all_branches",
+    "view_cost","edit_cost","view_profit","view_payroll","manage_users","manage_permissions","manage_telegram_links",
+    "manage_branches","manage_telegram_links","transfer_stock","adjust_stock","close_shift","view_all_branches",
     "scan_barcode","print_labels","continuous_receiving","add_employee","edit_employee",
     "deactivate_employee","run_payroll","finalize_payroll","view_inventory_history","view_asof","export_history",
     "chat_view","chat_send","chat_create_room","chat_manage_room","chat_delete_message",
@@ -14,7 +14,7 @@ ALL_PERMS = [
 
 PERMS = {
     "owner": list(ALL_PERMS),
-    "admin": ["view","create","edit","delete","approve","void","refund","print","export","view_cost","view_profit","view_payroll","manage_branches","transfer_stock","adjust_stock","close_shift","view_all_branches","scan_barcode","print_labels","continuous_receiving","add_employee","edit_employee","deactivate_employee","run_payroll","finalize_payroll","view_inventory_history","view_asof","export_history","manage_reminders","manage_schedules"],
+    "admin": ["view","create","edit","delete","approve","void","refund","print","export","view_cost","view_profit","view_payroll","manage_branches","manage_telegram_links","transfer_stock","adjust_stock","close_shift","view_all_branches","scan_barcode","print_labels","continuous_receiving","add_employee","edit_employee","deactivate_employee","run_payroll","finalize_payroll","view_inventory_history","view_asof","export_history","manage_reminders","manage_schedules"],
     "branch_manager": ["view","create","edit","approve","void","print","export","view_cost","transfer_stock","adjust_stock","close_shift","scan_barcode","print_labels","continuous_receiving","add_employee","edit_employee","run_payroll","view_inventory_history","view_asof","export_history","manage_schedules",
         "chat_view","chat_send","chat_create_room","chat_manage_room","chat_pin","chat_create_task","chat_announce","chat_company_room"],
     "manager": ["view","create","edit","approve","void","print","export","view_cost","transfer_stock","adjust_stock","close_shift","scan_barcode","print_labels","continuous_receiving","add_employee","edit_employee","run_payroll","view_inventory_history","view_asof","export_history","manage_schedules"],

@@ -146,17 +146,30 @@ def _issue_code(db: Session, user: models.User, employee: models.Employee = None
 
 
 def _resolve_target(db: Session, actor: models.User, employee_id: str):
-    """Owners/managers may mint an invitation for any employee they administer."""
+    """Resolve the employee an owner/admin is minting an invitation for.
+
+    Requires the dedicated ``manage_telegram_links`` capability (owner + admin).
+    Roles that can VIEW the Telegram page but not administer links (e.g.
+    accountant) are refused with a clear, distinct 403 so the UI can show a
+    specific message instead of a generic 'server rejected this action'.
+    The target must be the same tenant, exist, be active, and sit in a branch
+    the actor is scoped to — branch isolation is preserved.
+    """
     if not employee_id:
         return None
-    if "manage_users" not in P.PERMS.get(actor.role, []):
-        raise HTTPException(403, "You may not link Telegram accounts for other employees.")
+    if not P.can(actor.role, "manage_telegram_links"):
+        raise HTTPException(403, "You don't have permission to link Telegram accounts.")
     emp = db.get(models.Employee, employee_id)
     if not emp:
         raise HTTPException(404, "Employee not found")
+    S.assert_same_company(actor, emp)          # never cross-tenant
     if not emp.active:
         raise HTTPException(422, "That employee is not active.")
-    S.assert_branch(actor, db, emp.branch)
+    S.assert_branch(actor, db, emp.branch)     # branch isolation
+    # NOTE: uniqueness (one active Telegram account per employee, and a globally
+    # unique Telegram id) is enforced at REDEMPTION in /link/verify, which returns
+    # a controlled 409. Minting a code is always allowed so an operator can
+    # re-issue after disabling an old device.
     return emp
 
 
@@ -1372,6 +1385,19 @@ def att_selfie(tg_id: str = Form(...), attempt_id: str = Form(...),
             "branch": ev.branch, "branch_display": S.branch_label(db, ev.branch),
             "distance_m": ev.dist_m, "out_of_area": bool(ev.out_of_area),
             "clock_in_at": _iso(rec.clock_in_at)}
+
+
+@router.get("/attendance/current")
+def att_current(tg_id: str, x_bot_token: str = Header(None), db: Session = Depends(get_db)):
+    """Resolve the caller's live attendance attempt so the worker can resume a
+    flow whose in-memory state was lost (restart / delayed update). Bot-token
+    gated and scoped to this tg_id; returns only safe status metadata."""
+    _require_bot_token(x_bot_token)
+    ev = AE.current_pending(db, tg_id)
+    if not ev:
+        return {"ok": True, "status": "none"}
+    need = "selfie" if ev.status == "pending_selfie" else "location"
+    return {"ok": True, "status": ev.status, "attempt_id": ev.attempt_id, "need": need}
 
 
 @router.post("/attendance/cancel")

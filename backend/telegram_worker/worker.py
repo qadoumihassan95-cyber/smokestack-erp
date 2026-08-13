@@ -115,6 +115,32 @@ def st(tg_id):
     return STATE.setdefault(str(tg_id), {"stack": [], "lists": {}, "last_cb": None})
 
 
+def _is_forwarded(msg):
+    """Version-safe 'was this message forwarded?' check. python-telegram-bot 20+
+    removed Message.forward_date (replaced by forward_origin); accessing the old
+    attribute raises AttributeError. Detect a forwarded pin without ever raising,
+    so a shared live location is never mistaken for a forward and the handler
+    never crashes."""
+    try:
+        if getattr(msg, "forward_origin", None) is not None:
+            return True
+    except Exception:  # noqa: BLE001
+        pass
+    for attr in ("forward_date", "forward_from", "forward_sender_name", "forward_from_chat"):
+        try:
+            if getattr(msg, attr, None):
+                return True
+        except Exception:  # noqa: BLE001
+            pass
+    try:
+        ak = getattr(msg, "api_kwargs", None) or {}
+        if ak.get("forward_date") or ak.get("forward_origin"):
+            return True
+    except Exception:  # noqa: BLE001
+        pass
+    return False
+
+
 def note_user(update):
     """Record the Telegram identity of the sender. Each tg_id gets its own
     STATE entry, so concurrent conversations never share context."""
@@ -1645,13 +1671,29 @@ async def on_location(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     mode = s.get("att_await")
     if not mode:
         return
+    try:
+        await _on_location_flow(update, ctx, tg_id, s, mode)
+    except Exception as e:  # noqa: BLE001
+        log.exception("on_location error: %s", e)
+        for k in ("att_await", "ev_attempt", "ev_await_selfie"):
+            s.pop(k, None)
+        try:
+            await update.message.reply_text(
+                "\u26a0\ufe0f Couldn't process that location. Open Attendance and tap Clock In again.",
+                reply_markup=ReplyKeyboardRemove())
+        except Exception:  # noqa: BLE001
+            pass
+
+
+async def _on_location_flow(update, ctx, tg_id, s, mode):
+    from telegram import ReplyKeyboardRemove
     if time.time() - s.get("att_ts", 0) > 300:                 # request freshness
         s.pop("att_await", None)
         await update.message.reply_text("That location request expired. Open Attendance and tap Clock In again.",
                                         reply_markup=ReplyKeyboardRemove())
         return
     loc = update.message.location
-    live = not bool(update.message.forward_date)               # forwarded pin != live GPS
+    live = not _is_forwarded(update.message)                   # forwarded pin != live GPS (version-safe)
     s.pop("att_await", None)
     s["att_last_loc"] = (loc.latitude, loc.longitude)
     # Clock-IN evidence flow: record the location on the bound attempt, then ask
@@ -1996,6 +2038,19 @@ async def on_media(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     s = st(tg_id)
     f = flow(tg_id)
     msg = update.message
+    # Resume a selfie step whose in-memory marker was lost (worker restart or a
+    # delayed update): if a photo arrives with no active local flow, ask the API
+    # whether this user has a pending_selfie attempt and, if so, continue safely.
+    if (msg.photo and not s.get("ev_await_selfie") and not s.get("await_barcode")
+            and not (f and f.get("_awaiting") == "file")):
+        try:
+            sc, cur = await _bot_req("GET", f"/api/telegram/attendance/current?tg_id={tg_id}")
+            if sc == 200 and isinstance(cur, dict) and cur.get("status") == "pending_selfie":
+                s["ev_await_selfie"] = True
+                s["ev_attempt"] = cur.get("attempt_id")
+                s["att_ts"] = time.time()
+        except Exception:  # noqa: BLE001
+            pass
     # Attendance selfie: complete a clock-in that already has its location.
     if s.get("ev_await_selfie"):
         if time.time() - s.get("att_ts", 0) > 300:
@@ -2349,6 +2404,30 @@ async def report_scheduler(bot):
         await asyncio.sleep(60)
 
 
+async def on_error(update, ctx):
+    """Global safety net: no uncaught exception may leave an employee in a
+    dead-end. Log it, clear any transient flow flags, and offer a way home."""
+    log.exception("unhandled bot error: %s", getattr(ctx, "error", None))
+    try:
+        chat_id = None
+        if isinstance(update, Update):
+            if update.effective_chat:
+                chat_id = update.effective_chat.id
+            if update.effective_user:
+                s = st(str(update.effective_user.id))
+                for k in ("att_await", "ev_attempt", "ev_await_selfie",
+                          "_awaiting", "await_barcode", "await_search"):
+                    s.pop(k, None)
+        if chat_id is not None:
+            from telegram import ReplyKeyboardRemove
+            await ctx.bot.send_message(
+                chat_id=chat_id,
+                text="\u26a0\ufe0f Something went wrong. Tap \u2630 Menu or send /start to continue.",
+                reply_markup=ReplyKeyboardRemove())
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def main():
     if not TOKEN:
         raise SystemExit("TELEGRAM_BOT_TOKEN is not set — configure it on the Render worker.")
@@ -2361,6 +2440,7 @@ def main():
     app.add_handler(MessageHandler(filters.LOCATION, on_location))
     app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, on_media))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
+    app.add_error_handler(on_error)
     log.info("SmokeStack Telegram dashboard starting (long polling); API_BASE=%s", API_BASE)
     async def _post_init(application):
         application.create_task(report_scheduler(application.bot))

@@ -80,6 +80,23 @@ def expire_stale(db, tg_id=None):
     db.flush()
 
 
+def current_pending(db, tg_id):
+    """Return this Telegram id's single live attempt (pending_location or
+    pending_selfie), or None. Lets the worker resume the flow after a restart
+    that lost its in-memory state, so a location->selfie sequence is never a
+    dead-end. Read-only + opportunistically expires stale attempts first."""
+    tg_id = str(tg_id or "").strip()
+    if not tg_id:
+        return None
+    expire_stale(db, tg_id)
+    ev = (db.query(models.AttendanceEvidence)
+          .filter(models.AttendanceEvidence.tg_id == tg_id,
+                  models.AttendanceEvidence.consumed == False,  # noqa: E712
+                  models.AttendanceEvidence.status.in_(("pending_location", "pending_selfie")))
+          .order_by(models.AttendanceEvidence.id.desc()).first())
+    return ev
+
+
 def start_attempt(db, tg_id):
     """Begin a fresh attempt. Cancels any prior unfinished attempt for this
     Telegram id so only one is ever live. Returns (evidence, first_use)."""
