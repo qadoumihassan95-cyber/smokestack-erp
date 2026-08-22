@@ -194,12 +194,21 @@ def reconcile(db, branches, now_utc, tzname):
                 inc.company_id = getattr(b, "company_id", None) or 1
                 db.add(inc)
                 db.flush()
-                db.add(models.AuditLog(
+                # SEC-09 class. Two lines above, the INCIDENT is stamped with the
+                # branch's company; this audit row, describing that same incident, was
+                # not — so it took the company_id server default of 1 while its own
+                # subject carried the right tenant. Constructed directly rather than
+                # through S.audit(), so the chokepoint fix does not reach it. Fixing
+                # the row I was told about and missing the one beside it is exactly
+                # how this class stays open.
+                opened = models.AuditLog(
                     source="SYSTEM", action="no_activity_incident_opened",
                     entity="branch", ref=b.name,
                     detail=f"idle={ev['business_hours_idle']}h threshold={ev['threshold_hours']}h "
                            f"last={ev['last_activity_type'] or 'none'} source={ev['schedule_source']}",
-                    result="ok"))
+                    result="ok")
+                opened.company_id = getattr(b, "company_id", None) or 1
+                db.add(opened)
             else:
                 inc.business_hours_idle = ev["business_hours_idle"]
                 inc.last_activity_at = ev["last_activity_at"]
@@ -210,10 +219,12 @@ def reconcile(db, branches, now_utc, tzname):
             inc.status = "resolved"
             inc.resolved_at = now_utc
             inc.resolved_activity_type = ev["last_activity_type"]
-            db.add(models.AuditLog(
+            resolved = models.AuditLog(               # SEC-09 class, same as above
                 source="SYSTEM", action="no_activity_incident_resolved",
                 entity="branch", ref=b.name,
-                detail=f"resolved by {ev['last_activity_type'] or 'activity'}", result="ok"))
+                detail=f"resolved by {ev['last_activity_type'] or 'activity'}", result="ok")
+            resolved.company_id = getattr(b, "company_id", None) or 1
+            db.add(resolved)
     db.commit()
     return active
 

@@ -105,8 +105,17 @@ def update_license(lid: int, body: LicenseIn, db: Session = Depends(get_db),
     x = db.get(models.License, lid)
     if not x:
         raise HTTPException(404, "Not found")
-    if body.branch:
-        S.assert_branch(user, db, body.branch)
+    # SECURITY (SEC-17): this guarded the branch the CALLER SUPPLIED and never the
+    # branch the record is actually in — so omitting `branch` from the body ran no
+    # branch check at all, and a branch-scoped role could rewrite another branch's
+    # regulatory documents (permit numbers, expiry dates). Because `branch` is also
+    # in the setattr allow-list below, it could additionally RELOCATE another
+    # branch's licence into its own.
+    #
+    # `security.py:212` already states the rule this violated — "Authorization is
+    # never derived solely from a branch supplied by the requester" — and `hr.py`
+    # already obeys it with the same helper. This is a port, not a design.
+    S.assert_object_branch(user, db, x.branch, body.branch or None)
     for f in ("name", "doc_type", "branch", "doc_number", "authority", "responsible", "notes", "attachment"):
         v = getattr(body, f, None)
         if v is not None:
@@ -126,6 +135,15 @@ def delete_license(lid: int, db: Session = Depends(get_db),
     x = db.get(models.License, lid)
     if not x:
         raise HTTPException(404, "Not found")
+    # SECURITY (SEC-17, latent sibling): this had NO branch check of any kind. It
+    # was not exploitable at 8868af8 only because `delete` happens to be held by
+    # owner and admin alone, both all-branch — i.e. it was safe by the current
+    # permission matrix, not by construction. Granting `delete` to any
+    # branch-scoped role would have turned it into cross-branch DELETION of
+    # compliance records, with no code change and no failing test. Fixed in the
+    # same edit as the reported route rather than deferred, because "safe under
+    # today's config" is exactly the state that stops being true silently.
+    S.assert_object_branch(user, db, x.branch)
     db.delete(x); db.commit()
     S.audit(db, user, "delete", "license", lid, x.name)
     return {"ok": True}

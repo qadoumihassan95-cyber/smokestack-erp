@@ -25,7 +25,7 @@ from sqlalchemy import or_, and_
 
 from ..database import get_db
 from ..config import settings
-from .. import models, security as S, permissions as P
+from .. import images as IMG, models, security as S, permissions as P
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -275,7 +275,7 @@ def delete(mid: int, db: Session = Depends(get_db),
 # Durable image attachments stored in Postgres. The stored bytes are a clean,
 # re-encoded (metadata-stripped) copy of the image — never the raw upload — so
 # EXIF, trailing polyglot payloads and script-bearing/SVG files are eliminated.
-ALLOWED_IMAGE = {"JPEG": "image/jpeg", "PNG": "image/png", "WEBP": "image/webp"}
+ALLOWED_IMAGE = IMG.ALLOWED_IMAGE      # SEC-15: one allow-list, defined in app/images.py
 _EXT = {"JPEG": ".jpg", "PNG": ".png", "WEBP": ".webp"}
 
 
@@ -289,40 +289,21 @@ def _safe_name(name, fmt):
 def _process_image(raw: bytes):
     """Validate real image CONTENT (not extension) and return a clean, re-encoded
     copy + thumbnail. Rejects non-images, SVG, script/polyglot, malformed,
-    oversized, and over-dimension files."""
-    from PIL import Image, UnidentifiedImageError
-    if not raw:
-        raise HTTPException(422, "Empty file.")
-    if len(raw) > settings.chat_attach_max_bytes:
-        raise HTTPException(413, "Image is too large.")
+    oversized, and over-dimension files.
+
+    SEC-15: the body of this function moved to ``app/images.py`` unchanged so the
+    attendance-selfie ingest path could use the SAME implementation instead of a
+    second one that trusted the caller's declared type. This wrapper keeps chat's
+    status codes and messages byte-identical -- ``ImageRejected`` carries the very
+    status this function used to raise.
+    """
     try:
-        probe = Image.open(io.BytesIO(raw))
-        probe.verify()                       # structural integrity
-        im = Image.open(io.BytesIO(raw))     # reopen (verify() leaves it unusable)
-        fmt = (im.format or "").upper()
-    except UnidentifiedImageError:
-        raise HTTPException(422, "File is not a valid image.")
-    except HTTPException:
-        raise
-    except Exception:
-        raise HTTPException(422, "File is not a valid image.")
-    if fmt not in ALLOWED_IMAGE:
-        raise HTTPException(415, "Only JPEG, PNG, and WebP images are allowed.")
-    w, h = im.size
-    if w <= 0 or h <= 0:
-        raise HTTPException(422, "Invalid image dimensions.")
-    if w > settings.chat_attach_max_dim or h > settings.chat_attach_max_dim:
-        raise HTTPException(422, f"Image exceeds {settings.chat_attach_max_dim}px per side.")
-    save_fmt = "PNG" if fmt == "PNG" else ("WEBP" if fmt == "WEBP" else "JPEG")
-    im = im.convert("RGBA" if save_fmt == "PNG" else "RGB")
-    out = io.BytesIO()
-    im.save(out, format=save_fmt, quality=88)   # re-encode → strips metadata/polyglot
-    clean = out.getvalue()
-    tim = im.copy()
-    tim.thumbnail((settings.chat_thumb_dim, settings.chat_thumb_dim))
-    tout = io.BytesIO()
-    tim.save(tout, format=save_fmt, quality=80)
-    return clean, tout.getvalue(), ALLOWED_IMAGE[fmt], w, h, fmt
+        return IMG.process_image(raw,
+                                 max_bytes=settings.chat_attach_max_bytes,
+                                 max_dim=settings.chat_attach_max_dim,
+                                 thumb_dim=settings.chat_thumb_dim)
+    except IMG.ImageRejected as e:
+        raise HTTPException(e.status, e.message)
 
 
 @router.post("/rooms/{room_id}/attachments", status_code=201)

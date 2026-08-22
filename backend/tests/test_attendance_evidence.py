@@ -25,6 +25,21 @@ STORE_A = (32.221100, 35.254400)   # seed coordinates for Store A
 BOT = "ATTBOT"
 
 
+# SEC-15: selfie ingest now DECODES the bytes and re-encodes them, because the
+# caller's declared content type is a claim and `image/svg+xml` starts with
+# "image/". The stubs these tests used (`_jpeg()`) are not decodable
+# images and are now correctly refused. A real 8x8 JPEG keeps every assertion below
+# about the attendance FLOW — which is what this module is for — rather than about
+# image validity, which `test_sec15_selfie_stored_active_content.py` owns.
+def _jpeg():
+    import io as _io
+
+    from PIL import Image as _Image
+    buf = _io.BytesIO()
+    _Image.new("RGB", (8, 8), (120, 60, 30)).save(buf, format="JPEG")
+    return buf.getvalue()
+
+
 def _link(tg_id, uid="U-owner"):
     db = SessionLocal()
     try:
@@ -75,7 +90,7 @@ def test_happy_path_within_area_creates_attendance():
             ev = AE.submit_location(db, "910001", ev.attempt_id, STORE_A[0], STORE_A[1], "m1")
             assert ev.status == "pending_selfie" and ev.branch == "Store A"
             assert ev.out_of_area is False and ev.dist_m is not None
-            ev, rec = AE.submit_selfie(db, "910001", ev.attempt_id, "f1", "m2", "image/jpeg", b"\xff\xd8selfie")
+            ev, rec = AE.submit_selfie(db, "910001", ev.attempt_id, "f1", "m2", "image/jpeg", _jpeg())
             assert ev.status == "complete" and ev.consumed is True
             assert rec.status == "active" and rec.branch == "Store A"
             assert rec.approval == "none"
@@ -91,7 +106,7 @@ def test_out_of_area_flags_and_requires_approval():
             ev, _ = AE.start_attempt(db, "910002")
             ev = AE.submit_location(db, "910002", ev.attempt_id, 0.0, 0.0, "m10")  # far away
             assert ev.out_of_area is True
-            ev, rec = AE.submit_selfie(db, "910002", ev.attempt_id, "f", "m11", "image/jpeg", b"\xff\xd8x")
+            ev, rec = AE.submit_selfie(db, "910002", ev.attempt_id, "f", "m11", "image/jpeg", _jpeg())
             assert rec.approval == "pending"
         finally:
             db.close()
@@ -131,7 +146,7 @@ def test_reused_location_message_rejected():
         try:
             ev1, _ = AE.start_attempt(db, "910005")
             AE.submit_location(db, "910005", ev1.attempt_id, STORE_A[0], STORE_A[1], "shared-msg")
-            AE.submit_selfie(db, "910005", ev1.attempt_id, "f", "s1", "image/jpeg", b"\xff\xd8a")
+            AE.submit_selfie(db, "910005", ev1.attempt_id, "f", "s1", "image/jpeg", _jpeg())
             _clear_active()
             ev2, _ = AE.start_attempt(db, "910005")
             with pytest.raises(AE.EvidenceError):   # same Telegram location message id reused
@@ -147,8 +162,8 @@ def test_consumed_attempt_is_idempotent_no_duplicate():
         try:
             ev, _ = AE.start_attempt(db, "910006")
             AE.submit_location(db, "910006", ev.attempt_id, STORE_A[0], STORE_A[1], "m40")
-            ev, rec1 = AE.submit_selfie(db, "910006", ev.attempt_id, "f", "m41", "image/jpeg", b"\xff\xd8a")
-            ev2, rec2 = AE.submit_selfie(db, "910006", ev.attempt_id, "f", "m41", "image/jpeg", b"\xff\xd8a")
+            ev, rec1 = AE.submit_selfie(db, "910006", ev.attempt_id, "f", "m41", "image/jpeg", _jpeg())
+            ev2, rec2 = AE.submit_selfie(db, "910006", ev.attempt_id, "f", "m41", "image/jpeg", _jpeg())
             assert rec1.id == rec2.id  # replay returns same attendance, no duplicate
         finally:
             db.close()
@@ -161,7 +176,7 @@ def test_retention_purges_selfie_bytes():
         try:
             ev, _ = AE.start_attempt(db, "910007")
             AE.submit_location(db, "910007", ev.attempt_id, STORE_A[0], STORE_A[1], "m50")
-            ev, _ = AE.submit_selfie(db, "910007", ev.attempt_id, "f", "m51", "image/jpeg", b"\xff\xd8bytes")
+            ev, _ = AE.submit_selfie(db, "910007", ev.attempt_id, "f", "m51", "image/jpeg", _jpeg())
             ev.retain_until = datetime.now(timezone.utc) - timedelta(days=1)
             db.commit()
             assert AE.purge_expired_selfies(db) >= 1
@@ -189,7 +204,7 @@ def test_bot_endpoints_fail_closed_without_token():
         assert r.json()["ok"] is True and r.json()["need"] == "selfie"
         r = client.post("/api/telegram/attendance/selfie", headers={"X-Bot-Token": BOT},
                         data={"tg_id": "910008", "attempt_id": aid, "file_id": "f", "msg_id": "e2"},
-                        files={"file": ("s.jpg", b"\xff\xd8selfiebytes", "image/jpeg")})
+                        files={"file": ("s.jpg", _jpeg(), "image/jpeg")})
         assert r.json()["ok"] is True and r.json()["attendance_id"]
 
 
@@ -202,7 +217,7 @@ def test_review_rbac_branch_scoped():
         try:
             ev, _ = AE.start_attempt(db, "910009")
             AE.submit_location(db, "910009", ev.attempt_id, STORE_A[0], STORE_A[1], "m60")
-            ev, rec = AE.submit_selfie(db, "910009", ev.attempt_id, "f", "m61", "image/jpeg", b"\xff\xd8pic")
+            ev, rec = AE.submit_selfie(db, "910009", ev.attempt_id, "f", "m61", "image/jpeg", _jpeg())
             aid, eid = rec.id, ev.id
         finally:
             db.close()

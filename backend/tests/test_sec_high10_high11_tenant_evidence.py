@@ -184,7 +184,12 @@ def test_2_the_bot_driven_inactivity_scan_stamps_each_incident_to_its_branchs_te
     with tenancy.system_session() as db:
         # Force the branch inactive so an incident is certain to open.
         b = db.query(models.Branch).filter(models.Branch.name == E_BRANCH).first()
-        b.no_activity_hours = 1
+        # The threshold the evaluator actually reads is
+        # `inactivity_threshold_hours` (noactivity.branch_schedule:73); setting a
+        # differently-named field left the branch judged ACTIVE and this test
+        # skipping itself, which is not evidence of anything.
+        b.inactivity_threshold_hours = 1
+        b.inactivity_alert_enabled = True
         b.attendance_active = True
         db.commit()
     with tenancy.system_session() as db:

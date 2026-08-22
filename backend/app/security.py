@@ -153,8 +153,15 @@ def assert_branch(user: models.User, db: Session, branch: str):
     if branch not in scope_branches(user, db):
         raise HTTPException(status.HTTP_403_FORBIDDEN, f"Branch not permitted: {branch}")
 
+# Sentinel: "work the tenant out yourself", distinct from an explicit None, which
+# means "there genuinely is no tenant for this event". They must be distinguishable:
+# every existing caller omits the argument and MUST keep deriving, while a caller that
+# has looked and found no tenant is saying something different and stronger.
+_DERIVE = object()
+
+
 def audit(db: Session, user, action, entity, ref="", detail="", source="WEB", result="ok",
-          commit: bool = True):
+          commit: bool = True, company_id=_DERIVE):
     """Record an audit entry.
 
     AA-06: pass ``commit=False`` from a financial mutation and commit ONCE at the
@@ -163,10 +170,54 @@ def audit(db: Session, user, action, entity, ref="", detail="", source="WEB", re
     that legitimately audit a read or a already-committed side effect — changing
     that default silently would leave those entries uncommitted.
     """
-    db.add(models.AuditLog(source=source, user_id=getattr(user, "id", None),
-                           action=action, entity=entity, ref=str(ref), detail=detail, result=result))
+    row = models.AuditLog(source=source, user_id=getattr(user, "id", None),
+                          action=action, entity=entity, ref=str(ref), detail=detail, result=result)
+    _stamp_audit_tenant(db, row, user, company_id)
+    db.add(row)
     if commit:
         db.commit()
+
+
+def _stamp_audit_tenant(db: Session, row, user, company_id=_DERIVE) -> None:
+    """Decide which tenant an audit row belongs to, for sessions that have no context.
+
+    SECURITY (SEC-09). `audit_log` IS registered as tenant-owned, so on an
+    authenticated request `tenancy._stamp_writes` fills `company_id` from the session
+    and this function does nothing. The defect is the UNAUTHENTICATED paths:
+    `routers/auth.py:login` takes `Depends(get_db)` and no user dependency, so
+    `db.info["company_id"]` is never set. `_stamp_writes` then finds no company id, no
+    system flag and no strict flag, falls through — and the row takes the column's
+    `server_default="1"`.
+
+    Consequence, always on, no bot token and no client cooperation: **every tenant's
+    login and failed-login rows land in Company 1's audit log.** Company 1's owner
+    reads who signed in to Company 2 and when, through the ordinary `GET /api/audit`,
+    and Company 2 has no login history at all.
+
+    THE POINT IS THAT A DEFAULT WHICH IS A REAL COMPANY CANNOT FAIL CLOSED. Missing
+    context does not produce an error or an obviously-empty row; it produces a
+    plausible row belonging to a real tenant. So the tenant is resolved here from the
+    subject the event is ABOUT, and when there is genuinely no subject — a failed
+    login for a username that does not exist — the column is set to an explicit SQL
+    NULL rather than being left for the default. `null()` is required: leaving the
+    attribute as Python `None` makes SQLAlchemy omit the column from the INSERT, which
+    is exactly how the server default wins.
+
+    This is deliberately at `audit()` and not at each caller. The auditor measured 11
+    of 29 no-auth routes as able to write `audit_log` with no company context, all of
+    them through this one function. Fixing them one call site at a time would leave
+    the twelfth to whoever adds it.
+    """
+    from sqlalchemy import null
+
+    if db.info.get("company_id") is not None or db.info.get("system"):
+        return                      # the session knows; the scoping engine handles it
+    cid = None
+    if company_id is not _DERIVE:
+        cid = company_id
+    elif user is not None:
+        cid = getattr(user, "_company_id", None) or getattr(user, "company_id", None)
+    row.company_id = cid if cid else null()
 
 
 # =============================================================================

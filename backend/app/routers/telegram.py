@@ -278,12 +278,31 @@ def verify(body: LinkVerifyIn, request: Request = None, db: Session = Depends(ge
                                  f"(@{clash.username or clash.tg_id}). Disable or remove "
                                  f"it before linking a new one.")
 
-    db.add(models.TelegramLink(
+    # SECURITY (SEC-10). `/link/verify` is unauthenticated by design — the caller
+    # presents a one-time code, not a session — so this session carries no company
+    # context and `_stamp_writes` has nothing to apply. `telegram_links` IS registered
+    # as tenant-owned, so the row was written with the `company_id` server default of
+    # 1 and then read back through perfectly-working tenant scoping: Company 1 saw
+    # Company 2's binding, and Company 2 saw nothing. Company 1's owner could disable,
+    # inspect and permanently DELETE it through ordinary authenticated endpoints, with
+    # no attacker, no forged token and no bot secret.
+    #
+    # The tell was in this same handler: `users` and `user_branches` are built with an
+    # explicit company copied from the employee, and only `TelegramLink` was not. Same
+    # handler, same context-less session, two right and one wrong — so the defect is
+    # per CONSTRUCTION SITE, not per handler, and the tenant comes from the identity
+    # this invitation resolved to.
+    link_company = (getattr(emp, "company_id", None)
+                    or getattr(identity, "company_id", None))
+    tl = models.TelegramLink(
         tg_id=body.tg_id, user_id=identity.id, username=body.username,
         device=body.device, linked_at=now, last_activity=now,
         expires_at=now + timedelta(days=7), status="active",
         employee_id=(emp.id if emp is not None else None),
-        linked_by=rec.created_by or rec.user_id))
+        linked_by=rec.created_by or rec.user_id)
+    if link_company:
+        tl.company_id = link_company
+    db.add(tl)
     db.commit()
     u = db.get(models.User, rec.user_id)
     S.audit(db, u, "link", "telegram", body.tg_id, detail=f"@{body.username}" if body.username else "",

@@ -23,7 +23,7 @@ import secrets
 import hashlib
 from datetime import datetime, timedelta, timezone
 
-from . import models
+from . import images, models
 from .config import settings
 
 
@@ -190,12 +190,32 @@ def submit_selfie(db, tg_id, attempt_id, file_id, msg_id, mime, raw_bytes):
     if ev and ev.consumed and ev.status == "complete":
         return ev, db.get(models.Attendance, ev.attendance_id)   # idempotent replay
     ev = _load_active(db, tg_id, attempt_id, "pending_selfie")
+    # SECURITY (SEC-15). `mime` is the caller's DECLARED content type and was the
+    # only check here — `startswith("image/")` is satisfied by `image/svg+xml`, and
+    # by `image/jpeg` on any bytes at all. The raw bytes were then stored verbatim
+    # and the declared type stored beside them, so a scripted SVG was later served
+    # back `image/svg+xml` INLINE to the reviewing manager, in our own origin.
+    #
+    # The format is now DETECTED by decoding and the bytes are re-encoded, using the
+    # same implementation the chat upload path already used (`app/images.py`). The
+    # stored mime is derived from what the image actually is, never from the caller.
+    # Re-encoding also strips EXIF — which for a clock-in selfie includes the
+    # phone's own GPS tags, a second copy of the employee's location that nothing
+    # in this flow needs.
     if not (mime or "").lower().startswith("image/"):
         raise EvidenceError("Please send a photo (a selfie), not a file or document.")
     if not raw_bytes:
         raise EvidenceError("Empty photo.")
     if len(raw_bytes) > settings.att_selfie_max_bytes:
         raise EvidenceError("The photo is too large.")
+    try:
+        raw_bytes, _thumb, mime, _w, _h, _fmt = images.process_image(
+            raw_bytes,
+            max_bytes=settings.att_selfie_max_bytes,
+            max_dim=settings.att_selfie_max_dim)
+    except images.ImageRejected as e:
+        raise EvidenceError("Please send a photo (a selfie), not a file or document."
+                            if e.status in (415, 422) else e.message)
     if msg_id and db.query(models.AttendanceEvidence).filter(
             models.AttendanceEvidence.selfie_msg_id == str(msg_id)).first():
         raise EvidenceError("This photo message was already used.")
@@ -218,6 +238,14 @@ def submit_selfie(db, tg_id, attempt_id, file_id, msg_id, mime, raw_bytes):
         branch=ev.branch, clock_in_at=now, ci_lat=ev.lat, ci_lng=ev.lng, ci_dist=ev.dist_m,
         status="active", approval=("pending" if ev.out_of_area else "none"),
         reason=("Outside permitted area" if ev.out_of_area else None), source="TELEGRAM")
+    # SEC-09 class (found by sweeping the class, not reported): `attendance` is a
+    # tenant table and this is the BOT path — a bot token, no session, no company
+    # context — so `_stamp_writes` had nothing to apply and every Telegram clock-in,
+    # for every tenant, was recorded as Company 1's attendance. Payroll-relevant data,
+    # silently filed under the wrong company. The tenant is the employee's, exactly as
+    # for the evidence row this clock-in is bound to.
+    rec.company_id = (getattr(user, "company_id", None)
+                      or getattr(ev, "company_id", None) or 1)
     db.add(rec)
     db.flush()
     ev.attendance_id = rec.id

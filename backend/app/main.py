@@ -105,6 +105,14 @@ def on_startup():
     import sys as _sys
     if "pytest" not in _sys.modules:
         _problems = settings.production_secret_problems()
+        # SEC-12: the Control Center's realm rule, composed here because main.py is
+        # the one place allowed to know about both sides. Skipped on SQLite for the
+        # same reason as every other check above — dev/test must boot with no extra
+        # environment, which is the whole point of the PFS_JWT_SECRET fallback.
+        if not settings.is_sqlite:
+            from .pfs.config import pfs_config as _pfs
+            _problems = _problems + _pfs.secret_problems(
+                settings.jwt_secret, settings._DEFAULT_JWT_SECRET)
         if _problems:
             raise RuntimeError("Refusing to start with insecure production configuration: "
                                + " ".join(_problems))

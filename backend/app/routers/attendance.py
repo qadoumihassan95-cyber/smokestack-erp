@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from ..database import get_db
 from ..config import settings
-from .. import models, security as S, permissions as P
+from .. import images as IMG, models, security as S, permissions as P
 
 router = APIRouter(prefix="/api/attendance", tags=["attendance"])
 
@@ -410,7 +410,21 @@ def attendance_selfie(eid: int, db: Session = Depends(get_db),
     if not ev or ev.selfie is None:
         raise HTTPException(404, "Selfie not found")
     _assert_can_review(user, db, ev.branch)
-    return Response(content=bytes(ev.selfie), media_type=(ev.selfie_mime or "image/jpeg"),
+    # SECURITY (SEC-15): this echoed the STORED mime, which was the value the caller
+    # declared at upload — so a scripted SVG came back `image/svg+xml`, inline, in
+    # our own origin, to the manager reviewing the clock-in. `X-Content-Type-Options`
+    # does not help: it stops sniffing, and here the declared type was the problem.
+    #
+    # Ingest now decodes and re-encodes, so NEW rows carry a detected type. This is
+    # the half that covers rows written BEFORE that: the type is clamped to the
+    # serve allow-list, and anything else is handed back as an opaque download
+    # rather than as something the browser will render and execute.
+    mime = IMG.safe_serve_mime(ev.selfie_mime)
+    inline = mime in IMG.SERVEABLE_MIME
+    return Response(content=bytes(ev.selfie), media_type=mime,
                     headers={"Cache-Control": "private, no-store",
-                             "Content-Disposition": 'inline; filename="selfie.jpg"',
+                             "Content-Disposition": (
+                                 'inline; filename="selfie.jpg"' if inline
+                                 else 'attachment; filename="selfie.bin"'),
+                             "Content-Security-Policy": "default-src 'none'; sandbox",
                              "X-Content-Type-Options": "nosniff"})

@@ -20,14 +20,23 @@ def login(request: Request = None, form: OAuth2PasswordRequestForm = Depends(),
         or db.query(models.User).filter(models.User.email == form.username).first()
     if not u or not S.verify_pw(form.password, u.password_hash):
         RL.note_failure(db, request, form.username, kind="login")
-        S.audit(db, None, "failed_login", "user", form.username, result="denied")
+        # SEC-09: `user=None` is deliberate — a failed attempt is not attributed to an
+        # account — but the EVENT still belongs to a tenant whenever the account
+        # exists, and this session has no company context to derive it from. Pass it
+        # explicitly. When the username matches nothing, there is genuinely no tenant:
+        # `None` records that, instead of the column default silently filing another
+        # company's failed logins into Company 1.
+        S.audit(db, None, "failed_login", "user", form.username, result="denied",
+                company_id=getattr(u, "company_id", None))
         raise HTTPException(401, "Incorrect username or password")
     # identities provisioned for an employee's Telegram session carry RBAC only
     if getattr(u, "can_login", True) is False:
-        S.audit(db, None, "failed_login", "user", form.username, result="denied")
+        S.audit(db, None, "failed_login", "user", form.username, result="denied",
+                company_id=getattr(u, "company_id", None))
         raise HTTPException(403, "This identity cannot sign in to the web app.")
     if u.status != "active":
-        S.audit(db, None, "failed_login", "user", form.username, result="denied")
+        S.audit(db, None, "failed_login", "user", form.username, result="denied",
+                company_id=getattr(u, "company_id", None))
         raise HTTPException(403, "This account is not active.")
     # Policy layer 2 at login: block sign-in for suspended/archived/provisioning/
     # maintenance companies (active/trial/read-only allow login). No-op for Company #1.

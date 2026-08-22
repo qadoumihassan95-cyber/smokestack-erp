@@ -40,4 +40,35 @@ class PFSConfig:
     root_password: str = os.getenv("PFS_ROOT_PASSWORD", "")
 
 
+    def secret_problems(self, erp_jwt_secret, default_secret):
+        """Insecure signing-secret configurations for THIS realm (SEC-12).
+
+        Returns a list of human-readable problems, empty when the configuration is
+        sound. The ERP's secret and the known development default arrive as ARGUMENTS:
+        the Control Center must not import ERP configuration (it is decoupled so it can
+        be extracted), and the composition root is the right place to hold both halves.
+
+        The finding: `jwt_secret` above falls back to `JWT_SECRET` so a co-hosted
+        deployment needs no extra environment. That makes this module's own claim —
+        that tokens "never cross between the tenant app and the Control Center" —
+        false against anyone holding the ERP signing key: they can mint a token with
+        `realm="pfs"` and be a platform super admin over every tenant. The realm check
+        is separation only against honestly-issued tokens.
+
+        Deriving this secret from the ERP one would not fix it — the derivation would
+        be in the source, so holding `JWT_SECRET` still yields this key. The only fix
+        is that they are genuinely different values, which is a deployment decision;
+        this reports when that decision has not been made.
+        """
+        if not self.enabled:
+            return []
+        if not self.jwt_secret or self.jwt_secret == default_secret:
+            return ["PFS_JWT_SECRET is unset or the insecure development default."]
+        if erp_jwt_secret and self.jwt_secret == erp_jwt_secret:
+            return ["PFS_JWT_SECRET is the same value as JWT_SECRET. The Control Center "
+                    "is a separate authentication realm; sharing the signing key means "
+                    "anyone holding the ERP secret can mint a platform super-admin token."]
+        return []
+
+
 pfs_config = PFSConfig()

@@ -61,6 +61,10 @@ class Settings:
     att_attempt_ttl_min: int = int(os.getenv("ATT_ATTEMPT_TTL_MIN", "10"))     # attempt expiry (short)
     att_selfie_retention_days: int = int(os.getenv("ATT_SELFIE_RETENTION_DAYS", "90"))  # deletion
     att_selfie_max_bytes: int = int(os.getenv("ATT_SELFIE_MAX_BYTES", str(8 * 1024 * 1024)))  # 8 MB
+    # SEC-15: selfies are now decoded and re-encoded at ingest, so a per-side pixel
+    # bound is needed for the same reason chat has one — a decompression bomb is a
+    # small file until it is opened.
+    att_selfie_max_dim: int = int(os.getenv("ATT_SELFIE_MAX_DIM", "4096"))       # px per side
 
     # Values that must never reach a real (non-SQLite) production database.
     _DEFAULT_JWT_SECRET = "dev-insecure-secret-change-me"
@@ -82,6 +86,13 @@ class Settings:
         if self.seed_on_start and self.seed_password == self._DEFAULT_SEED_PASSWORD:
             problems.append("SEED_ON_START is enabled with the default SEED_PASSWORD on a "
                             "production database — this would create default-credential accounts.")
+        # SECURITY (SEC-12) is checked by the COMPOSITION ROOT, not here. The rule
+        # belongs to the Control Center realm and needs this secret to compare
+        # against, but `app/config.py` may not import `app/pfs` — the sub-app is
+        # decoupled so it can be extracted, and `tests/test_pfs_decoupling.py`
+        # enforces that. `pfs_config.secret_problems()` states the rule and `main.py`
+        # supplies both halves. (A first draft imported pfs here and the decoupling
+        # test caught it, which is the test doing exactly its job.)
         return problems
 
 settings = Settings()
