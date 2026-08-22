@@ -1214,6 +1214,11 @@ function branchLabel(){return BRANCH==='all'?(canSeeAll()?'All branches':allowed
 // not financial events yet, so no aggregation can accidentally capitalise them.
 // They are still displayed — see renderPur — with their status shown honestly.
 let PUR_PENDING=[];
+// Real pending approvals from GET /api/approvals. The dashboard's Pending Tasks
+// panel was hard-coded prose (UX-E); it now reflects this, or says plainly that
+// there is nothing to do. An empty list is a truthful answer; invented urgency
+// is not.
+let APPROVALS=[];
 // ledger: {id,date,store,account,type,category,amount,memo,tax}
 let LEDGER=[
  {id:1,date:daysAgo(0),store:"Store A",account:"Cash",type:"sale",category:"Sales",amount:8420,memo:"Daily sales",tax:642.20},
@@ -1331,7 +1336,37 @@ function renderDash(){curStore=BRANCH;const rows=scope(LEDGER);
     rec.map(x=>`<tr data-txid="${x.id}"><td>${x.date.slice(5)}</td><td>${storeLabel(x.store)}</td><td>${x.account}</td><td><span class="chip ${TYPECHIP[x.type]}">${x.type}</span></td><td>${x.memo||x.category}${x.voided?'<span class="voided-badge">void</span>':''}</td><td style="text-align:end;color:${x.type==='sale'||x.type==='deposit'?'var(--ok)':'var(--txt)'}"><b>${money(x.amount)}</b></td><td style="text-align:center"><button type="button" class="rowact" data-rowmenu="${x.id}" aria-label="More actions" aria-haspopup="menu" aria-expanded="false">⋯</button></td></tr>`).join('')+`</tbody>`;
   rowify('recentTbl','transaction');
   const _pdot=c=>`<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${c};margin-right:10px;vertical-align:middle"></span>`;
-  document.getElementById('pending').innerHTML=`${_pdot('var(--accent)')}<b>${money(cash>4000?cash-1000:0)}</b> cash ready to deposit<br>${_pdot('#E8A33A')}${storeLabel('Store C')} hasn't reported today<br>${_pdot('var(--ok)')}Payroll due in 3 days<br>${_pdot('#EC7A3C')}Sales-tax filing in 12 days`;
+  // UX-E: this panel used to be four hard-coded sentences — an invented cash figure,
+  // "Store C hasn't reported today", "Payroll due in 3 days", "Sales-tax filing in
+  // 12 days" — none of which came from any record. A fabricated task list is worse
+  // than an empty one: it is indistinguishable from a real one, and it trains the
+  // reader to ignore the panel. It now renders REAL pending approvals, and when
+  // there are none it says so.
+  var _pendHost=document.getElementById('pending');
+  if(_pendHost){
+    if(!can('approve')){
+      _pendHost.innerHTML='<span style="color:var(--muted)">Approvals are handled by an owner or manager.</span>';
+    } else if(!APPROVALS.length){
+      _pendHost.innerHTML='<span style="color:var(--muted)">Nothing is awaiting your approval.</span>';
+    } else {
+      _pendHost.innerHTML=APPROVALS.map(function(a){
+        // Values are attached as DATA ATTRIBUTES and read by a delegated listener,
+        // never interpolated into an inline handler — ids here are backend strings
+        // like APR-000001, which is exactly the shape that produced the
+        // `TR is not defined` failure when written as an unquoted inline handler
+        // argument. The literal construct is NOT restated here: the regression guard
+        // is a substring check over this file and would fire on the prose.
+        return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'
+          +_pdot(a.kind==='purchase'?'#EC7A3C':'var(--accent)')
+          +'<span style="flex:1">'+_esc(a.summary||((a.kind||'request')+' '+(a.ref||'')))
+          +(a.amount?(' · <b>'+money(a.amount)+'</b>'):'')
+          +'<span style="color:var(--muted)"> · '+_esc(a.branch||'')+'</span></span>'
+          +'<button class="rowact" data-appr-ok="'+_esc(a.id)+'" title="Approve"><span class=ico-check></span></button>'
+          +'<button class="rowact" data-appr-no="'+_esc(a.id)+'" title="Reject"><span class=ico-x></span></button>'
+          +'</div>';
+      }).join('');
+    }
+  }
   document.getElementById('taxMini').innerHTML=`Taxable sales (MTD): <b>${money(sum(monthRows,'sale'))}</b><br>Tax collected: <b style="color:var(--brand)">${money(taxPayable)}</b><br>Filing status: <b style="color:var(--warn)">Open</b>`;
 }
 
@@ -4799,6 +4834,36 @@ function renderPay(){
   var pt=document.getElementById('payTbl');
   if(pt)pt.innerHTML='<thead><tr><th>Employee</th><th>ID</th><th>Branch</th><th>Title</th><th>Pay</th><th style="text-align:end">Gross</th><th style="text-align:end">Net</th><th></th></tr></thead><tbody>'+body+'</tbody>';
 }
+/* UX-C: approve / reject a purchase or transfer.
+   Delegated listener reading DATA ATTRIBUTES — deliberately not inline onclick.
+   Approval ids are backend strings (APR-000001), and an unquoted inline-handler
+   argument is precisely the construct that produced
+   `ReferenceError: TR is not defined`. This pattern cannot express that defect,
+   which is why the attendance approvals card already uses it. (The offending
+   construct is described, not written: the guard greps this file.) */
+document.addEventListener('click', async function(ev){
+  var ok=ev.target.closest('[data-appr-ok]'), no=ev.target.closest('[data-appr-no]');
+  if(!ok&&!no)return;
+  ev.preventDefault(); ev.stopPropagation();
+  var btn=ok||no, id=btn.getAttribute(ok?'data-appr-ok':'data-appr-no');
+  if(btn.disabled)return; btn.disabled=true;
+  try{
+    // The SERVER performs the decision: `_decide` moves stock for a transfer and
+    // sets the purchase status in one transaction with its audit row. Nothing is
+    // mutated locally and then reconciled — the client asks, then re-reads.
+    var r = ok ? await API.approveReq(id) : await API.rejectReq(id);
+    // Re-hydrate rather than patch local state: a rejected purchase must leave the
+    // pending list AND stay out of LEDGER, and an approved transfer has moved stock
+    // that only the server knows about. Guessing either locally is how displayed
+    // and stored numbers drift apart.
+    if(typeof apiRehydrate==='function') await apiRehydrate();
+    if(typeof refreshAll==='function') refreshAll();
+    toast((ok?'Approved':'Rejected')+': '+((r&&r.summary)||id));
+  }catch(e){
+    btn.disabled=false;
+    toast(typeof apiErr==='function'?apiErr(e):'Could not complete that decision');
+  }
+});
 /* delegated: row click opens employee; ⋯ opens the shared action menu */
 document.addEventListener('click',function(e){
   if(e.target.closest('[data-empmenu]'))return;                 // handled inline
@@ -5153,6 +5218,14 @@ try{ empMigrate(); payRestore(); invDateRestore();
     deactivateEmployee:function(id){return call('/api/employees/'+encodeURIComponent(id)+'/deactivate',{method:'POST'});},
     finalizePayroll:function(s,e,b){return call('/api/payroll/finalize?start='+s+'&end='+e+'&branch='+encodeURIComponent(b||'all'),{method:'POST'});},
     transfers:function(){return call('/api/transfers');}, createTransfer:function(b){return call('/api/transfers',{method:'POST',body:b});},
+    // UX-C: the approval contract already existed and complete on the server —
+    // GET /api/approvals, POST /api/approvals/{id}/approve|reject — and `_decide`
+    // moves the stock for a transfer and sets the purchase status inside ONE
+    // transaction with its audit row. The client simply never called any of it.
+    // Nothing new is being invented here; this is the missing caller.
+    approvals:function(){return call('/api/approvals');},
+    approveReq:function(id,c){return call('/api/approvals/'+encodeURIComponent(id)+'/approve',{method:'POST',body:{comment:c||''}});},
+    rejectReq:function(id,c){return call('/api/approvals/'+encodeURIComponent(id)+'/reject',{method:'POST',body:{comment:c||''}});},
     issueTgCode:function(){return call('/api/telegram/link/issue',{method:'POST'});},
     // NOTE: call() serialises opts.body itself — never JSON.stringify here, or
     // the request is double-encoded and the API rejects it with a 422.
@@ -5426,6 +5499,10 @@ try{ empMigrate(); payRestore(); invDateRestore();
       else PUR_PENDING.push(row);
     });
     LEDGER = L; if(typeof REP!=='undefined'&&REP) REP.tx = L; window.uid = 900000;
+    // Only roles holding `approve` may read this endpoint; a 403 is a normal
+    // answer for everyone else and must not be shown as an error or as an
+    // empty-because-nothing-pending state.
+    try{ APPROVALS = can('approve') ? await API.approvals() : []; }catch(e){ APPROVALS=[]; }
     // employees
     var emps = await safeList(API.employees);
     // `pay_type` is preserved EXACTLY as stored — `e.pay_type||'salary'` silently
