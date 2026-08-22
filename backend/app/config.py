@@ -30,6 +30,13 @@ class Settings:
     # Password used for the demo accounts created by the seed. Overridable via
     # env so production can supply a real one without committing it to git.
     seed_password: str = os.getenv("SEED_PASSWORD", "demo1234")
+    # SIM-08: fabricated OPERATIONAL/FINANCIAL fixtures — sample products, stock,
+    # back-dated movements, customer/supplier balances, licences and ledger money.
+    # Defaults to False EVERYWHERE, including SQLite: a clean install must be
+    # operationally empty, and invented revenue reaching a real dashboard is worse
+    # than an empty one. Demo data is an explicit action, never a side effect.
+    # (Structure — branches and role logins — is still created, so the app is usable.)
+    seed_demo_data: bool = _bool(os.getenv("SEED_DEMO_DATA"), False)
     link_code_ttl_min: int = int(os.getenv("LINK_CODE_TTL_MIN", "10"))
     # Shared secret between the API and the Telegram worker. When set (== the
     # BotFather token), the worker can exchange a linked tg_id for that user's JWT.

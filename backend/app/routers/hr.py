@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from datetime import date, datetime
 from ..database import get_db
@@ -86,11 +87,34 @@ def payroll(start: str, end: str, branch: str = "all", db: Session = Depends(get
 def finalize(start: str, end: str, branch: str = "all", db: Session = Depends(get_db),
              user: models.User = Depends(S.require("run_payroll"))):
     s = payroll(start, end, branch, db, user)   # resolve_branches inside 403s on an unauthorized branch
-    tgt = S.resolve_branches(user, db, branch)[0]
-    db.add(models.Ledger(branch=tgt, type="payroll", amount=s["gross"],
-                         memo=f"Payroll {start}->{end}", created_by=user.id))
-    db.commit()
-    S.audit(db, user, "finalize", "payroll", f"{start}_{end}", f"gross {s['gross']}")
+    # BF-14: with fail-closed branch assignment this list can legitimately be empty
+    # (a branch-scoped user with no assignment). Indexing it raised IndexError -> 500,
+    # which is an authorization failure reported as a server fault. Refuse explicitly.
+    scope = S.resolve_branches(user, db, branch)
+    if not scope:
+        raise HTTPException(403, "No branch is assigned to this account.")
+    tgt = scope[0]
+
+    # SIM-06 + AA-06: the posting, its natural key and the audit evidence are one
+    # transaction, and the pay period's uniqueness is enforced by the DATABASE.
+    # An application "has it been finalized?" pre-check cannot hold under
+    # concurrency: two simultaneous requests both read "no" and both insert.
+    row = models.Ledger(branch=tgt, type="payroll", amount=s["gross"],
+                        memo=f"Payroll {start}->{end}", created_by=user.id)
+    db.add(row)
+    db.flush()
+    db.add(models.PayrollRun(branch=tgt, period_start=date.fromisoformat(start),
+                             period_end=date.fromisoformat(end), gross=s["gross"],
+                             ledger_id=row.id, finalized_by=user.id))
+    S.audit(db, user, "finalize", "payroll", f"{start}_{end}", f"gross {s['gross']}",
+            commit=False)
+    try:
+        db.commit()
+    except IntegrityError:
+        # The unique constraint rejected a duplicate period. Nothing was written:
+        # the ledger posting, the run row and the audit row roll back together.
+        db.rollback()
+        raise HTTPException(409, f"Payroll for {start}->{end} at {tgt} has already been finalized.")
     return {"ok": True, **s}
 
 

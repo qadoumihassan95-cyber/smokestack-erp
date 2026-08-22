@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..database import get_db
-from .. import models, security as S, permissions as P
+from .. import models, security as S, permissions as P, partners_repo as PR
 from .core import _costs_profit, _period_range, _purchases_sum, _sum
 
 router = APIRouter(prefix="/api/control", tags=["control"])
@@ -221,25 +221,82 @@ def _run_all(db: Session, user) -> dict:
               "Movements were clamped or written non-atomically.",
               "Never clamp; derive before from after − change.", broken)
 
-        # stock must equal the sum of its movement history
-        sums = dict(db.query(models.Movement.sku, func.coalesce(func.sum(models.Movement.qty_change), 0))
-                    .group_by(models.Movement.sku).all())
-        cur = dict(db.query(models.Stock.sku, func.coalesce(func.sum(models.Stock.qty), 0))
-                   .group_by(models.Stock.sku).all())
-        drift = [s for s in set(list(sums) + list(cur))
-                 if abs(int(cur.get(s, 0)) - int(sums.get(s, 0))) > 0]
-        R.add("Inventory", "Stock equals movement history", not drift, "warning",
-              f"{len(drift)} SKUs differ: {', '.join(drift[:5])}",
-              "Opening balances were seeded without matching movements, or a write bypassed the ledger.",
-              "Post an opening-balance movement, or reconcile the affected SKUs.", len(drift))
+        # BF-12: stock must equal its movement history PER (SKU, BRANCH).
+        # Grouping by SKU alone summed every branch together, so +5 in one branch
+        # and -5 in another cancelled to zero and the check reported pass over real
+        # corruption — precisely what it exists to catch. Severity is `error`, not
+        # `warning`: stock that disagrees with its own ledger must fail the gate.
+        sums = {(s, b): int(v or 0) for s, b, v in db.query(
+            models.Movement.sku, models.Movement.branch,
+            func.coalesce(func.sum(models.Movement.qty_change), 0)
+        ).group_by(models.Movement.sku, models.Movement.branch).all()}
+        cur = {(s, b): int(v or 0) for s, b, v in db.query(
+            models.Stock.sku, models.Stock.branch,
+            func.coalesce(func.sum(models.Stock.qty), 0)
+        ).group_by(models.Stock.sku, models.Stock.branch).all()}
+        drift = sorted(k for k in set(sums) | set(cur)
+                       if cur.get(k, 0) != sums.get(k, 0))
+        drift_labels = [f"{s}@{b}" for s, b in drift[:5]]
+        R.add("Inventory", "Stock equals movement history", not drift, "error",
+              f"{len(drift)} SKU/branch pairs differ: {', '.join(drift_labels)}",
+              "Opening balances were seeded without matching movements, or a write bypassed the ledger. "
+              "Offsetting errors in different branches do NOT cancel out.",
+              "Post an opening-balance movement, or reconcile the affected SKU/branch pairs.", len(drift))
 
-        approved = db.query(models.Transfer).filter(models.Transfer.status == "approved").count()
-        tin = db.query(models.Movement).filter(models.Movement.type == "transfer_in").count()
-        tout = db.query(models.Movement).filter(models.Movement.type == "transfer_out").count()
-        R.add("Inventory", "Approved transfers moved stock both ways", tin == tout,
-              "error", f"{approved} approved · {tout} out / {tin} in",
-              "A transfer moved stock out without moving it in (or vice versa).",
-              "Approval must write a paired out/in movement.", {"in": tin, "out": tout})
+        # BF-13: verify each transfer as an identified PAIR, not as two global counts.
+        # count(transfer_in) == count(transfer_out) was satisfied by any two rows at
+        # all — wrong SKU, wrong branches, wrong quantity, or two unrelated broken
+        # transfers cancelling each other.
+        legs = db.query(models.Movement).filter(
+            models.Movement.type.in_(("transfer_in", "transfer_out"))).all()
+        legacy = [m for m in legs if not m.transfer_id]
+        pairs = {}
+        for m in legs:
+            if m.transfer_id:
+                pairs.setdefault(m.transfer_id, []).append(m)
+
+        broken_pairs = []
+        for tid, ms in pairs.items():
+            outs = [m for m in ms if m.type == "transfer_out"]
+            ins = [m for m in ms if m.type == "transfer_in"]
+            if len(outs) != 1 or len(ins) != 1:
+                broken_pairs.append(f"{tid}: {len(outs)} out / {len(ins)} in")
+                continue
+            o, i = outs[0], ins[0]
+            # transfers use a surrogate row_id PK; `tid` is the tenant-scoped
+            # BUSINESS number. db.get(Transfer, "TR-000001") would compare a string
+            # against a bigint PK — silently None on SQLite, a DataError on
+            # PostgreSQL that poisons the whole transaction. Resolve it the way the
+            # rest of the app does.
+            t = PR.get_transfer(db, tid)
+            if o.sku != i.sku:
+                broken_pairs.append(f"{tid}: SKU {o.sku} out vs {i.sku} in")
+            elif int(o.qty_change) != -int(i.qty_change):
+                broken_pairs.append(f"{tid}: qty {o.qty_change} out vs {i.qty_change} in")
+            elif o.branch == i.branch:
+                broken_pairs.append(f"{tid}: both legs in {o.branch}")
+            elif t is not None and (o.branch != t.from_branch or i.branch != t.to_branch
+                                    or o.sku != t.sku or abs(int(o.qty_change)) != int(t.qty)):
+                broken_pairs.append(
+                    f"{tid}: movements {o.branch}->{i.branch} {o.sku} x{abs(int(o.qty_change))} "
+                    f"do not match transfer {t.from_branch}->{t.to_branch} {t.sku} x{t.qty}")
+
+        R.add("Inventory", "Approved transfers moved stock both ways", not broken_pairs,
+              "error",
+              f"{len(pairs)} identified transfers · {len(broken_pairs)} mismatched",
+              "A transfer's two legs disagree on source, destination, SKU or quantity, "
+              "or a leg is missing entirely.",
+              "Approval must write a paired out/in movement in ONE transaction.",
+              {"transfers": len(pairs), "mismatched": broken_pairs[:5]})
+
+        # Rows written before transfer_id existed cannot be verified. Report that
+        # honestly as its own finding rather than back-filling an invented identity,
+        # which would manufacture the evidence this check exists to look for.
+        R.add("Inventory", "All transfer movements carry a transfer identity",
+              not legacy, "warning",
+              f"{len(legacy)} legacy movement rows predate transfer identity",
+              "These rows cannot be verified as pairs; they are excluded from the check above.",
+              "Reconcile them manually, or accept them as pre-upgrade history.", len(legacy))
 
         pend = db.query(models.Purchase).filter(models.Purchase.status == "pending_approval").count()
         R.add("Inventory", "Purchases are being reviewed", True, "warning",

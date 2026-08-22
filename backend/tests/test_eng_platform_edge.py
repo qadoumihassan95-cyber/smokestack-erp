@@ -126,8 +126,8 @@ def test_apply_ordered_movements_is_deterministic_across_input_permutations():
     def run(ops):
         captured = []
         inv._write_movement = (
-            lambda db, user, sku, branch, mtype, change, notes="", unit_cost=None:
-            captured.append((branch, sku))
+            lambda db, user, sku, branch, mtype, change, notes="", unit_cost=None,
+            transfer_id=None: captured.append((branch, sku))
         )
         try:
             locking.apply_ordered_movements(None, None, ops)

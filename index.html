@@ -1002,7 +1002,11 @@
         <div class="card"><h3>Settings & Filing</h3>
           <div class="field"><label for="taxState">State</label><select id="taxState" onchange="renderTax()"><option value="TX|8.25">Texas — 8.25%</option><option value="CA|9.50">California — 9.50%</option><option value="NY|8.88">New York — 8.88%</option><option value="FL|7.00">Florida — 7.00%</option></select></div>
           <div style="font-size:13px;line-height:1.9;color:var(--muted)" id="taxNote"></div>
-          <button class="btn p" style="margin-top:8px" onclick="toast('Tax report generated for filing period')">Generate tax report</button>
+          <!-- UX-H1: this button only showed a success toast; nothing was ever
+               generated. Rather than claim work it did not do, it now exports the
+               same tax figures the table above is rendering, or says plainly that
+               it cannot. -->
+          <button class="btn p" style="margin-top:8px" onclick="exportTaxReport()">Export tax report (CSV)</button>
         </div>
       </div>
     </section>
@@ -1161,9 +1165,23 @@ const STORE_LABELS={"Store A":"GM Tobacco Duncanville","Store B":"GM Tobacco Lan
 function storeLabel(s){return (STORE_LABELS[s]||s);}                     // internal key -> business label (fallback to key)
 function storeKey(x){if(x==null)return x;if(STORES.includes(x))return x;for(const k in STORE_LABELS){if(STORE_LABELS[k].toLowerCase()===String(x).toLowerCase())return k;}return x;}  // label/key -> internal key
 let ACCOUNTS=["Cash","Checking","Business Bank","Credit Card"];
-const today=new Date('2026-07-02');
-function dstr(d){return d.toISOString().slice(0,10);}
-function daysAgo(n){const d=new Date(today);d.setDate(d.getDate()-n);return dstr(d);}
+/* UX-C1: "today" was pinned to a hardcoded date, so every period filter, date
+   picker, dashboard header and payroll period ran weeks behind the real clock
+   while the database recorded rows against the real one. `today` is now a live
+   getter, not a constant captured at load: a session left open overnight rolls
+   over instead of silently reporting yesterday. */
+/* UX-C2: the assistant addressed EVERY user as "Hassan". Greet whoever is actually
+   signed in; fall back to a neutral form rather than inventing a name. */
+function ssUserName(){
+  var u = window.SS_USER;
+  var n = u && (u.name || u.id);
+  return (n ? String(n).split(' ')[0] : 'there');
+}
+function today(){const d=new Date();d.setHours(0,0,0,0);return d;}
+function dstr(d){/* local calendar date — toISOString() would shift by the UTC offset */
+  const p=n=>String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;}
+function daysAgo(n){const d=today();d.setDate(d.getDate()-n);return dstr(d);}
 
 /* ===================== MULTI-BRANCH + ROLES =====================
    A "branch" is a store. BRANCH holds the active selection ('all' or a store name).
@@ -1245,7 +1263,16 @@ function fillStores(){
 // keep both selectors, the role caption, and the mobile chip in lockstep with BRANCH
 function syncBranchUI(){
   ['branchSel','storeSel'].forEach(id=>{const el=document.getElementById(id);if(el&&el.value!==BRANCH)el.value=BRANCH;});
-  const roleName={owner:'Owner · all branches',manager:'Branch manager',employee:'Employee'}[ROLE.kind];
+  /* UX-H2: this map covered 3 of the 8 supported roles, so admin, branch_manager,
+     inventory_manager, accountant and cashier all rendered the caption
+     "undefined". Every supported role is mapped, and an unknown one degrades to a
+     humanised key rather than the literal string "undefined". */
+  const ROLE_LABELS={owner:'Owner · all branches',admin:'Administrator',
+    branch_manager:'Branch manager',manager:'Manager',
+    inventory_manager:'Inventory manager',accountant:'Accountant',
+    cashier:'Cashier',employee:'Employee'};
+  const roleName=ROLE_LABELS[ROLE.kind]||String(ROLE.kind||'')
+    .replace(/_/g,' ').replace(/^./,c=>c.toUpperCase())||'User';
   const rc=document.getElementById('branchRole');
   if(rc)rc.innerHTML=`<span class="dot"></span>${roleName}${ROLE.kind!=='owner'?' · '+allowedBranches().join(', '):''}`;
   const mb=document.getElementById('mBranch');if(mb)mb.textContent=branchLabel();
@@ -1408,7 +1435,37 @@ function renderTax(){const [st,rate]=document.getElementById('taxState').value.s
   const byStore=allowedBranches().filter(s=>BRANCH==='all'||s===BRANCH).map(s=>{const rows=month.filter(x=>x.store===s);return [storeLabel(s),sum(rows,'sale'),rows.reduce((a,x)=>a+(x.tax||0),0)];});
   document.getElementById('taxStoreTbl').innerHTML=`<thead><tr><th>Store</th><th style="text-align:end">Taxable sales</th><th style="text-align:end">Tax collected</th></tr></thead><tbody>`+
     byStore.map(b=>`<tr><td><b>${b[0]}</b></td><td style="text-align:end">${money(b[1])}</td><td style="text-align:end;color:var(--brand)">${money(b[2])}</td></tr>`).join('')+`</tbody>`;
-  document.getElementById('taxNote').innerHTML=`Rate applied: <b>${r}%</b> (${st})<br>Rates are per-jurisdiction and configurable — the engine supports different US states.<br>Next filing: <b>Jul 20</b>`;}
+  document.getElementById('taxNote').innerHTML=`Rate applied: <b>${r}%</b> (${st})<br>Rates are per-jurisdiction and configurable — the engine supports different US states.`;}
+
+/* UX-H1: produce a REAL artifact from the same rows the table above renders, or
+   refuse honestly. It must never report success for work it did not do. */
+function exportTaxReport(){
+  try{
+    const [st,rate]=document.getElementById('taxState').value.split('|');
+    const month=scope(LEDGER).filter(x=>inPeriod(x.date,'month'));
+    if(!month.length){ toast('Nothing to export — no sales in the current period.'); return; }
+    const stores=allowedBranches().filter(s=>BRANCH==='all'||s===BRANCH);
+    const esc=v=>`"${String(v==null?'':v).replace(/"/g,'""')}"`;
+    const lines=[['Store','Taxable sales','Tax collected','Rate %','Jurisdiction'].map(esc).join(',')];
+    let ts=0, tc=0;
+    stores.forEach(s=>{
+      const rows=month.filter(x=>x.store===s);
+      const taxable=sum(rows,'sale'), collected=rows.reduce((a,x)=>a+(x.tax||0),0);
+      ts+=taxable; tc+=collected;
+      lines.push([storeLabel(s),taxable.toFixed(2),collected.toFixed(2),rate,st].map(esc).join(','));
+    });
+    lines.push(['TOTAL',ts.toFixed(2),tc.toFixed(2),rate,st].map(esc).join(','));
+    const blob=new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download=`smokestack-tax-${st}-${daysAgo(0)}.csv`;
+    document.body.appendChild(a); a.click();
+    setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},0);
+    toast(`Tax report exported — ${stores.length} store${stores.length===1?'':'s'}, ${money(tc)} collected.`);
+  }catch(e){
+    toast('Could not generate the tax report. Nothing was exported.');
+  }
+}
 
 // ---------------- Payroll ----------------
 // employees are branch records too — an employee/manager only sees staff at their branch(es)
@@ -1434,7 +1491,14 @@ function pct(v,t){return (t?Math.round(v/t*100):0)+'%';}
 function fmtV(v,m){return m?money(v):v;}
 
 // ---- reporting dataset (synthetic history so charts are meaningful; live entries append) ----
-function repSeed(){let s=42;const rnd=()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};
+function repSeed(){
+  /* UX-H3 / SIM-08: this is a synthetic transaction generator for the offline demo.
+     In API mode it must never run — it fabricated thousands of invented sales that
+     were briefly aliased into LEDGER before server hydration replaced them, which is
+     how the assistant came to quote transaction counts that never existed. The
+     warehouse starts EMPTY and is filled from the server (see hydrate()). */
+  if(window.API_MODE){ REP.tx=[]; return; }
+  let s=42;const rnd=()=>{s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};
   const pick=a=>a[Math.floor(rnd()*a.length)];
   const products=[['Marlboro Gold','Cigarettes',7.1,9.25],['Newport','Cigarettes',7.4,9.8],['Zyn Cool Mint','Pouches',3.9,5.5],['Elf Bar','Vape',12.1,17.99],['RAW Classic','Accessories',1.8,2.99],['Backwoods','Cigars',9.2,12.49],['Juul Pods','Vape',14,19.99],['Grinder','Accessories',5,9.99],['Glass Pipe','Accessories',12,24.99],['Lighter','Accessories',0.6,1.99]];
   const custs=['Mike R.','Ana G.','Dev P.','Sara K.','Tom B.','Lily W.','Omar F.','Jade M.'];
@@ -2152,7 +2216,7 @@ function copBindSide(){const el=document.getElementById('copSide');
     if(tmpl){const ta=document.getElementById('copTa');ta.value=tmpl.dataset.tmpl;ta.focus();copOnInput();return;}
     if(row){copSubmitText(row.dataset.val);}});}
 
-function copGreet(){copSay("Hi Hassan. I read the same ledger your Dashboard and Reports read — "+LEDGER.length.toLocaleString()+" transactions across "+STORES.length+" stores — so we'll never disagree on a number.\n\n**Ask me about the business:** *“Why is my profit lower?”* · *“What did GM Tobacco Lancaster spend this month?”* · *“What's almost out of stock?”* · *“Which employee sold the most?”*\n\n**Or tell me what happened** and I'll draft the entry: *“GM Tobacco Lancaster electricity 320”*. I never post anything without showing you a draft first.",
+function copGreet(){copSay("Hi "+ssUserName()+". I read the same ledger your Dashboard and Reports read — "+LEDGER.length.toLocaleString()+" transactions across "+STORES.length+" stores — so we'll never disagree on a number.\n\n**Ask me about the business:** *“Why is my profit lower?”* · *“What did GM Tobacco Lancaster spend this month?”* · *“What's almost out of stock?”* · *“Which employee sold the most?”*\n\n**Or tell me what happened** and I'll draft the entry: *“GM Tobacco Lancaster electricity 320”*. I never post anything without showing you a draft first.",
     {chips:{field:'shortcut',items:["What should I focus on today?","Why is my profit lower?","What should I reorder?"]}});
   const ins=copInsights()[0];if(ins)setTimeout(()=>copSay(`One thing worth a look:`,{card:`<div class="cop-card insight"><div class="ch"><span class="ct">${ins.i} Insight</span></div><div style="font-size:13.5px">${copFmt(ins.t)}</div></div>`,actions:[{label:"Show today's sales",act:'shortcut',val:"Show today's sales"}]}),700);}
 function copInit(){copBindStream();copBindMenu();copBindFiles();copBindSide();
@@ -2616,7 +2680,7 @@ function bBriefing(){
   if(/worth a look/.test(anom.text))items.push(`**${anom.text.match(/\*\*(\d+) thing/)?RegExp.$1:'Some'} flagged transactions** this week — duplicates or oversized entries. Ask me to *show unusual transactions*.`);
   const tax=scope(LEDGER).filter(x=>inR(x.date,bRange('month'))).reduce((a,x)=>a+(x.tax||0),0);
   items.push(`**${money(tax)} of sales tax** is sitting in your accounts for the state. Filing is Jul 20 — don't spend it.`);
-  return {text:`Good morning Hassan. Here's where the business actually stands.\n\nToday you've booked **${money(today.sales)}** across ${today.txns} transactions. The last 7 days: **${money(week.sales)}** revenue, **${money(week.profit)}** net profit, ${week.margin.toFixed(1)}% gross margin.\n\n**What deserves your attention, in order:**\n\n`+items.slice(0,5).map((s,i)=>`${i+1}. ${s}`).join('\n\n'),
+  return {text:`Good morning ${ssUserName()}. Here's where the business actually stands.\n\nToday you've booked **${money(today.sales)}** across ${today.txns} transactions. The last 7 days: **${money(week.sales)}** revenue, **${money(week.profit)}** net profit, ${week.margin.toFixed(1)}% gross margin.\n\n**What deserves your attention, in order:**\n\n`+items.slice(0,5).map((s,i)=>`${i+1}. ${s}`).join('\n\n'),
     chips:{field:'shortcut',items:['What should I reorder?','Show unusual transactions','Why is my profit lower?']},
     actions:[{label:'Open Dashboard',act:'nav',val:'dash'},{label:'Open Reports',act:'nav',val:'reports'}]};
 }
@@ -4638,7 +4702,7 @@ function empEligible(e){return e.active!==false && e.status!=='inactive' && (!e.
 
 /* ---------- Pay-period state ---------- */
 var PAY=(typeof PAY!=='undefined'&&PAY)?PAY:{start:null,end:null,preset:'month',finalized:[],busy:false};
-function _monthBounds(off){var d=new Date(today);d.setDate(1);d.setMonth(d.getMonth()+off);var s=dstr(d);d.setMonth(d.getMonth()+1);d.setDate(0);return [s,dstr(d)];}
+function _monthBounds(off){var d=today();d.setDate(1);d.setMonth(d.getMonth()+off);var s=dstr(d);d.setMonth(d.getMonth()+1);d.setDate(0);return [s,dstr(d)];}
 function payRestore(){try{var o=JSON.parse(lsGet('ss_pay')||'null');if(o){PAY.start=o.start;PAY.end=o.end;PAY.preset=o.preset||'month';PAY.finalized=o.finalized||[];}}catch(e){}
   if(!PAY.start){var b=_monthBounds(0);PAY.start=b[0];PAY.end=b[1];}}
 function payPersist(){try{lsSet('ss_pay',JSON.stringify({start:PAY.start,end:PAY.end,preset:PAY.preset,finalized:PAY.finalized}));}catch(e){}}
@@ -5253,6 +5317,12 @@ try{ empMigrate(); payRestore(); invDateRestore();
     var u=T.user;
     ROLE = { kind:u.role, branches:(u.branches&&u.branches.length)?u.branches.slice():'all' };
     try{ localStorage.removeItem(LS.role); }catch(e){}
+    // UX-M1: ROLE defaults to {kind:'owner'} at load (line ~1193), so owner-gated
+    // navigation was evaluated as owner BEFORE the server told us who this is. Any
+    // role-dependent chrome must be re-evaluated here, the moment the real role
+    // lands. Server enforcement is unchanged and remains the actual control.
+    try{ if(typeof window.__syncUsersNav==='function') window.__syncUsersNav(); }catch(e){}
+    try{ if(typeof syncBranchUI==='function') syncBranchUI(); }catch(e){}
     // products
     var prods = await safeList(API.products);
     INV.products = prods.map(function(p,i){ var stock={}; STORES.forEach(function(b){ stock[b]=(p.stock&&p.stock[b])||0; });
@@ -5288,11 +5358,17 @@ try{ empMigrate(); payRestore(); invDateRestore();
     loadingScreen();
     try{
       T.user = await API.me();
+      window.SS_USER = T.user;          // UX-C2: real identity for the assistant greeting
       try{ window.__ME=T.user.id;
         window.__canDeleteChat=['owner','admin','branch_manager','manager'].indexOf(T.user.role)>=0;
         window.__canPinChat=window.__canDeleteChat;
         window.__canAnnounce=['owner','admin','branch_manager','manager'].indexOf(T.user.role)>=0; }catch(e){}
       await hydrate();
+      // UX-C2: copInit() greeted at page load — before login and before hydration —
+      // and the greeting was never refreshed, so it quoted whatever was in the
+      // warehouse at that moment under a hardcoded name. Re-greet with the real
+      // signed-in user and the real, server-loaded ledger.
+      try{ if(typeof copNewChat==='function') copNewChat(); }catch(e){}
       if(typeof fillStores==='function') fillStores();
       var canAll = (ROLE.branches==='all');
       if(typeof setBranch==='function') setBranch(canAll?'all':(STORES[0]));
@@ -8356,6 +8432,7 @@ try{ empMigrate(); payRestore(); invDateRestore();
   function tt(m){ if(typeof toast==='function')toast(m); }
 
   function syncNav(){ var el=document.getElementById('navUsers'); if(el) el.style.display=isOwner()?'':'none'; }
+  window.__syncUsersNav=syncNav;   // UX-M1: re-run the moment the real role arrives
 
   // ---- lightweight modal (self-contained; styled with existing tokens) ----
   function modal(html){
@@ -8577,7 +8654,10 @@ try{ empMigrate(); payRestore(); invDateRestore();
     // reveal/refresh the nav on every navigation (role is known after login/hydrate)
     if(typeof window.go==='function'){ var _go=window.go; window.go=function(v){ _go.apply(this,arguments); syncNav(); if(v==='users') render(); }; }
     // catch post-login boot without requiring a click
-    var n=0, iv=setInterval(function(){ syncNav(); if(isOwner()||++n>40) clearInterval(iv); }, 750);
+    // UX-M1: this used to stop as soon as isOwner() was true — but ROLE defaults to
+    // owner before hydration, so it stopped on the FIRST tick and never re-hid the
+    // nav once the real (non-owner) role arrived. Run for a bounded window instead.
+    var n=0, iv=setInterval(function(){ syncNav(); if(++n>40) clearInterval(iv); }, 750);
   }
   if(document.readyState!=='loading') init(); else document.addEventListener('DOMContentLoaded', init);
 })();

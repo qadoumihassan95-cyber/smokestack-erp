@@ -113,6 +113,12 @@ class Movement(Base):
     qty_before = Column(Integer); qty_change = Column(Integer); qty_after = Column(Integer)
     unit_cost = Column(Numeric(12, 2)); user_id = Column(String); notes = Column(Text)
     moved_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    # BF-13: durable transfer identity. Pairing transfer_in/transfer_out by GLOBAL
+    # COUNT could not tell a correct transfer from two unrelated broken ones. Both
+    # legs of a transfer now carry the transfer's id, so a pair can be verified on
+    # source, destination, SKU and quantity. NULL on rows written before this
+    # column existed — those are reported as unverifiable, never falsely paired.
+    transfer_id = Column(String, index=True)
 
 class Ledger(Base):
     __tablename__ = "ledger"
@@ -268,6 +274,32 @@ class LinkCode(Base):
     expires_at = Column(DateTime(timezone=True)); used = Column(Boolean, default=False)
     employee_id = Column(String)     # the employee this invitation is for
     created_by = Column(String)      # who minted it
+
+
+class PayrollRun(Base):
+    """SIM-06: the natural key of a finalized pay period.
+
+    Finalizing payroll used to be a bare INSERT with nothing to collide against,
+    so a blind retry — or two concurrent clicks — posted the cost twice. This
+    table carries a UNIQUE(company_id, branch, period_start, period_end), so the
+    DATABASE refuses the duplicate. An application pre-check cannot: two
+    concurrent transactions both read "not yet finalized" and both insert.
+
+    It is also the durable source document for the pay period, so it survives the
+    move to double-entry rather than being discarded with the flat ledger.
+    """
+    __tablename__ = "payroll_runs"
+    __table_args__ = (UniqueConstraint("company_id", "branch", "period_start", "period_end",
+                                       name="uq_payroll_runs_period"),)
+    row_id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    company_id = Column(Integer, index=True, nullable=False, server_default="1")
+    branch = Column(String, nullable=False, index=True)
+    period_start = Column(Date, nullable=False)
+    period_end = Column(Date, nullable=False)
+    gross = Column(Numeric(12, 2), nullable=False)
+    ledger_id = Column(BigInteger().with_variant(Integer, "sqlite"))   # the posting it produced
+    finalized_by = Column(String)
+    finalized_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
 class ValidationRun(Base):

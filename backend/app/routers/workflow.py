@@ -59,11 +59,15 @@ def _decide(db, user, aid, status, comment):
                 if t.status != "pending":
                     raise HTTPException(409, f"Transfer already {t.status}.")
                 # multi-row stock mutation → canonical lock order (Phase 6)
+                # BF-13: both legs carry the transfer id, so the validator can verify
+                # the pair on source/destination/SKU/quantity instead of counting rows.
                 apply_ordered_movements(db, user, [
                     {"sku": t.sku, "branch": t.from_branch, "mtype": "transfer_out",
-                     "change": -int(t.qty), "notes": f"Transfer {t.id} -> {t.to_branch}"},
+                     "change": -int(t.qty), "notes": f"Transfer {t.id} -> {t.to_branch}",
+                     "transfer_id": t.id},
                     {"sku": t.sku, "branch": t.to_branch, "mtype": "transfer_in",
-                     "change": int(t.qty), "notes": f"Transfer {t.id} <- {t.from_branch}"},
+                     "change": int(t.qty), "notes": f"Transfer {t.id} <- {t.from_branch}",
+                     "transfer_id": t.id},
                 ])
             t.status = status
     elif a.kind == "purchase":
@@ -71,8 +75,12 @@ def _decide(db, user, aid, status, comment):
         if p:
             p.status = status
     a.status = status; a.decided_by = user.name; a.comment = comment
+    # AA-06: the approval decision, the stock movements it triggered and the audit
+    # evidence are one transaction. Previously the decision committed first and a
+    # failing audit insert left an approved transfer with no record of who approved it.
+    db.flush()
+    S.audit(db, user, status, "approval", aid, comment or "", commit=False)
     db.commit()
-    S.audit(db, user, status, "approval", aid, comment or "")
     return {"ok": True, "summary": a.summary, "status": status}
 
 @router.post("/approvals/{aid}/approve")

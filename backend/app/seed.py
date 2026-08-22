@@ -31,6 +31,17 @@ PRODUCTS = [
 ]
 
 def seed(db: Session):
+    """Install-time seeding.
+
+    SIM-08: a clean install must be OPERATIONALLY EMPTY. It previously arrived with
+    $18,300 of invented revenue, fabricated customer/supplier balances and
+    back-dated stock movements — all of which flowed straight into the reported
+    P&L, so a brand-new shop's first dashboard showed money nobody had taken.
+
+    Structure (branches, role logins) is always created so the app is usable.
+    Operational and financial fixtures are DEMO DATA and now require an explicit
+    opt-in via SEED_DEMO_DATA — they are never a side effect of a clean install.
+    """
     if db.query(models.Branch).count():
         return  # already seeded
     # Short demo password from env (defaults to 'demo1234'). hash_pw validates
@@ -51,6 +62,9 @@ def seed(db: Session):
         for br in (branches or []):
             db.add(models.UserBranch(user_id=uid, branch=br))
     db.flush()
+    if not settings.seed_demo_data:
+        db.commit()          # clean install: structure only, zero operational rows
+        return
     seq = 0
     for sku, bc, name, sup, cost, price, mn, stock in PRODUCTS:
         db.add(models.Product(sku=sku, barcode=bc, name=name, supplier=sup, cost=cost, price=price, min_level=mn))

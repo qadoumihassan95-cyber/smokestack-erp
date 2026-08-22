@@ -29,13 +29,22 @@ def can(role: str, perm: str) -> bool:
     return perm in PERMS.get(role, [])
 
 def allowed_branches(user, all_branches):
-    """user.branches (list) if assigned; else all for all-branch roles; else first."""
+    """The branches this user may touch: their explicit assignments, or every
+    branch for an all-branch role.
+
+    BF-14: a branch-scoped user with NO assignment previously fell through to
+    ``all_branches[:1]`` — silently granting whichever branch happened to sort
+    first, with read AND write access. Forgetting to assign a branch has to fail
+    closed, or branch assignment is not a control at all. An unassigned
+    branch-scoped user now resolves to the EMPTY set: reads return nothing and
+    every write is refused by ``assert_branch``.
+    """
     ub = getattr(user, "branch_names", None)
     if ub:
         return list(ub)
     if user.role in ALLBRANCH_ROLES:
         return list(all_branches)
-    return list(all_branches[:1])
+    return []
 
 def can_see_all(role: str) -> bool:
     return can(role, "view_all_branches") or role in ALLBRANCH_ROLES

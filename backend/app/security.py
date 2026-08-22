@@ -153,10 +153,20 @@ def assert_branch(user: models.User, db: Session, branch: str):
     if branch not in scope_branches(user, db):
         raise HTTPException(status.HTTP_403_FORBIDDEN, f"Branch not permitted: {branch}")
 
-def audit(db: Session, user, action, entity, ref="", detail="", source="WEB", result="ok"):
+def audit(db: Session, user, action, entity, ref="", detail="", source="WEB", result="ok",
+          commit: bool = True):
+    """Record an audit entry.
+
+    AA-06: pass ``commit=False`` from a financial mutation and commit ONCE at the
+    end of the handler, so the source effect and its evidence share a single
+    transaction. The default stays ``True`` for the many non-financial callers
+    that legitimately audit a read or a already-committed side effect — changing
+    that default silently would leave those entries uncommitted.
+    """
     db.add(models.AuditLog(source=source, user_id=getattr(user, "id", None),
                            action=action, entity=entity, ref=str(ref), detail=detail, result=result))
-    db.commit()
+    if commit:
+        db.commit()
 
 
 # =============================================================================

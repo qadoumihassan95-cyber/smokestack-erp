@@ -40,8 +40,11 @@ def add_sale(body: SaleIn, db: Session = Depends(get_db), user: models.User = De
     _check_amount(body.amount, body.tax)
     r = models.Ledger(branch=body.branch, type="sale", amount=body.amount, tax=body.tax,
                       account=body.account, product=body.product, employee=body.employee, created_by=user.id)
-    db.add(r); db.commit()
-    S.audit(db, user, "create", "sale", r.id, f"{body.amount} @ {body.branch}")
+    # AA-06: financial effect + audit evidence in ONE transaction. flush() assigns
+    # r.id without committing, so a failing audit insert rolls the sale back too.
+    db.add(r); db.flush()
+    S.audit(db, user, "create", "sale", r.id, f"{body.amount} @ {body.branch}", commit=False)
+    db.commit()
     return _row(r)
 
 @router.get("/expenses")
@@ -61,9 +64,10 @@ def add_expense(body: ExpenseIn, db: Session = Depends(get_db), user: models.Use
     custom = desc if (body.category or "").strip().lower() == "other" else None
     r = models.Ledger(branch=body.branch, type="expense", amount=body.amount, category=body.category,
                       account=body.account, memo=body.memo, custom_description=custom, created_by=user.id)
-    db.add(r); db.commit()
+    db.add(r); db.flush()                                   # AA-06: single transaction
     label = custom or body.category
-    S.audit(db, user, "create", "expense", r.id, f"{label} {body.amount} @ {body.branch}")
+    S.audit(db, user, "create", "expense", r.id, f"{label} {body.amount} @ {body.branch}", commit=False)
+    db.commit()
     return _row(r)
 
 @router.get("/purchases")
@@ -82,6 +86,7 @@ def add_purchase(body: PurchaseIn, db: Session = Depends(get_db), user: models.U
     db.add(p)
     db.add(models.Approval(id=counters.next_number(db, counters.APPROVAL), kind="purchase", ref=pid, branch=body.branch, amount=body.amount,
                            requested_by=user.name, summary=f"Purchase {pid} · {body.vendor} · ${body.amount:.0f}"))
+    db.flush()                                              # AA-06: single transaction
+    S.audit(db, user, "create", "purchase", pid, f"{body.vendor} {body.amount}", commit=False)
     db.commit()
-    S.audit(db, user, "create", "purchase", pid, f"{body.vendor} {body.amount}")
     return {"id": pid, "status": "pending_approval"}

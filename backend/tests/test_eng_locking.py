@@ -26,7 +26,8 @@ def test_canonical_key_orders_by_branch_then_sku():
 def test_apply_ordered_movements_sorts_and_applies_both():
     captured = []
 
-    def fake_write(db, user, sku, branch, mtype, change, notes="", unit_cost=None):
+    def fake_write(db, user, sku, branch, mtype, change, notes="", unit_cost=None,
+                   transfer_id=None):
         captured.append((branch, sku, mtype, change))
 
     import app.routers.inventory as inv

@@ -12,9 +12,10 @@ transfer_out from the source branch, transfer_in to the destination). Routing it
 through ``apply_ordered_movements`` guarantees both directions of a transfer between
 the same two branches lock rows in the same order.
 
-Note: the underlying ``_write_movement`` currently commits per call, so the deadlock
-window is already small; the canonical ordering makes it *zero* and is the required
-policy for any future atomic (single-transaction) multi-row mutation.
+``_write_movement`` no longer commits per call (AA-06). Every movement in a batch,
+and the audit evidence for it, share ONE transaction owned by the calling handler,
+so a failure on the second leg of a transfer cannot leave the first leg committed.
+The canonical ordering above is what makes that single transaction deadlock-free.
 """
 
 
@@ -35,4 +36,5 @@ def apply_ordered_movements(db, user, ops):
         _write_movement(
             db, user, op["sku"], op["branch"], op["mtype"], op["change"],
             notes=op.get("notes", ""), unit_cost=op.get("unit_cost"),
+            transfer_id=op.get("transfer_id"),
         )

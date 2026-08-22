@@ -136,7 +136,8 @@ def reactivate_product(sku: str, db: Session = Depends(get_db), user: models.Use
     S.audit(db, user, "reactivate", "product", sku)
     return {"ok": True, "status": "active"}
 
-def _write_movement(db, user, sku, branch, mtype, change, notes="", unit_cost=None):
+def _write_movement(db, user, sku, branch, mtype, change, notes="", unit_cost=None,
+                    transfer_id=None):
     change = int(change)
     st = db.query(models.Stock).filter_by(sku=sku, branch=branch).first()
     if not st:
@@ -174,8 +175,13 @@ def _write_movement(db, user, sku, branch, mtype, change, notes="", unit_cost=No
     uc = unit_cost if unit_cost is not None else (p.cost if p else 0)
     db.add(models.Movement(ref=counters.next_number(db, counters.MOVEMENT), sku=sku, branch=branch,
                            type=mtype, qty_before=before, qty_change=int(change), qty_after=after,
-                           unit_cost=uc, user_id=user.id, notes=notes))
-    db.commit()
+                           unit_cost=uc, user_id=user.id, notes=notes, transfer_id=transfer_id))
+    # AA-06: do NOT commit here. A transfer applies TWO movements; committing each
+    # one separately meant a failure on the second leg left the first committed —
+    # stock removed from the source branch and never added to the destination,
+    # which is exactly the unpaired-movement corruption BF-13 was blind to. The
+    # caller owns the commit, so both legs and the audit row succeed or fail together.
+    db.flush()
     return after
 
 @router.post("/receive")
@@ -186,7 +192,9 @@ def receive(body: StockOp, db: Session = Depends(get_db), user: models.User = De
     after = _write_movement(db, user, body.sku, body.branch, "receive", abs(body.qty),
                             notes=(body.reason or ""), unit_cost=body.unit_cost)
     S.audit(db, user, "receive", "product", body.sku,
-            f"+{abs(body.qty)} @ {body.branch}" + (f" · {body.reason}" if body.reason else ""))
+            f"+{abs(body.qty)} @ {body.branch}" + (f" · {body.reason}" if body.reason else ""),
+            commit=False)
+    db.commit()                                             # AA-06: single transaction
     return {"ok": True, "sku": body.sku, "branch": body.branch, "new_stock": after}
 
 @router.post("/adjust")
@@ -197,7 +205,9 @@ def adjust(body: StockOp, db: Session = Depends(get_db), user: models.User = Dep
     if not db.get(models.Product, body.sku):
         raise HTTPException(404, "Product not found")
     after = _write_movement(db, user, body.sku, body.branch, "adjust", body.qty, body.reason)
-    S.audit(db, user, "adjust", "product", body.sku, f"{body.qty:+d} @ {body.branch}: {body.reason}")
+    S.audit(db, user, "adjust", "product", body.sku, f"{body.qty:+d} @ {body.branch}: {body.reason}",
+            commit=False)
+    db.commit()                                             # AA-06: single transaction
     return {"ok": True, "sku": body.sku, "branch": body.branch, "new_stock": after}
 
 @router.get("/movements")
