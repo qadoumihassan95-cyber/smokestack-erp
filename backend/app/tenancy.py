@@ -47,6 +47,32 @@ TENANT_TABLES = {
     "chat_announcements", "reminder_settings", "reminder_deliveries",
     "employee_schedules", "schedule_templates", "schedule_exceptions",
     "telegram_delivery_log",
+    # AA-C1-01: payroll_runs (the finalized-pay-period source document) was added
+    # without being registered here, so PostgreSQL applied the server default
+    # company 1 while the posting and audit row carried the real company. The
+    # source document, its posting and its evidence must reconcile by company.
+    "payroll_runs",
+}
+
+# Tables that carry a `company_id` column but are DELIBERATELY not tenant-scoped
+# by the session engine. Listed explicitly so that adding a new table forces a
+# decision instead of defaulting to "unscoped by omission" — see
+# tests/test_tenant_registry.py, which fails on any company_id table that appears
+# in neither set.
+#
+# NOTE: these entries are INHERITED FROM THE BASELINE and are recorded here to
+# lock the current state, NOT to certify it. Whether each is correctly exempt is
+# an open question for the Security and Accounting gates; this set is a tripwire,
+# not an approval.
+TENANT_EXEMPT = {
+    "platform_audit",          # platform/superadmin audit spanning all companies
+    "subscriptions",           # billing records owned by the platform, not a tenant
+    "company_modules",         # per-company entitlement rows, managed platform-side
+    "policy_overrides",        # platform policy applied TO a company
+    "document_counters",       # scoped explicitly by (company_id, doc_type) in SQL
+    "attendance_evidence",     # UNREVIEWED — inherited from baseline
+    "chat_attachments",        # UNREVIEWED — inherited from baseline
+    "no_activity_incidents",   # UNREVIEWED — inherited from baseline
 }
 
 
