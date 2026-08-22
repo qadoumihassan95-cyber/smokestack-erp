@@ -1210,6 +1210,10 @@ function scope(rows){const allow=allowedBranches();const sel=BRANCH;
   return rows.filter(x=>{const b=x.store;if(!b)return sel==='all'||!STORES.includes(sel);   // branchless demo rows (e.g. recon) pass through
     return allow.includes(b)&&(sel==='all'||b===sel);});}
 function branchLabel(){return BRANCH==='all'?(canSeeAll()?'All branches':allowedBranches()[0]||'—'):BRANCH;}
+// Purchases awaiting (or refused) approval. Deliberately NOT in LEDGER: they are
+// not financial events yet, so no aggregation can accidentally capitalise them.
+// They are still displayed — see renderPur — with their status shown honestly.
+let PUR_PENDING=[];
 // ledger: {id,date,store,account,type,category,amount,memo,tax}
 let LEDGER=[
  {id:1,date:daysAgo(0),store:"Store A",account:"Cash",type:"sale",category:"Sales",amount:8420,memo:"Daily sales",tax:642.20},
@@ -1407,9 +1411,14 @@ function submitExpense(){const amt=+document.getElementById('eAmt').value||0;if(
   document.getElementById('eAmt').value='';document.getElementById('eVendor').value='';if(document.getElementById('eDesc'))document.getElementById('eDesc').value='';expToggleOther();renderExp();renderDash();toast('Expense saved: '+money(amt));}
 
 // ---------------- Purchases ----------------
-function renderPur(){const rows=scope(LEDGER).filter(x=>x.type==='purchase').sort((a,b)=>b.id-a.id).slice(0,12);
+function renderPur(){
+  // Union of posted purchases and those awaiting/refused approval. Excluding the
+  // unapproved ones from LEDGER must not make them INVISIBLE — an owner who cannot
+  // see a pending purchase cannot approve it, and hiding it would trade a wrong
+  // number for a lost document.
+  const rows=scope(LEDGER.concat(PUR_PENDING)).filter(x=>x.type==='purchase').sort((a,b)=>b.id<a.id?-1:1).slice(0,12);
   document.getElementById('purTbl').innerHTML=`<thead><tr><th>Date</th><th>Vendor</th><th>Store</th><th>Description</th><th style="text-align:end">Amount</th><th></th></tr></thead><tbody>`+
-    rows.map(x=>`<tr data-txid="${x.id}"><td>${x.date.slice(5)}</td><td><b>${x.vendor||x.memo}</b></td><td>${storeLabel(x.store)}</td><td>${x.desc||'—'}</td><td style="text-align:end"><b>${money(x.amount)}</b>${x.voided?'<span class="voided-badge">void</span>':''}</td><td style="text-align:center"><button type="button" class="rowact" data-rowmenu="${x.id}" aria-label="More actions" aria-haspopup="menu" aria-expanded="false">⋯</button></td></tr>`).join('')+`</tbody>`;
+    rows.map(x=>`<tr data-txid="${x.id}"><td>${x.date.slice(5)}</td><td><b>${x.vendor||x.memo}</b></td><td>${storeLabel(x.store)}</td><td>${x.desc||'—'}</td><td style="text-align:end"><b>${money(x.amount)}</b>${x.voided?'<span class="voided-badge">void</span>':''}${x.status&&x.status!=='approved'?`<span class="voided-badge" title="Not included in costs or profit until approved">${x.status==='rejected'?'rejected':'awaiting approval'}</span>`:''}</td><td style="text-align:center"><button type="button" class="rowact" data-rowmenu="${x.id}" aria-label="More actions" aria-haspopup="menu" aria-expanded="false">⋯</button></td></tr>`).join('')+`</tbody>`;
   rowify('purTbl','purchase');}
 function submitPurchase(){const amt=+document.getElementById('pAmt').value||0;if(!amt)return toast('Enter an amount');
   LEDGER.push({id:++uid,date:document.getElementById('pDate').value||daysAgo(0),store:document.getElementById('pStore').value,account:document.getElementById('pAcct').value,type:"purchase",category:"Inventory Purchase",amount:amt,vendor:document.getElementById('pVendor').value,desc:document.getElementById('pDesc').value,memo:document.getElementById('pNotes').value||document.getElementById('pVendor').value});
@@ -5398,7 +5407,24 @@ try{ empMigrate(); payRestore(); invDateRestore();
     var L=[];
     sx[0].forEach(function(x){ L.push({id:'S'+x.id, date:x.date, store:x.branch, account:x.account||'Cash', type:'sale', amount:x.amount, tax:x.tax||0, category:'Sales', product:x.product, employee:x.employee, memo:x.product||'Daily sales'}); });
     sx[1].forEach(function(x){ L.push({id:'E'+x.id, date:x.date, store:x.branch, account:x.account||'Cash', type:'expense', category:x.category, customDesc:x.custom_description||null, amount:x.amount, memo:x.memo||x.custom_description||x.category}); });
-    sx[2].forEach(function(x){ L.push({id:x.id, date:x.date, store:x.branch, account:'Business Bank', type:'purchase', vendor:x.vendor, amount:x.amount, memo:x.vendor}); });
+    // UX-G: an UNAPPROVED purchase is not a financial event, and it was being
+    // pushed into LEDGER regardless of status. LEDGER feeds COGS, profit, cash and
+    // the vendor ledgers from more than eight separate aggregation sites, none of
+    // which could filter because `status` was dropped here. Patching those sites one
+    // at a time is the defect shape this candidate keeps hitting, so the split is
+    // made ONCE, at the boundary: only an approved purchase enters LEDGER.
+    //
+    // ALLOW-LIST, not a deny-list on 'pending_approval'. The model default is
+    // `pending_approval` and `_decide` writes `approved`/`rejected`, but nothing
+    // constrains the column, so only the value we can actually account for counts.
+    // A status nobody has invented yet is excluded rather than capitalised into COGS.
+    PUR_PENDING = [];
+    sx[2].forEach(function(x){
+      var row={id:x.id, date:x.date, store:x.branch, account:'Business Bank', type:'purchase',
+               vendor:x.vendor, amount:x.amount, memo:x.vendor, status:x.status||'pending_approval'};
+      if(String(x.status||'').trim().toLowerCase()==='approved') L.push(row);
+      else PUR_PENDING.push(row);
+    });
     LEDGER = L; if(typeof REP!=='undefined'&&REP) REP.tx = L; window.uid = 900000;
     // employees
     var emps = await safeList(API.employees);
