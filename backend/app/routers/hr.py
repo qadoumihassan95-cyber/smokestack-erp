@@ -68,9 +68,27 @@ def deactivate(eid: str, db: Session = Depends(get_db), user: models.User = Depe
     S.audit(db, user, "deactivate", "employee", eid)
     return {"ok": True}
 
-@router.get("/payroll")
-def payroll(start: str, end: str, branch: str = "all", db: Session = Depends(get_db),
-            user: models.User = Depends(S.require("view_payroll"))):
+def _payroll_figures(start: str, end: str, branch: str, db: Session, user: models.User):
+    """Compute the pay run for ``branch`` — a PLAIN function with NO guard of its own.
+
+    SECURITY (SEC HIGH-07). This body used to live directly on the ``GET /payroll``
+    endpoint, and ``finalize`` reached the figures by calling that endpoint as an
+    ordinary Python function. A FastAPI ``Depends(...)`` is just a default argument
+    value: it is resolved by the router on HTTP dispatch and is *silently skipped* by
+    a direct call. So ``view_payroll`` — the permission that gates the read — was
+    never evaluated on the finalize path, and roles holding ``run_payroll`` without
+    ``view_payroll`` (branch_manager, manager) received every employee's name and pay
+    from the write endpoint after being refused the exact same figures by the read.
+
+    The fix is to make the seam honest rather than to add a second guard here: an
+    UNGUARDED helper that takes an already-authorized ``user``, and each caller
+    applying the permission its own surface requires. A helper that quietly enforced
+    ``view_payroll`` internally would break finalize for the roles that are supposed
+    to be able to run payroll without seeing it.
+
+    Branch scope is NOT part of that split — ``resolve_branches`` below is inside the
+    helper and still 403s on a branch the caller does not hold, on both paths.
+    """
     # Employee tax has been removed from payroll entirely: net pay equals gross pay,
     # and there is no employee-tax column, card, or line in any output.
     brs = S.resolve_branches(user, db, branch)
@@ -83,10 +101,18 @@ def payroll(start: str, end: str, branch: str = "all", db: Session = Depends(get
         rows.append({"name": e.name, "branch": e.branch, "gross": g, "net": g})
     return {"start": start, "end": end, "rows": rows, "gross": gross, "total_cost": gross}
 
+
+@router.get("/payroll")
+def payroll(start: str, end: str, branch: str = "all", db: Session = Depends(get_db),
+            user: models.User = Depends(S.require("view_payroll"))):
+    return _payroll_figures(start, end, branch, db, user)
+
+
 @router.post("/payroll/finalize")
 def finalize(start: str, end: str, branch: str = "all", db: Session = Depends(get_db),
              user: models.User = Depends(S.require("run_payroll"))):
-    s = payroll(start, end, branch, db, user)   # resolve_branches inside 403s on an unauthorized branch
+    # resolve_branches inside 403s on an unauthorized branch
+    s = _payroll_figures(start, end, branch, db, user)
     # BF-14: with fail-closed branch assignment this list can legitimately be empty
     # (a branch-scoped user with no assignment). Indexing it raised IndexError -> 500,
     # which is an authorization failure reported as a server fault. Refuse explicitly.
@@ -115,7 +141,25 @@ def finalize(start: str, end: str, branch: str = "all", db: Session = Depends(ge
         # the ledger posting, the run row and the audit row roll back together.
         db.rollback()
         raise HTTPException(409, f"Payroll for {start}->{end} at {tgt} has already been finalized.")
-    return {"ok": True, **s}
+
+    # SECURITY (SEC HIGH-07): the pay run posted, but WHAT WE SAY BACK is a read, and
+    # a read of payroll needs ``view_payroll``. A caller holding only ``run_payroll``
+    # gets the receipt for the action they performed and nothing about who was paid
+    # what. The gate is on the WHOLE payload, deliberately, and NOT via
+    # ``S.redact_financials``: that helper strips keys by NAME, and these figures are
+    # keyed ``gross``/``net`` while the map carries ``gross_pay``/``net_pay``. Wrapping
+    # this return in it would remove nothing at all while reading like a fix.
+    #
+    # Nor are those two names simply added to the map: ``net`` is ALSO the key for
+    # "net operating result" in reports_tg.py, a profit figure, so mapping it to
+    # ``view_payroll`` would mislabel a different domain. That ambiguity is the point —
+    # a redaction list keyed by field NAME is a denylist, and it protects only the
+    # spellings someone remembered. The whole-payload gate below needs no vocabulary
+    # and holds for keys nobody has added yet.
+    receipt = {"ok": True, "start": start, "end": end, "branch": tgt}
+    if not P.can(user.role, "view_payroll"):
+        return receipt
+    return {**receipt, **s}
 
 
 # ---------------------------------------------------------------------------

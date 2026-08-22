@@ -233,8 +233,7 @@ def reject(aid: int, db: Session = Depends(get_db), user: models.User = Depends(
 def approvers(branch: str, x_bot_token: str = Header(None), db: Session = Depends(get_db)):
     """Linked Telegram ids of users who can approve attendance for a branch —
     used by the bot to notify managers. Bot-token gated."""
-    if not settings.bot_token or x_bot_token != settings.bot_token:
-        raise HTTPException(403, "Forbidden")
+    S.require_bot_token(x_bot_token)
     all_br = [b.name for b in db.query(models.Branch).all()]
     out = []
     for link in db.query(models.TelegramLink).all():

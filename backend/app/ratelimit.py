@@ -15,15 +15,46 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, Request
 from . import models
+from .config import settings
 
 
 def client_ip(request: "Request") -> str:
+    """The address to throttle this caller on.
+
+    SECURITY (SEC HIGH-02). This previously returned the FIRST ``X-Forwarded-For``
+    entry unconditionally. That value is written by the caller, so rotating it once
+    per attempt gave every request its own per-IP bucket and the per-IP half of every
+    throttle never engaged — 120 logins across 120 accounts, none throttled.
+
+    A header is only evidence if something we trust wrote it. ``trusted_proxy_hops``
+    says how many proxies we actually operate; we take the entry that many from the
+    RIGHT, because each proxy appends the peer it saw. With one trusted proxy the
+    rightmost entry is the address that proxy observed — a client can prepend as many
+    fake entries as it likes and they all sit to the left of it, ignored. With zero
+    (the default) the header is not consulted at all.
+
+    Note the default cannot simply be "never trust XFF": deployed behind Render every
+    request would then report the router's address, one shared bucket, and the per-IP
+    limit would throttle the whole customer base at once. The hop count is what lets
+    the safe default and the real deployment both be correct — production sets
+    TRUSTED_PROXY_HOPS=1 (see render.yaml).
+    """
     if request is None:
         return "unknown"
+    peer = getattr(getattr(request, "client", None), "host", None) or "unknown"
+    hops = getattr(settings, "trusted_proxy_hops", 0) or 0
+    if hops <= 0:
+        return peer
     xff = request.headers.get("x-forwarded-for") if request.headers else None
-    if xff:
-        return xff.split(",")[0].strip()
-    return getattr(getattr(request, "client", None), "host", None) or "unknown"
+    if not xff:
+        return peer
+    parts = [p.strip() for p in xff.split(",") if p.strip()]
+    idx = len(parts) - hops
+    if idx < 0:
+        # Fewer entries than proxies we expect: the chain is not what we configured,
+        # so nothing in it is attributable. Fall back to the peer rather than guess.
+        return peer
+    return parts[idx]
 
 
 def _count_recent(db: Session, key: str, cutoff: datetime) -> int:

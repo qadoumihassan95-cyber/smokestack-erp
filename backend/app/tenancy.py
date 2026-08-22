@@ -52,6 +52,24 @@ TENANT_TABLES = {
     # company 1 while the posting and audit row carried the real company. The
     # source document, its posting and its evidence must reconcile by company.
     "payroll_runs",
+    # SEC HIGH-10 / HIGH-11: these three were parked in TENANT_EXEMPT as
+    # "UNREVIEWED — inherited from baseline". Reviewed now, and they are plainly
+    # tenant-owned: a clock-in selfie with GPS coordinates, an inactivity incident
+    # for a branch, and a chat image are one company's data in every sense that
+    # matters (export, retention, deletion, backup segregation). Being exempt meant
+    # _stamp_writes skipped them and every row took the company_id server default
+    # of 1, so company 2's employee selfies were stored as company 1's records.
+    #
+    # This is registered here rather than fixed at the three creation sites on
+    # purpose, and it is the same remedy AA-C1-01 received directly above: a list
+    # that must be edited by hand to stay correct WILL eventually not be, whereas
+    # registering the table makes stamping automatic AND scopes reads by company —
+    # which is what closes HIGH-11, where the selfie and incident endpoints guarded
+    # on branch name alone and held only because branch names happen to be globally
+    # unique today.
+    "attendance_evidence",
+    "no_activity_incidents",
+    "chat_attachments",
 }
 
 # Tables that carry a `company_id` column but are DELIBERATELY not tenant-scoped
@@ -70,9 +88,9 @@ TENANT_EXEMPT = {
     "company_modules",         # per-company entitlement rows, managed platform-side
     "policy_overrides",        # platform policy applied TO a company
     "document_counters",       # scoped explicitly by (company_id, doc_type) in SQL
-    "attendance_evidence",     # UNREVIEWED — inherited from baseline
-    "chat_attachments",        # UNREVIEWED — inherited from baseline
-    "no_activity_incidents",   # UNREVIEWED — inherited from baseline
+    # attendance_evidence / chat_attachments / no_activity_incidents were here as
+    # UNREVIEWED. They have now been reviewed and are tenant-owned — see the
+    # SEC HIGH-10 note in TENANT_TABLES above. Nothing UNREVIEWED remains in this set.
 }
 
 

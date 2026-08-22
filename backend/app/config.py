@@ -20,6 +20,18 @@ class Settings:
     jwt_alg: str = "HS256"
     jwt_expire_minutes: int = int(os.getenv("JWT_EXPIRE_MINUTES", "720"))
     cors_origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()]
+    # SECURITY (SEC HIGH-02): how many reverse proxies sit in front of this app.
+    # 0 (the default) means "none" — the client address is the socket peer and the
+    # X-Forwarded-For header is IGNORED, because it is entirely caller-supplied and
+    # rotating it defeats every per-IP throttle. Set to 1 behind exactly one trusted
+    # proxy (Render's router): the rightmost entry is then the one THAT proxy wrote,
+    # which an attacker cannot forge — extra entries they prepend are simply skipped.
+    # Never raise this above the number of proxies you actually control.
+    trusted_proxy_hops: int = max(0, int(os.getenv("TRUSTED_PROXY_HOPS", "0") or 0))
+    # SECURITY (SEC CRITICAL-01): how long a stored Idempotency-Key response may be
+    # replayed. Bounds both the table and the window in which a cached body can be
+    # returned after the caller's access has changed.
+    idempotency_ttl_hours: int = max(1, int(os.getenv("IDEMPOTENCY_TTL_HOURS", "24") or 24))
     # Demo/default-account seeding. SECURITY: this must NEVER default-on in
     # production. The default is derived from the backend store: local SQLite
     # (dev/tests) defaults to True so `uvicorn app.main:app` and the test client

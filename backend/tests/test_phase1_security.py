@@ -41,6 +41,28 @@ def _boot():
 
 # A distinct client IP per call keeps normal auth out of the throttle counters;
 # the throttling tests pin their own fixed IP to trip the limiter deliberately.
+#
+# SEC HIGH-02. Those per-call IPs are supplied as X-Forwarded-For, and the app no
+# longer trusts that header by default — a caller-supplied address that the limiter
+# believes is exactly the spoofable-throttle defect that was fixed. So this module
+# has to say which deployment topology it is simulating: ONE trusted proxy in front,
+# which is the production Render configuration (TRUSTED_PROXY_HOPS=1 in render.yaml).
+# Under that setting the rightmost XFF entry is honoured and these helpers behave as
+# their authors intended.
+#
+# This does NOT weaken anything. Tests E and F below still assert that throttling
+# ENGAGES; they just get to address distinct simulated clients again. The secure
+# default itself (hops=0 ignores the header entirely, so rotating it cannot buy fresh
+# buckets) is asserted directly in test_sec_client_ip_trusted_proxy.py.
+@pytest.fixture(autouse=True, scope="module")
+def _simulate_one_trusted_proxy():
+    from app.config import settings as _s
+    prior = _s.trusted_proxy_hops
+    _s.trusted_proxy_hops = 1
+    yield
+    _s.trusted_proxy_hops = prior
+
+
 _ipn = [0]
 
 

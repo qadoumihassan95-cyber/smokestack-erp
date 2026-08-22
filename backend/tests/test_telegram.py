@@ -132,15 +132,34 @@ def test_receive_stores_notes_and_unit_cost():
 
 
 def test_bot_audit_endpoint():
+    """SEC HIGH-09 changed this endpoint's contract, so this test changed with it.
+
+    It previously posted `tg_id: "55"` — an id linked to nobody — with
+    `user_id: "U-owner"` in the body, and asserted 200. That is the finding: an
+    arbitrary tg_id writing audit history attributed to the owner. The endpoint now
+    derives attribution from the tg_id's link and refuses an unlinked one.
+
+    The test's original coverage is kept intact — the endpoint is bot-token gated,
+    and a legitimate call records a TELEGRAM-sourced row — and the refusal it did not
+    previously assert is added rather than the assertion being relaxed.
+    """
     from app.config import settings
     settings.bot_token = "TESTBOT"
     with TestClient(app):
-        # bot-token gated
+        # bot-token gated (unchanged)
         assert client.post("/api/telegram/audit",
                            json={"tg_id": "1", "action": "create", "entity": "expense"}).status_code == 403
+
+        # an unlinked tg_id can no longer write attributed history (SEC HIGH-09)
+        assert client.post("/api/telegram/audit", headers={"X-Bot-Token": "TESTBOT"},
+                           json={"tg_id": "55", "user_id": "U-owner", "action": "create",
+                                 "entity": "expense", "ref": "L-1"}).status_code == 403
+
+        # a LINKED account still records its activity (the original coverage)
+        _link("555001", username="auditor")
         r = client.post("/api/telegram/audit", headers={"X-Bot-Token": "TESTBOT"},
-                        json={"tg_id": "55", "user_id": "U-owner", "action": "create",
+                        json={"tg_id": "555001", "action": "create",
                               "entity": "expense", "ref": "L-1", "detail": "telegram op"})
-        assert r.status_code == 200
+        assert r.status_code == 200, r.text
         logs = client.get("/api/audit?limit=20", headers=_tok()).json()
         assert any(a["source"] == "TELEGRAM" and a["entity"] == "expense" for a in logs)

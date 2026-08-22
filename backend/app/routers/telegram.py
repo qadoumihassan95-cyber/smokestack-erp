@@ -31,19 +31,13 @@ CODE_TTL_SECONDS = 300  # 5 minutes
 
 
 def _require_bot_token(x_bot_token) -> None:
-    """Fail-closed bot-to-API authentication.
+    """Module-local alias for the single shared check (see security.require_bot_token).
 
-    Only the Telegram worker (which holds the BotFather token, shared with the
-    API as TELEGRAM_BOT_TOKEN) may call bot-facing endpoints. Fails closed when
-    the server-side token is unset, and uses a constant-time comparison so the
-    check leaks no timing information about the secret. Raises a bare 403 with no
-    body detail — callers learn only "forbidden", never anything about the token
-    or about whether any resource exists.
+    Kept so existing call sites read unchanged; it holds no logic of its own, so it
+    cannot drift from the fourteen other bot-facing endpoints the way the open-coded
+    ``!=`` compares did.
     """
-    server = settings.bot_token or ""
-    provided = x_bot_token or ""
-    if not server or not hmac.compare_digest(str(provided), str(server)):
-        raise HTTPException(403, "Forbidden")
+    S.require_bot_token(x_bot_token)
 
 DEFAULT_PREFS = {
     "daily_summary": True, "weekly_summary": True, "low_stock": True, "out_of_stock": True,
@@ -354,17 +348,83 @@ def auth_token(body: dict, request: Request = None, x_bot_token: str = Header(No
 
 
 @router.post("/audit")
-def bot_audit(body: dict, x_bot_token: str = Header(None), db: Session = Depends(get_db)):
+def bot_audit(body: dict, request: Request = None, x_bot_token: str = Header(None),
+              db: Session = Depends(get_db)):
     """Telegram-attributed audit entry (captures tg_id + old/new values, source=TELEGRAM).
-    Complements the per-endpoint ERP-user audit written by the reused write endpoints."""
-    if not settings.bot_token or x_bot_token != settings.bot_token:
+    Complements the per-endpoint ERP-user audit written by the reused write endpoints.
+
+    SECURITY (SEC HIGH-09). Every attribution field — ``user_id``, ``role``, ``branch``,
+    ``tg_username``, ``ip`` — used to be copied straight out of the request body, and
+    the row landed on the ``company_id`` server default of 1 because an unauthenticated
+    session carries no tenant context for ``_stamp_writes`` to apply. So a caller could
+    write audit history naming any user, in any role, at any branch, from any IP, into
+    another tenant's log, and the fabricated row was indistinguishable from a real one.
+
+    An audit log's value is authenticity, not just tamper-resistance: proving a row
+    cannot be ERASED is worth nothing if a row can be MANUFACTURED. So the split here
+    is between CONTENT and ATTRIBUTION. Content — what happened — is the bot's to
+    report. Attribution — who did it, as what, where, and for which tenant — is read
+    from the server's own records via the ``tg_id``'s link, and an unlinked, disabled
+    or inactive tg_id is refused outright rather than logged as an anonymous row.
+
+    HONEST LIMIT, because this does not make the endpoint unforgeable: the bot token is
+    a single shared secret, so whoever holds it can still attribute an action to any
+    tg_id that is ACTUALLY LINKED — that is inherent to "the bot asserts what its users
+    did", and closing it needs per-user signing, a design change, not a patch. What is
+    closed is fabricating identities, roles, branches and tenants that do not exist.
+    """
+    S.require_bot_token(x_bot_token)
+
+    tg_id = str(body.get("tg_id") or "").strip()
+    if not tg_id:
+        raise HTTPException(422, "tg_id is required")
+    link = db.query(models.TelegramLink).filter(models.TelegramLink.tg_id == tg_id).first()
+    if not link or (link.status or "active") != "active":
         raise HTTPException(403, "Forbidden")
-    db.add(models.AuditLog(source="TELEGRAM", tg_id=str(body.get("tg_id") or ""),
-                           user_id=body.get("user_id"), action=body.get("action"),
-                           entity=body.get("entity"), ref=str(body.get("ref") or ""),
-                           detail=str(body.get("detail") or ""), result=body.get("result") or "ok",
-                           tg_username=body.get("tg_username"), branch=body.get("branch"),
-                           role=body.get("role"), ip=body.get("ip")))
+    user = db.get(models.User, link.user_id) if link.user_id else None
+    if not user or user.status != "active":
+        raise HTTPException(403, "Forbidden")
+
+    # The tenant comes from the linked account, never from the body and never from the
+    # column default. Set it explicitly: this session has no company context.
+    company_id = getattr(link, "company_id", None) or getattr(user, "company_id", None) or 1
+
+    # WHERE the action happened is the one field the bot genuinely knows and the
+    # server cannot derive: an all-branch owner acts at a different branch every day,
+    # and this endpoint is how that lands in the audit trail. So it is neither trusted
+    # nor discarded — it is CHECKED against the acting user's own scope, in the
+    # linked account's tenant. A branch the actor could not have acted at is a
+    # forgery attempt and is refused outright rather than quietly recorded as NULL:
+    # silently nulling it would let the attempt succeed as an ordinary-looking row.
+    #
+    # (An earlier revision of this fix derived the branch as "the user's single
+    # assigned branch, else NULL". That is server-derived and unforgeable, but it
+    # threw away the branch for every multi-branch and all-branch user — i.e. for
+    # owners and managers, the roles whose actions matter most in an audit. Making a
+    # field unforgeable by making it empty is not a fix.)
+    all_branches = [b.name for b in db.query(models.Branch)
+                    .filter(models.Branch.company_id == company_id).all()]
+    allowed = P.allowed_branches(user, all_branches)
+    req_branch = (body.get("branch") or "").strip() or None
+    if req_branch is not None and req_branch not in allowed:
+        raise HTTPException(403, "Forbidden")
+
+    row = models.AuditLog(
+        source="TELEGRAM",
+        # --- attribution: server-derived ---
+        tg_id=tg_id,
+        user_id=user.id,
+        tg_username=link.username,
+        role=user.role,
+        branch=req_branch,             # caller-supplied, VALIDATED against the actor's scope
+        ip=RL.client_ip(request),      # the bot's own address; the only peer we observe
+        # --- content: the bot's report of what happened ---
+        action=body.get("action"), entity=body.get("entity"),
+        ref=str(body.get("ref") or ""), detail=str(body.get("detail") or ""),
+        result=body.get("result") or "ok",
+    )
+    row.company_id = company_id
+    db.add(row)
     db.commit()
     return {"ok": True}
 
@@ -541,8 +601,7 @@ def _caps_for_link(db, link):
 @router.get("/capabilities/{tg_id}")
 def capabilities(tg_id: str, x_bot_token: str = Header(None), db: Session = Depends(get_db)):
     """What may this Telegram account do? Used by the bot to build its menu."""
-    if not settings.bot_token or x_bot_token != settings.bot_token:
-        raise HTTPException(403, "Forbidden")
+    S.require_bot_token(x_bot_token)
     link = db.get(models.TelegramLink, (tg_id or "").strip())
     if not link:
         raise HTTPException(404, "Not linked")
@@ -565,8 +624,7 @@ def authorize(body: dict, x_bot_token: str = Header(None), db: Session = Depends
     and is the requested branch inside the employee's scope. Every call — allowed
     or denied — is written to the audit log.
     """
-    if not settings.bot_token or x_bot_token != settings.bot_token:
-        raise HTTPException(403, "Forbidden")
+    S.require_bot_token(x_bot_token)
     tg_id = str(body.get("tg_id") or "").strip()
     cap = str(body.get("capability") or "").strip()
     branch = body.get("branch") or None
@@ -807,8 +865,7 @@ def claim_delivery(body: dict, x_bot_token: str = Header(None), db: Session = De
 
     Idempotency key = company + recipient + report type + business date + slot.
     """
-    if not settings.bot_token or x_bot_token != settings.bot_token:
-        raise HTTPException(403, "Forbidden")
+    S.require_bot_token(x_bot_token)
     tg_id = str(body.get("tg_id") or "")
     kind = str(body.get("kind") or "")
     slot = str(body.get("slot") or "")
@@ -829,8 +886,7 @@ def claim_delivery(body: dict, x_bot_token: str = Header(None), db: Session = De
 @router.post("/reports/render")
 def render_report(body: dict, x_bot_token: str = Header(None), db: Session = Depends(get_db)):
     """Messages for a claimed delivery, already split to Telegram's limit."""
-    if not settings.bot_token or x_bot_token != settings.bot_token:
-        raise HTTPException(403, "Forbidden")
+    S.require_bot_token(x_bot_token)
     tg_id = str(body.get("tg_id") or "")
     kind = str(body.get("kind") or R.MORNING)
     test = bool(body.get("test"))
@@ -851,8 +907,7 @@ def render_report(body: dict, x_bot_token: str = Header(None), db: Session = Dep
 @router.post("/reports/complete")
 def complete_delivery(body: dict, x_bot_token: str = Header(None), db: Session = Depends(get_db)):
     """The worker reports the outcome; failures keep the row for a manual resend."""
-    if not settings.bot_token or x_bot_token != settings.bot_token:
-        raise HTTPException(403, "Forbidden")
+    S.require_bot_token(x_bot_token)
     key = str(body.get("idem_key") or "")
     row = (db.query(models.ReportDelivery)
            .filter(models.ReportDelivery.idem_key == key).first())
@@ -916,8 +971,7 @@ def due_reports(x_bot_token: str = Header(None), db: Session = Depends(get_db)):
     The worker holds no schedule of its own; the source of truth is the database
     plus the company timezone, so a restart or redeploy loses nothing.
     """
-    if not settings.bot_token or x_bot_token != settings.bot_token:
-        raise HTTPException(403, "Forbidden")
+    S.require_bot_token(x_bot_token)
     local, tzname = R.now_local(db)
     slot = local.strftime("%H:%M")
     kind = {"06:00": R.MORNING, "18:00": R.EVENING}.get(slot)
@@ -978,8 +1032,7 @@ def set_timezone(body: dict, db: Session = Depends(get_db),
 @router.post("/reports/pdf")
 def report_pdf(body: dict, x_bot_token: str = Header(None), db: Session = Depends(get_db)):
     """Structured PDF for a recipient, base64 encoded for the worker."""
-    if not settings.bot_token or x_bot_token != settings.bot_token:
-        raise HTTPException(403, "Forbidden")
+    S.require_bot_token(x_bot_token)
     import base64
     tg_id = str(body.get("tg_id") or "")
     kind = str(body.get("kind") or R.MORNING)
@@ -998,8 +1051,7 @@ def report_pdf(body: dict, x_bot_token: str = Header(None), db: Session = Depend
 @router.get("/reports/pending")
 def pending_deliveries(x_bot_token: str = Header(None), db: Session = Depends(get_db)):
     """Manual / test deliveries an owner queued from the UI, awaiting send."""
-    if not settings.bot_token or x_bot_token != settings.bot_token:
-        raise HTTPException(403, "Forbidden")
+    S.require_bot_token(x_bot_token)
     rows = (db.query(models.ReportDelivery)
             .filter(models.ReportDelivery.status == "processing",
                     models.ReportDelivery.report_type.in_(["manual", "test"]))
@@ -1155,8 +1207,7 @@ def reminder_claim(x_bot_token: str = Header(None), db: Session = Depends(get_db
     """Worker entry point. Atomically claims the current slot if due, advancing
     next_run_at so no other tick/instance can claim it, and returns the batch to
     send. Respects active hours and paused days; a suppressed slot is logged."""
-    if not settings.bot_token or x_bot_token != settings.bot_token:
-        raise HTTPException(403, "Forbidden")
+    S.require_bot_token(x_bot_token)
     s = RM.get_settings(db)
     if not s.enabled:
         return {"claimed": False, "reason": "disabled"}
@@ -1211,8 +1262,7 @@ def reminder_claim(x_bot_token: str = Header(None), db: Session = Depends(get_db
 @router.get("/reminders/pending")
 def reminder_pending(x_bot_token: str = Header(None), db: Session = Depends(get_db)):
     """Manual 'send now' batches awaiting delivery by the worker."""
-    if not settings.bot_token or x_bot_token != settings.bot_token:
-        raise HTTPException(403, "Forbidden")
+    S.require_bot_token(x_bot_token)
     rows = (db.query(models.ReminderDelivery)
             .filter(models.ReminderDelivery.status == "queued",
                     models.ReminderDelivery.kind == "manual")
@@ -1224,8 +1274,7 @@ def reminder_pending(x_bot_token: str = Header(None), db: Session = Depends(get_
 @router.post("/reminders/complete")
 def reminder_complete(body: dict, x_bot_token: str = Header(None), db: Session = Depends(get_db)):
     """Worker reports the per-recipient outcome; the row is the delivery log."""
-    if not settings.bot_token or x_bot_token != settings.bot_token:
-        raise HTTPException(403, "Forbidden")
+    S.require_bot_token(x_bot_token)
     key = str((body or {}).get("idem_key") or "")
     row = (db.query(models.ReminderDelivery)
            .filter(models.ReminderDelivery.idem_key == key).first())
@@ -1259,8 +1308,7 @@ def noactivity_scan(x_bot_token: str = Header(None), db: Session = Depends(get_d
     """Reconcile inactivity incidents across all branches and queue any due Telegram
     alerts (initial + optional 24h reminders) to the authorized owner + accountant.
     Returns the queued rows for the worker to deliver; sending is idempotent."""
-    if not settings.bot_token or x_bot_token != settings.bot_token:
-        raise HTTPException(403, "Forbidden")
+    S.require_bot_token(x_bot_token)
     now = datetime.now(timezone.utc)
     tzname = R.company_tz(db)
     branches = db.query(models.Branch).all()

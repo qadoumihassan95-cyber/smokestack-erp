@@ -78,13 +78,26 @@ class _FakeReq:
         self.headers = {"authorization": auth} if auth else {}
 
 
-def test_idempotency_scope_isolates_by_authorization_header():
-    s1 = idempotency._scope(_FakeReq("Bearer token-A"))
-    s2 = idempotency._scope(_FakeReq("Bearer token-B"))
-    s1_again = idempotency._scope(_FakeReq("Bearer token-A"))
-    assert s1 == s1_again        # deterministic per caller
-    assert s1 != s2              # different callers/tenants never share a key namespace
-    assert idempotency._scope(_FakeReq(None)) == "anon"
+def test_idempotency_scope_isolates_every_distinguishable_principal():
+    """SEC CRITICAL-01. The namespace is derived from the RESOLVED IDENTITY, not from
+    the Authorization header bytes.
+
+    This test previously asserted ``_scope(no auth) == "anon"`` — it pinned, as
+    correct, the single shared namespace that let an unauthenticated caller replay a
+    victim's login response and receive their bearer token cross-tenant. There is no
+    anonymous namespace to assert about any more: a request without a live principal
+    does not reach the cache at all (see resolve_scope, and the HTTP-level proof in
+    test_sec_idempotency_replay_boundary.py).
+
+    Each pair below is two principals that must never share cached responses.
+    """
+    base = idempotency._scope("erp", 1, "U-owner|imp0", 0)
+    assert base == idempotency._scope("erp", 1, "U-owner|imp0", 0)   # deterministic
+    assert base != idempotency._scope("erp", 2, "U-owner|imp0", 0)   # another tenant
+    assert base != idempotency._scope("erp", 1, "U-admin|imp0", 0)   # another user
+    assert base != idempotency._scope("erp", 1, "U-owner|imp0", 1)   # token revoked/rotated
+    assert base != idempotency._scope("erp", 1, "U-owner|imp1", 0)   # impersonation session
+    assert base != idempotency._scope("pfs", 1, "U-owner|imp0", 0)   # other auth realm
 
 
 def test_idempotency_governs_exactly_the_mutating_verbs():

@@ -736,11 +736,19 @@ class IdempotencyKey(Base):
     """Shared idempotency store (Engineering Phase 5).
 
     A mutating request carrying an ``Idempotency-Key`` header is executed at most
-    once; the first response is cached and replayed on retries. Scoped per caller
-    (token hash) so keys never collide across tenants.
+    once; the first response is cached and replayed on retries.
+
+    SECURITY (SEC CRITICAL-01). ``scope`` used to be ``sha256(Authorization)``, with
+    the literal ``"anon"`` when no header was sent — so every unauthenticated caller
+    shared ONE namespace and could replay a victim's login response. It is now derived
+    from the RESOLVED identity (realm, company, user, token_version, impersonation),
+    and a request with no live principal never reads or writes this table at all.
+    ``method`` and ``path`` are compared on lookup, not merely recorded: a key belongs
+    to one operation. Rows past ``IDEMPOTENCY_TTL_HOURS`` are pruned and never replayed.
+    See ``app/idempotency.py`` for the reasoning behind each rule.
     """
     __tablename__ = "idempotency_keys"
-    scope = Column(String, primary_key=True)      # hash(Authorization) — per-caller/tenant
+    scope = Column(String, primary_key=True)      # sha256 of the resolved principal
     key = Column(String, primary_key=True)        # client-supplied Idempotency-Key
     method = Column(String)
     path = Column(String)

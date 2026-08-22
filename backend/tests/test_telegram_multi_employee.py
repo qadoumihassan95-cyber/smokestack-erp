@@ -154,12 +154,25 @@ def test_separate_permissions_and_branch_access():
 
 
 def test_separate_audit_logs():
+    """SEC HIGH-09: each account now reports its OWN branch.
+
+    This previously sent `branch: "Store A"` for both accounts, but 50002 is the
+    branch_manager assigned to Store B — i.e. it asserted that an account may write
+    audit history placing itself at a branch it does not work at. That is the
+    forgery HIGH-09 closes, and the endpoint now refuses it (covered directly by
+    `test_sec_high09_telegram_audit_attribution.py::test_2b`).
+
+    The branch comes from each account's own record rather than a literal, so this
+    stays correct if the fixture's assignments change.
+    """
     with TestClient(app):
+        accts = {a["tg_id"]: a for a in _accounts()}
         for i, tg in enumerate(("50001", "50002")):
+            own = (accts[tg]["branches"] or [None])[0]
             r = client.post("/api/telegram/audit", headers=_bot(), json={
                 "tg_id": tg, "action": "clock_in", "entity": "attendance",
                 "ref": f"A-{i}", "detail": "test", "result": "ok",
-                "tg_username": f"tg_user_{i}", "branch": "Store A",
+                "tg_username": f"tg_user_{i}", "branch": own,
                 "role": "employee", "ip": "telegram"})
             assert r.status_code == 200, r.text
         a1 = client.get("/api/telegram/accounts/50001/activity", headers=_tok()).json()

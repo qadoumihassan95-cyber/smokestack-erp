@@ -116,6 +116,13 @@ def start_attempt(db, tg_id):
         attempt_id=secrets.token_urlsafe(24), employee_id=user.id, employee_name=user.name,
         tg_id=tg_id, status="pending_location",
         created_at=now, expires_at=now + timedelta(minutes=settings.att_attempt_ttl_min))
+    # SEC HIGH-10: registering attendance_evidence as tenant-owned makes _stamp_writes
+    # fill this in for AUTHENTICATED requests, but this path is bot-driven — the caller
+    # presents a bot token, not a session, so the session carries no company context
+    # and the row would still fall back to the company_id server default of 1. Take it
+    # from the employee the tg_id actually resolves to, which is the only tenant this
+    # attempt can belong to.
+    ev.company_id = getattr(user, "company_id", None) or 1
     db.add(ev)
     db.commit()
     return ev, first_use

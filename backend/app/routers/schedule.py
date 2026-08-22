@@ -112,8 +112,7 @@ def _queue(db, emp, week_start, kind, actor, message=None, unique_suffix=None):
 
 
 def _bot(x_bot_token):
-    if not settings.bot_token or x_bot_token != settings.bot_token:
-        raise HTTPException(403, "Forbidden")
+    S.require_bot_token(x_bot_token)
 
 
 # ------------------------------------------------------------------ calendar

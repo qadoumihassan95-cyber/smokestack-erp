@@ -50,6 +50,13 @@ services:
         value: "720"
       - key: CORS_ORIGINS
         value: https://smokestack-erp.onrender.com
+      - key: TRUSTED_PROXY_HOPS
+        value: "1"              # SECURITY (SEC HIGH-02): exactly ONE proxy we operate sits
+                                # in front of this service (Render's router), so the RIGHTMOST
+                                # X-Forwarded-For entry is the address that router observed and
+                                # is the only one an attacker cannot forge. The code default is
+                                # 0 (ignore the header, use the socket peer); this value must
+                                # never exceed the number of proxies actually in the path.
       - key: SEED_ON_START
         value: "false"          # SECURITY (SS-C-003): production must never seed demo/
                                 # default-credential accounts. The code also refuses to

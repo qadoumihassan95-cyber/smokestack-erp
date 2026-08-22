@@ -223,14 +223,61 @@ def assert_object_branch(user: "models.User", db: Session, current_branch,
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Branch not permitted")
 
 
+# --- B2. Bot-to-API authentication (SEC HIGH-09) -----------------------------
+
+def require_bot_token(x_bot_token) -> None:
+    """Fail-closed bot-to-API authentication — the ONE implementation.
+
+    Only the Telegram worker (which holds the BotFather token, shared with the API
+    as TELEGRAM_BOT_TOKEN) may call bot-facing endpoints. Fails closed when the
+    server-side token is unset, and compares in constant time so the check leaks no
+    timing information about the secret. Raises a bare 403 with no body detail —
+    callers learn only "forbidden", never anything about the token or about whether
+    any resource exists.
+
+    This lives in ``security`` rather than in a router because at ``3eb1ccd`` the same
+    secret was checked two different ways, counted here rather than estimated:
+
+        open-coded  ``x_bot_token != settings.bot_token``   15 sites
+                       telegram.py 13 · attendance.py 1 · schedule.py 1
+        constant-time ``_require_bot_token`` (telegram.py)    6 sites
+
+    Every one of the fifteen is a short-circuiting string compare. A shared secret
+    checked two ways is checked as well as its weaker one, and the weaker one had
+    the majority of the call sites; there is now nowhere for the next site to
+    diverge, because there is only one implementation.
+    """
+    import hmac as _hmac
+    server = getattr(settings, "bot_token", None) or ""
+    provided = x_bot_token or ""
+    if not server or not _hmac.compare_digest(str(provided), str(server)):
+        raise HTTPException(403, "Forbidden")
+
+
 # --- C. Field-level financial protection (SS-H-002) --------------------------
 # Sensitive numeric fields -> the permission that unlocks them. A user must never
 # receive one of these merely because the UI hides it. When the permission is
 # missing the key is OMITTED (never returned as a misleading zero).
+#
+# KNOWN LIMITATION — read this before relying on it. Keying on the field NAME makes
+# this a DENYLIST: it protects the spellings someone remembered, and a payload is
+# unprotected the moment it uses a synonym. Two live examples, both real:
+#   * payroll returns ``gross``/``net``; the map carries ``gross_pay``/``net_pay``,
+#     so passing a pay run through redact_financials strips nothing (hr.finalize
+#     therefore gates the WHOLE payload instead of relying on this map);
+#   * ``net`` cannot simply be added, because reports_tg.py uses the same key for
+#     "net operating result", a profit figure — one name, two permissions.
+# Anything genuinely sensitive should be gated as a whole payload by the endpoint,
+# with this map as a second layer, never as the only one. Inverting it to an
+# allow-list over known-safe keys is the structural fix and is not done here.
 FINANCIAL_FIELD_PERMS = {
     # cost / COGS / valuation
     "cost": "view_cost", "unit_cost": "view_cost", "avg_cost": "view_cost",
     "cogs": "view_cost", "cogs_today": "view_cost", "costs": "view_cost",
+    # SEC HIGH-08: the as-of report's total valuation. An AGGREGATE of a protected
+    # field is protected; it was simply never spelled here, which is the standing
+    # weakness of a name-keyed list (see the caveat above the map).
+    "cost_value": "view_cost",
     "costs_today": "view_cost", "inventory_cost": "view_cost",
     "inventory_valuation": "view_cost", "inventory_retail": "view_cost",
     "fifo_cost": "view_cost",

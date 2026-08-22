@@ -251,8 +251,16 @@ def asof(date: str = Query(...), branch: str = "all", db: Session = Depends(get_
         rows.append({"sku": p.sku, "name": p.name, "per_branch": per, "qty": tot,
                      "cost": cost, "retail": retail, "profit": retail - cost,
                      "status": "out" if tot <= 0 else "low" if tot <= (p.min_level or 0) else "ok"})
-    return {"ds": date, "branches": branches, "rows": rows,
-            "units": sum(r["qty"] for r in rows), "cost_value": sum(r["cost"] for r in rows),
-            "retail": sum(r["retail"] for r in rows), "profit": sum(r["profit"] for r in rows),
-            "low": sum(1 for r in rows if r["status"] == "low"),
-            "out": sum(1 for r in rows if r["status"] == "out")}
+    # SECURITY (SEC HIGH-08): this endpoint is gated by ``view_asof`` and then returned
+    # its whole payload raw, including a per-row and a total ``profit``. Three roles
+    # hold ``view_asof`` WITHOUT ``view_profit`` — branch_manager, manager and
+    # inventory_manager — so each of them read margin here that every other surface
+    # refuses them. Field-level protection is not optional on a financial read just
+    # because the route-level permission passed: the two answer different questions
+    # ("may you open this report" vs "may you see this number in it").
+    return S.redact_financials(user, {
+        "ds": date, "branches": branches, "rows": rows,
+        "units": sum(r["qty"] for r in rows), "cost_value": sum(r["cost"] for r in rows),
+        "retail": sum(r["retail"] for r in rows), "profit": sum(r["profit"] for r in rows),
+        "low": sum(1 for r in rows if r["status"] == "low"),
+        "out": sum(1 for r in rows if r["status"] == "out")})

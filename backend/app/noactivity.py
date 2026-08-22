@@ -186,6 +186,12 @@ def reconcile(db, branches, now_utc, tzname):
                     last_activity_type=ev["last_activity_type"],
                     last_activity_by=ev["last_activity_by"],
                     opened_at=now_utc)
+                # SEC HIGH-10: the scan is bot-driven and iterates EVERY company's
+                # branches on a session with no company context, so _stamp_writes has
+                # nothing to apply and each incident would take the company_id server
+                # default of 1 — including incidents opened against another tenant's
+                # branch. The incident belongs to whoever owns the branch it is about.
+                inc.company_id = getattr(b, "company_id", None) or 1
                 db.add(inc)
                 db.flush()
                 db.add(models.AuditLog(
