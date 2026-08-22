@@ -3686,7 +3686,16 @@ function invSaveProduct(id){
     if(typeof BC!=='undefined'&&BC.pendingLine!=null&&BC.session){const i=BC.pendingLine;BC.pendingLine=null;
       const l=BC.session.lines[i];if(l){l.sku=np.sku;l.name=np.name;l.cost=np.cost;l.barcode=np.barcode;l.unknown=false;}
       drwClose();refreshAll();toast('Product added — back to receiving');invScanForm({continuous:true});return;}
-    drwClose();refreshAll();toast('Product added: '+name);
+    // UX-H: opening stock lands at the branch chosen in the form, but the list the
+    // user returns to is filtered by the GLOBAL branch selector. When those differ,
+    // the new product shows quantity 0 and reads as "the stock vanished". Name the
+    // branch that received it, and say plainly when the current view is not the
+    // place to look — the stock is not missing, it is elsewhere.
+    drwClose();refreshAll();
+    toast(BRANCH!=='all'&&selBranch&&BRANCH!==selBranch
+      ? 'Product added: '+name+' — opening stock '+q+' went to '+storeLabel(selBranch)+
+        ', which is not the branch you are viewing ('+storeLabel(BRANCH)+'), so it shows 0 here.'
+      : 'Product added: '+name+(selBranch?(' — opening stock '+q+' at '+storeLabel(selBranch)):''));
   }
 }
 function invProductBySku0(id){return INV.products.find(x=>x.id===id)||{cost:0};}
