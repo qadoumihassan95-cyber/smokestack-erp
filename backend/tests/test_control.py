@@ -64,7 +64,9 @@ def test_report_shape_and_sections():
         # every failing check must carry a cause and a fix
         for s in rep["sections"]:
             for c in s["checks"]:
-                assert c["status"] in ("pass", "warning", "error", "critical")
+                # "unsupported" (BF-CC-01) declares a capability this system does
+                # not implement. It is deliberately NOT a pass and not a failure.
+                assert c["status"] in ("pass", "warning", "error", "critical", "unsupported")
                 if c["status"] != "pass":
                     assert c["cause"] and c["fix"], f"{c['check']} missing cause/fix"
 

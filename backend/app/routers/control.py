@@ -19,14 +19,24 @@ from sqlalchemy.orm import Session
 from ..config import settings
 from ..database import get_db
 from .. import models, security as S, permissions as P, partners_repo as PR
-from .core import _costs_profit, _period_range, _purchases_sum, _sum
+from .. import control_oracle as ORACLE
+from .core import _costs_profit, _period_range, _sum
 
 router = APIRouter(prefix="/api/control", tags=["control"])
 
 # severity ranking (worst wins)
-_RANK = {"ok": 0, "warning": 1, "error": 2, "critical": 3}
+_RANK = {"ok": 0, "warning": 1, "unsupported": 2, "error": 3, "critical": 4}
 # scoring weights per severity — a critical finding costs far more than a warning
-_WEIGHT = {"ok": 0, "warning": 1, "error": 4, "critical": 10}
+_WEIGHT = {"ok": 0, "warning": 1, "unsupported": 4, "error": 4, "critical": 10}
+
+# Modules whose failures are financial statements about the business. A critical
+# finding in one of these forces the headline verdict to "Critical" outright,
+# independently of the numeric score (BF-CC-01 / C3).
+_FINANCIAL_MODULES = {"Accounting", "Reports", "Dashboard"}
+
+# Thresholds for checks that previously had no condition at all (BF-CC-01 / C2).
+_PURCHASE_REVIEW_SLA_DAYS = 30   # a purchase may not sit unreviewed longer than this
+_AUDIT_FRESH_DAYS = 90           # a stored validation older than this is not "current"
 
 
 class _Report:
@@ -42,9 +52,29 @@ class _Report:
             "check": name, "status": "pass" if ok else sev,
             "severity": sev, "detail": detail,
             "cause": "" if ok else cause, "fix": "" if ok else fix,
-            "value": value,
+            "value": value, "module": module,
         })
         return ok
+
+    def unsupported(self, module, name, detail, cause="", fix="", required=True):
+        """Record a capability this system does NOT implement.
+
+        An unsupported capability is not a pass and not a failure of the code —
+        it is an honest declaration that the check cannot be performed. It is
+        excluded from the passing count and, when `required`, it blocks the
+        "Healthy" verdict entirely.
+
+        This exists because deleting a check that could not really be performed
+        would silently shrink the report, and leaving it as a literal `True`
+        (BF-CC-01 / C2) certified a capability that was never verified. Neither
+        is honest; declaring it is.
+        """
+        self.sections.setdefault(module, []).append({
+            "check": name, "status": "unsupported", "severity": "unsupported",
+            "detail": detail, "cause": cause, "fix": fix, "value": None,
+            "module": module, "required": required,
+        })
+        return False
 
     def build(self, extra=None):
         checks = [c for lst in self.sections.values() for c in lst]
@@ -52,6 +82,12 @@ class _Report:
         warnings = sum(1 for c in checks if c["status"] == "warning")
         errors = sum(1 for c in checks if c["status"] == "error")
         critical = sum(1 for c in checks if c["status"] == "critical")
+        unsupported = sum(1 for c in checks if c["status"] == "unsupported")
+        unsupported_required = sum(
+            1 for c in checks if c["status"] == "unsupported" and c.get("required"))
+        critical_financial = sum(
+            1 for c in checks
+            if c["status"] == "critical" and c.get("module") in _FINANCIAL_MODULES)
         penalty = sum(_WEIGHT.get(c["status"], 0) for c in checks)
         max_penalty = max(1, len(checks) * _WEIGHT["critical"])
         score = round(max(0.0, 100.0 * (1 - penalty / max_penalty)), 1)
@@ -59,15 +95,43 @@ class _Report:
         for c in checks:
             if _RANK.get(c["status"], 0) > _RANK.get(worst, 0):
                 worst = c["status"]
-        label = ("Healthy" if score >= 95 and critical == 0 else
-                 "Attention needed" if score >= 80 else
-                 "Degraded" if score >= 60 else "Critical")
+
+        # BF-CC-01 / C3 — the headline verdict must be decided by WHAT FAILED,
+        # not by how many checks happen to exist.
+        #
+        # The old formula was score-only: score = 100*(1 - penalty/(n*10)). With
+        # 41 checks, a single critical financial failure scored 97.6 and read
+        # "Attention needed", and all six critical Accounting checks failing at
+        # once still read 85.4 / "Attention needed" — never "Critical". Adding
+        # more passing checks made the system look healthier under identical
+        # failures.
+        #
+        # The severity branches below are evaluated BEFORE any score comparison
+        # and do not reference `score`, so adding arbitrary passing checks can
+        # never restore a better verdict.
+        if critical_financial:
+            label = "Critical"
+        elif critical:
+            label = "Degraded"
+        elif unsupported_required:
+            # A mandatory capability we cannot verify is not health; it is an
+            # incomplete audit. It must never read as "Healthy".
+            label = "Incomplete"
+        elif score >= 95:
+            label = "Healthy"
+        elif score >= 80:
+            label = "Attention needed"
+        elif score >= 60:
+            label = "Degraded"
+        else:
+            label = "Critical"
         return {
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "duration_ms": int((time.time() - self.t0) * 1000),
             "score": score, "label": label, "severity": worst,
             "totals": {"checks": len(checks), "passed": passed, "warnings": warnings,
-                       "errors": errors, "critical": critical},
+                       "errors": errors, "critical": critical,
+                       "unsupported": unsupported},
             "modules": sorted({m for m, lst in self.sections.items()
                                if any(c["status"] != "pass" for c in lst)}),
             "sections": [{"module": m, "checks": lst} for m, lst in self.sections.items()],
@@ -90,35 +154,103 @@ def _run_all(db: Session, user) -> dict:
         d0, d1, _, _ = _period_range("month")
         cp = _costs_profit(db, branches, d0, d1)
 
-        rev = _sum(db, branches, "sale", d0, d1)
-        tax = _sum(db, branches, "sale", d0, d1, "tax")
-        opex = _sum(db, branches, "expense", d0, d1)
-        pay = _sum(db, branches, "payroll", d0, d1)
-        cogs = _purchases_sum(db, branches, d0, d1) + _sum(db, branches, "purchase", d0, d1)
+        # ---- BF-CC-01: reported figures are reconciled against INDEPENDENT
+        # ---- oracles (app/control_oracle.py), never against a second call to
+        # ---- the same helper that produced them.
+        #
+        # The previous implementation computed `rev` with the identical
+        # `_sum(db, branches, "sale", d0, d1)` call that produced cp["revenue"],
+        # so any defect inside `_sum` moved both sides together and the check
+        # stayed green. Mutating `_sum` to double every result left this endpoint
+        # reporting revenue 3000.00 on a ledger holding 1500.00, still "Healthy".
+        #
+        # These checks are named as OPERATIONAL-LEDGER AGGREGATION controls. They
+        # prove a reported total equals the persisted rows it claims to
+        # summarise. They do not prove double-entry, completeness or valuation.
+        cid = db.info.get("company_id")
 
-        R.add("Accounting", "Sales total reconciles to ledger", abs(cp["revenue"] - rev) < 0.01,
-              "critical", f"revenue {cp['revenue']:.2f} vs ledger {rev:.2f}",
-              "Revenue aggregation diverged from the ledger.",
-              "Recompute revenue directly from ledger rows of type 'sale'.", cp["revenue"])
-        R.add("Accounting", "Expense total reconciles to ledger", abs(cp["opex"] - opex) < 0.01,
-              "critical", f"{cp['opex']:.2f} vs {opex:.2f}",
-              "Expense aggregation diverged.", "Recompute from ledger type 'expense'.", cp["opex"])
-        R.add("Accounting", "Payroll total reconciles to ledger", abs(cp["payroll"] - pay) < 0.01,
-              "critical", f"{cp['payroll']:.2f} vs {pay:.2f}",
-              "Payroll aggregation diverged.", "Recompute from ledger type 'payroll'.", cp["payroll"])
-        R.add("Accounting", "COGS reconciles to purchases", abs(cp["cogs"] - cogs) < 0.01,
-              "critical", f"{cp['cogs']:.2f} vs {cogs:.2f}",
-              "Cost of goods no longer matches the purchases table.",
-              "COGS must sum non-rejected purchases for the period.", cp["cogs"])
-        R.add("Accounting", "Costs = COGS + expenses + payroll",
+        o_rev = ORACLE.ledger_total(db, company_id=cid, branches=branches,
+                                    typ="sale", d0=d0, d1=d1)
+        o_tax = ORACLE.ledger_total(db, company_id=cid, branches=branches,
+                                    typ="sale", d0=d0, d1=d1, column="tax")
+        o_opex = ORACLE.ledger_total(db, company_id=cid, branches=branches,
+                                     typ="expense", d0=d0, d1=d1)
+        o_pay = ORACLE.ledger_total(db, company_id=cid, branches=branches,
+                                    typ="payroll", d0=d0, d1=d1)
+
+        def _agrees(reported, oracle):
+            return ORACLE.to_cents(reported) == ORACLE.to_cents(oracle)
+
+        R.add("Accounting", "Reported sales equal posted sale rows (operational ledger)",
+              _agrees(cp["revenue"], o_rev), "critical",
+              f"reported {cp['revenue']:.2f} vs posted rows {o_rev}",
+              "The reported sales total does not equal the sum of persisted sale rows.",
+              "Recompute from ledger rows with explicit company/branch/type/period predicates.",
+              cp["revenue"])
+        R.add("Accounting", "Reported sales tax equals posted tax on sale rows",
+              _agrees(cp["tax"], o_tax), "critical",
+              f"reported {cp['tax']:.2f} vs posted rows {o_tax}",
+              "The reported tax total does not equal the tax recorded on persisted sale rows.",
+              "Recompute tax directly from the sale rows it was collected on.", cp["tax"])
+        R.add("Accounting", "Reported expenses equal posted expense rows (operational ledger)",
+              _agrees(cp["opex"], o_opex), "critical",
+              f"reported {cp['opex']:.2f} vs posted rows {o_opex}",
+              "The reported expense total does not equal the sum of persisted expense rows.",
+              "Recompute from ledger rows of type 'expense'.", cp["opex"])
+        R.add("Accounting", "Reported payroll equals posted payroll rows (operational ledger)",
+              _agrees(cp["payroll"], o_pay), "critical",
+              f"reported {cp['payroll']:.2f} vs posted rows {o_pay}",
+              "The reported payroll total does not equal the sum of persisted payroll rows.",
+              "Recompute from ledger rows of type 'payroll'.", cp["payroll"])
+
+        # Every payroll source document must map to exactly one payroll posting.
+        # A period total can agree while individual runs point at the wrong
+        # posting, or at none at all.
+        pay_defects = ORACLE.payroll_linkage_defects(
+            db, company_id=cid, branches=branches, d0=d0, d1=d1)
+        R.add("Accounting", "Each payroll run links to exactly one payroll posting",
+              not pay_defects, "critical",
+              "; ".join(pay_defects[:3]) if pay_defects else "every payroll run reconciled",
+              "A payroll source document does not reconcile one-to-one with its posting.",
+              "Reconcile payroll_runs.ledger_id on company, branch and gross.",
+              len(pay_defects))
+
+        # Purchase total — deliberately NOT called COGS. See the unsupported
+        # declaration below.
+        o_pur = ORACLE.purchases_total(db, company_id=cid, branches=branches, d0=d0, d1=d1)
+        R.add("Accounting", "Reported purchase total equals posted purchase rows",
+              _agrees(cp["cogs"], o_pur), "error",
+              f"reported {cp['cogs']:.2f} vs posted rows {o_pur}",
+              "The reported purchase total does not equal the sum of non-rejected purchase rows.",
+              "Recompute from the purchases table; do not treat this figure as COGS.",
+              cp["cogs"])
+
+        # COGS itself cannot be verified: this system has no costing layer, no
+        # valued stock movements and no inventory-derived cost of sale. The old
+        # check asserted at severity `critical` that "COGS must sum non-rejected
+        # purchases for the period" — certifying a known-wrong definition
+        # (SIM-04) as correct. Declaring it unverifiable is the honest state.
+        R.unsupported(
+            "Accounting", "Cost of goods sold reconciles to inventory movement",
+            "UNSUPPORTED / NOT TESTED — purchases are not COGS and no costing layer exists.",
+            "COGS requires inventory-derived cost of sale: valued movements, a costing "
+            "method, returns and GL reconciliation. None are implemented.",
+            "Do not report purchases as COGS. Implement costing before claiming this.")
+
+        # Internal algebraic consistency. These are NOT source reconciliation:
+        # they restate the definitions in _costs_profit and can only catch a
+        # divergence between the formula and its restatement. Named and scored
+        # accordingly (QA rule 5) — they may not carry critical reconciliation
+        # semantics.
+        R.add("Accounting", "Internal consistency: costs equal their components",
               abs(cp["costs"] - (cp["cogs"] + cp["opex"] + cp["payroll"])) < 0.01,
-              "critical", f"costs {cp['costs']:.2f}",
-              "Cost components do not sum to total costs.",
+              "warning", f"costs {cp['costs']:.2f}",
+              "The cost total does not equal the sum of its own components.",
               "Review the canonical cost formula.", cp["costs"])
-        R.add("Accounting", "Profit = revenue − tax − costs",
+        R.add("Accounting", "Internal consistency: profit follows its definition",
               abs(cp["profit"] - (cp["revenue"] - cp["tax"] - cp["costs"])) < 0.01,
-              "critical", f"profit {cp['profit']:.2f}",
-              "Profit does not follow the canonical definition.",
+              "warning", f"profit {cp['profit']:.2f}",
+              "Profit does not follow its own stated formula.",
               "Profit must equal revenue − sales tax − total costs.", cp["profit"])
         R.add("Accounting", "Sales tax never exceeds its sale", cp["tax"] <= cp["revenue"] + 0.01,
               "critical", f"tax {cp['tax']:.2f} vs revenue {cp['revenue']:.2f}",
@@ -131,21 +263,39 @@ def _run_all(db: Session, user) -> dict:
               "Tax rate outside the expected retail band.",
               "Check the tax basis used when posting daily sales.", round(eff, 2))
 
-        # branch figures must sum to the all-branches figure
+        # Metamorphic partition check: the per-branch parts must sum to the whole.
+        # PRESERVED — it is genuinely useful and it is what caught the branch-scope
+        # defect during BF-CC-01 investigation. But it is NOT an independent source
+        # oracle: both sides run through the same `_costs_profit`/`_sum` tree, so it
+        # can only detect partitioning errors, never total correctness. Do not
+        # present it, or test it, as an oracle.
         per = 0.0
         for b in branches:
             per += _costs_profit(db, [b], d0, d1)["costs"]
-        R.add("Accounting", "Per-branch costs sum to all-branches", abs(per - cp["costs"]) < 0.5,
+        R.add("Accounting", "Per-branch costs sum to all-branches (partition check)",
+              abs(per - cp["costs"]) < 0.5,
               "error", f"branches {per:.2f} vs all {cp['costs']:.2f}",
               "Branch scoping is dropping or double-counting rows.",
               "Verify branch filters in the aggregation.", round(per, 2))
 
-        # inventory valuation
-        inv = db.query(func.coalesce(func.sum(models.Stock.qty * models.Product.cost), 0)) \
-            .join(models.Product, models.Product.sku == models.Stock.sku).scalar() or 0
-        R.add("Accounting", "Inventory valuation computable", _f(inv) >= 0,
-              "error", f"stock at cost {_f(inv):.2f}",
-              "Inventory valued below zero.", "Inspect product costs and stock rows.", round(_f(inv), 2))
+        # Current-cost stock extension — precisely named. This extends on-hand
+        # quantity by the product's CURRENT cost. It is not inventory valuation:
+        # it cannot reflect what stock was actually bought for, and has no valued
+        # movements, returns or GL reconciliation behind it.
+        ext, neg_qty, neg_cost = ORACLE.stock_current_cost_extension(
+            db, company_id=cid, branches=branches)
+        R.add("Accounting", "Current-cost stock extension is non-negative",
+              ext >= 0 and neg_qty == 0 and neg_cost == 0, "error",
+              f"extension {ext} · {neg_qty} negative-qty rows · {neg_cost} negative-cost rows",
+              "Stock quantity or product cost is negative, so the extension is not meaningful.",
+              "Inspect stock rows and product costs for negative values.", float(ext))
+
+        R.unsupported(
+            "Accounting", "Inventory is valued on a defined costing basis",
+            "UNSUPPORTED / NOT TESTED — no costing layer, valued movements or GL reconciliation.",
+            "True valuation requires a costing method (FIFO/average/standard), valued stock "
+            "movements, returns handling and reconciliation to the ledger. None exist.",
+            "Implement costing architecture before reporting an inventory valuation.")
     except Exception as e:  # noqa: BLE001
         R.add("Accounting", "Accounting checks executed", False, "critical", str(e)[:200],
               "The accounting validation itself failed.", "Inspect the API logs.")
@@ -298,9 +448,20 @@ def _run_all(db: Session, user) -> dict:
               "These rows cannot be verified as pairs; they are excluded from the check above.",
               "Reconcile them manually, or accept them as pre-upgrade history.", len(legacy))
 
-        pend = db.query(models.Purchase).filter(models.Purchase.status == "pending_approval").count()
-        R.add("Inventory", "Purchases are being reviewed", True, "warning",
-              f"{pend} awaiting approval", "", "", pend)
+        # BF-CC-01 / C2 — this was `R.add(..., True, ...)`: an informational
+        # counter that always reported "pass" whatever the queue looked like.
+        # It now asserts something real: nothing may sit unreviewed indefinitely.
+        pend = db.query(models.Purchase).filter(
+            models.Purchase.status == "pending_approval").count()
+        stale_cut = today - timedelta(days=_PURCHASE_REVIEW_SLA_DAYS)
+        stale = db.query(models.Purchase).filter(
+            models.Purchase.status == "pending_approval",
+            models.Purchase.purchase_date < stale_cut).count()
+        R.add("Inventory", "No purchase awaits review beyond the review window",
+              stale == 0, "warning",
+              f"{pend} awaiting approval · {stale} older than {_PURCHASE_REVIEW_SLA_DAYS} days",
+              "Purchases have been awaiting approval past the review window.",
+              "Review or reject the outstanding purchases.", stale)
     except Exception as e:  # noqa: BLE001
         R.add("Inventory", "Inventory checks executed", False, "critical", str(e)[:200],
               "The inventory validation itself failed.", "Inspect the API logs.")
@@ -334,10 +495,30 @@ def _run_all(db: Session, user) -> dict:
             models.AuditLog.ts >= datetime.now(timezone.utc) - timedelta(days=30)).count()
         R.add("Security", "Audit log is recording", aud > 0, "error", f"{aud} entries ({recent} in 30d)",
               "No audit trail.", "Ensure S.audit() runs on write endpoints.", aud)
+        # BF-CC-01 / C2 — this was `R.add(..., True, ...)`, so it reported "pass"
+        # with the detail "no previous run recorded": the name asserted existence
+        # while the detail admitted absence. The condition is now real, and a
+        # stale audit is not treated as a current one.
         last = db.query(models.ValidationRun).order_by(models.ValidationRun.ts.desc()).first()
-        R.add("Security", "A previous security audit exists", True, "warning",
-              f"last run {last.ts}" if last else "no previous run recorded", "", "",
-              str(last.ts) if last else None)
+        if last is None:
+            R.add("Security", "A previous validation run is on record", False, "warning",
+                  "no previous run recorded",
+                  "No validation has ever been stored, so there is no audit history.",
+                  "Run and save a full validation to establish history.", None)
+        else:
+            # SQLite returns naive datetimes while PostgreSQL returns aware ones.
+            # Subtracting across the two raises, and the section's broad `except`
+            # would swallow that into a single "Security checks executed" critical
+            # — losing every other security check with it.
+            age_days = None
+            if last.ts is not None:
+                ts = last.ts if last.ts.tzinfo else last.ts.replace(tzinfo=timezone.utc)
+                age_days = (datetime.now(timezone.utc) - ts).days
+            fresh = age_days is not None and age_days <= _AUDIT_FRESH_DAYS
+            R.add("Security", "A previous validation run is on record", fresh, "warning",
+                  f"last run {last.ts}" + (f" ({age_days}d ago)" if age_days is not None else ""),
+                  f"The most recent validation is older than {_AUDIT_FRESH_DAYS} days.",
+                  "Run a full validation to refresh the audit history.", str(last.ts))
     except Exception as e:  # noqa: BLE001
         R.add("Security", "Security checks executed", False, "critical", str(e)[:200],
               "The security validation itself failed.", "Inspect the API logs.")
@@ -390,20 +571,31 @@ def _run_all(db: Session, user) -> dict:
         sales_today = _sum(db, branches, "sale", dt0, dt1)
         exp_today = _sum(db, branches, "expense", dt0, dt1)
 
-        R.add("Reports", "Dashboard profit matches KPI profit (today)",
+        # BF-CC-01 / C1 — the same tautology as the Accounting section: these
+        # compared `today_cp[...]` against a second call to the identical `_sum`,
+        # or restated the profit formula. Anchored to the independent oracle, and
+        # the purely algebraic one renamed and dropped from critical.
+        r_cid = db.info.get("company_id")
+        o_sales_t = ORACLE.ledger_total(db, company_id=r_cid, branches=branches,
+                                        typ="sale", d0=dt0, d1=dt1)
+        o_exp_t = ORACLE.ledger_total(db, company_id=r_cid, branches=branches,
+                                      typ="expense", d0=dt0, d1=dt1)
+
+        R.add("Reports", "Internal consistency: dashboard and KPI profit formulas agree",
               abs(today_cp["profit"] - (sales_today - today_cp["tax"] - today_cp["costs"])) < 0.01,
-              "critical", f"profit {today_cp['profit']:.2f}",
+              "warning", f"profit {today_cp['profit']:.2f}",
               "Dashboard and KPI use different profit formulas.",
               "Both must use the canonical definition.", round(today_cp["profit"], 2))
-        R.add("Reports", "Daily report sales match dashboard sales",
-              abs(today_cp["revenue"] - sales_today) < 0.01, "error",
-              f"{today_cp['revenue']:.2f} vs {sales_today:.2f}",
-              "Report and dashboard read different sources.",
-              "Both must read the ledger.", round(sales_today, 2))
-        R.add("Reports", "Expense figures agree across views",
-              abs(today_cp["opex"] - exp_today) < 0.01, "error",
-              f"{today_cp['opex']:.2f} vs {exp_today:.2f}",
-              "Expense aggregation differs by view.", "Use one aggregator.", round(exp_today, 2))
+        R.add("Reports", "Daily report sales equal posted sale rows",
+              ORACLE.to_cents(today_cp["revenue"]) == o_sales_t, "error",
+              f"reported {today_cp['revenue']:.2f} vs posted rows {o_sales_t}",
+              "The daily report total does not equal the persisted sale rows.",
+              "Recompute the report total from ledger rows.", round(sales_today, 2))
+        R.add("Reports", "Expense figures equal posted expense rows",
+              ORACLE.to_cents(today_cp["opex"]) == o_exp_t, "error",
+              f"reported {today_cp['opex']:.2f} vs posted rows {o_exp_t}",
+              "The reported expense figure does not equal the persisted expense rows.",
+              "Recompute from ledger rows of type 'expense'.", round(exp_today, 2))
 
         m0, m1, p0, p1 = _period_range("month")
         cur_m = _costs_profit(db, branches, m0, m1)
@@ -416,13 +608,31 @@ def _run_all(db: Session, user) -> dict:
               "Chart aggregation drifted from the ledger.",
               "Recompute the category chart from ledger rows.", round(_f(cat), 2))
 
-        R.add("Dashboard", "Dashboard totals derive from the ledger", True, "error",
-              f"sales {sales_today:.2f} · costs {today_cp['costs']:.2f} · profit {today_cp['profit']:.2f}",
-              "", "", {"sales": round(sales_today, 2), "costs": round(today_cp["costs"], 2),
-                       "profit": round(today_cp["profit"], 2)})
-        R.add("Dashboard", "Export totals match API totals (PDF/Excel source data)", True, "error",
-              "exports are generated from the same API payload the dashboard renders",
-              "", "", None)
+        # BF-CC-01 / C2 — both of these were `R.add(..., True, ...)`: assertions
+        # about where the numbers come from that were never actually evaluated.
+        #
+        # This one is now a real comparison against the independent oracle.
+        d_cid = db.info.get("company_id")
+        o_sales_today = ORACLE.ledger_total(db, company_id=d_cid, branches=branches,
+                                            typ="sale", d0=dt0, d1=dt1)
+        R.add("Dashboard", "Dashboard sales total equals posted sale rows",
+              ORACLE.to_cents(sales_today) == o_sales_today, "error",
+              f"dashboard {sales_today:.2f} vs posted rows {o_sales_today}",
+              "The dashboard sales figure does not equal the persisted sale rows.",
+              "Recompute the dashboard total from ledger rows.", round(sales_today, 2))
+
+        # Export equivalence cannot be verified from the backend: the dashboard
+        # PDF/Excel export is produced client-side from the API payload, and no
+        # server-side export endpoint exists to compare against. Asserting it
+        # `True` claimed a guarantee nobody checked; declaring it unverifiable is
+        # the honest state.
+        R.unsupported(
+            "Dashboard", "Export totals match API totals (PDF/Excel source data)",
+            "UNSUPPORTED / NOT TESTED — exports are generated client-side; no server-side "
+            "export exists to compare against.",
+            "The backend cannot observe what the browser rendered into a PDF or spreadsheet.",
+            "Verify export equivalence in a browser-driven UI test, or add a server-side "
+            "export endpoint that can be compared directly.")
     except Exception as e:  # noqa: BLE001
         R.add("Reports", "Report consistency checks executed", False, "critical", str(e)[:200],
               "The report validation itself failed.", "Inspect the API logs.")

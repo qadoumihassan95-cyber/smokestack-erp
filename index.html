@@ -6044,7 +6044,8 @@ try{ empMigrate(); payRestore(); invDateRestore();
   var API=window.SS_API_LIVE;
   function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
   var SEV={pass:['PASS','var(--ok,#1a7f37)'],warning:['WARN','var(--warn,#b26a00)'],
-           error:['ERROR','var(--bad,#c0392b)'],critical:['CRITICAL','var(--bad,#c0392b)']};
+           error:['ERROR','var(--bad,#c0392b)'],critical:['CRITICAL','var(--bad,#c0392b)'],
+           unsupported:['NOT TESTED','var(--warn,#b26a00)']};
   var CC={report:null,history:[],f:{days:90,severity:'all',module:'all'}};
   // the ten sections required of the module, mapped to the auditor's modules
   var SECTIONS=[['ERP Health Score','_score'],['Accounting Integrity','Accounting'],
@@ -6054,6 +6055,17 @@ try{ empMigrate(); payRestore(); invDateRestore();
     ['Financial Validation','_financial'],['Audit History','_history']];
 
   function ringColor(score){ return score>=95?'var(--ok,#1a7f37)':score>=80?'var(--warn,#b26a00)':'var(--bad,#c0392b)'; }
+  // BF-CC-01/C3: the ring must follow the VERDICT, not the score. A report can
+  // score 97.6 while carrying a critical financial failure — a green ring beside
+  // the word "Critical" would recreate in the UI exactly the dilution the
+  // backend label change removes.
+  function verdictColor(rep){
+    var l=rep&&rep.label;
+    if(l==='Critical') return 'var(--bad,#c0392b)';
+    if(l==='Degraded') return 'var(--bad,#c0392b)';
+    if(l==='Incomplete'||l==='Attention needed') return 'var(--warn,#b26a00)';
+    return ringColor(rep?rep.score:0);
+  }
   function sevOf(list){ var w='pass';
     list.forEach(function(c){ var r={pass:0,warning:1,error:2,critical:3};
       if(r[c.status]>r[w]) w=c.status; }); return w; }
@@ -6080,7 +6092,7 @@ try{ empMigrate(); payRestore(); invDateRestore();
   }
 
   function renderReport(rep){
-    var t=rep.totals, col=ringColor(rep.score);
+    var t=rep.totals, col=verdictColor(rep);
     var h='<div class="card"><div class="cc-hero">'
       +'<div class="cc-ring" style="border:6px solid '+col+'"><b style="color:'+col+'">'+rep.score+'%</b></div>'
       +'<div><div class="cc-score" style="color:'+col+'">'+esc(rep.label)+'</div>'
@@ -6142,7 +6154,7 @@ try{ empMigrate(); payRestore(); invDateRestore();
     var h='<div class="card" style="margin-top:13px"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">'
       +'<h3 style="margin:0">Audit history</h3><div style="display:flex;gap:6px;flex-wrap:wrap">'
       +'<select id="ccDays" style="max-width:140px">'+[[7,'Last 7 days'],[30,'Last 30 days'],[90,'Last 90 days'],[365,'Last year']].map(function(o){return '<option value="'+o[0]+'"'+(CC.f.days==o[0]?' selected':'')+'>'+o[1]+'</option>';}).join('')+'</select>'
-      +'<select id="ccSev" style="max-width:140px">'+[['all','All severities'],['ok','Healthy'],['warning','Warning'],['error','Error'],['critical','Critical']].map(function(o){return '<option value="'+o[0]+'"'+(CC.f.severity===o[0]?' selected':'')+'>'+o[1]+'</option>';}).join('')+'</select>'
+      +'<select id="ccSev" style="max-width:140px">'+[['all','All severities'],['ok','Healthy'],['warning','Warning'],['unsupported','Not tested'],['error','Error'],['critical','Critical']].map(function(o){return '<option value="'+o[0]+'"'+(CC.f.severity===o[0]?' selected':'')+'>'+o[1]+'</option>';}).join('')+'</select>'
       +'<select id="ccMod" style="max-width:160px">'+[['all','All modules'],['Accounting','Accounting'],['Database','Database'],['Inventory','Inventory'],['Security','Security'],['Performance','Performance'],['Reports','Reports']].map(function(o){return '<option value="'+o[0]+'"'+(CC.f.module===o[0]?' selected':'')+'>'+o[1]+'</option>';}).join('')+'</select>'
       +'</div></div>';
     if(!CC.history.length){ h+='<div class="sub" style="color:var(--muted)">No stored reports for this filter. Run a full validation to create one.</div>'; }
