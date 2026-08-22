@@ -45,9 +45,55 @@ import re
 MAX_DOCUMENTED_HOPS = 1
 
 _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-BLUEPRINTS = ["render.yaml",
-              os.path.join("backend", "render.yaml"),
-              os.path.join("backend", "render.staging.yaml")]
+
+# The three blueprints that exist today. Used ONLY as a floor — "these must still be
+# found" — never as the set to check. See `_discover_blueprints`.
+KNOWN_BLUEPRINTS = frozenset({"render.yaml",
+                              os.path.join("backend", "render.yaml"),
+                              os.path.join("backend", "render.staging.yaml")})
+
+_SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv"}
+
+
+def _discover_blueprints():
+    """FIND the deployment blueprints; do not enumerate them.
+
+    This was a hardcoded three-element list, and ERP-Security-Auditor killed it by
+    mutation: adding a fourth blueprint with a real uvicorn service and NO
+    `TRUSTED_PROXY_HOPS` left the suite green (4 passed), and giving that fourth
+    service `TRUSTED_PROXY_HOPS: "3"` — over-count against the same one-proxy path,
+    which is HIGH-02 reopened, not a LOW-12 nit — ALSO left it green. The identical
+    value in any of the three named files fails the suite; in a file the list did not
+    name it was invisible.
+
+    That is exactly the case this module's docstring promises to catch, so the
+    docstring was right and the implementation contradicted it. A hand-maintained
+    registry is forgotten by definition: the person adding the fourth blueprint is
+    the person who does not know this list exists.
+
+    A blueprint is any YAML outside the skipped directories with a TOP-LEVEL
+    `services:` key that mentions uvicorn. Both conditions matter — GitHub workflow
+    files nest `services:` under a job and never match at indent 0, and a
+    docker-compose without uvicorn is not an API deployment.
+    """
+    found = []
+    for dirpath, dirnames, filenames in os.walk(_ROOT):
+        dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
+        for fn in filenames:
+            if not fn.endswith((".yaml", ".yml")):
+                continue
+            full = os.path.join(dirpath, fn)
+            try:
+                with open(full, encoding="utf-8") as fh:
+                    text = fh.read()
+            except (OSError, UnicodeDecodeError):
+                continue
+            if "uvicorn" not in text:
+                continue
+            if not any(ln.startswith("services:") for ln in text.splitlines()):
+                continue
+            found.append(os.path.relpath(full, _ROOT))
+    return sorted(found)
 
 
 def _services(path):
@@ -116,7 +162,7 @@ def _http_services():
     key on those would be a false FAIL, and a gate that cries wolf gets edited out.
     """
     out = []
-    for path in BLUEPRINTS:
+    for path in _discover_blueprints():
         for svc in _services(path):
             if "uvicorn" in svc.get("start", ""):
                 out.append((path, svc))
@@ -124,13 +170,22 @@ def _http_services():
 
 
 def test_the_parser_finds_the_services_it_is_supposed_to_check():
-    """A guard that silently finds nothing passes forever. Pin the shape first."""
+    """A guard that silently finds nothing passes forever. Pin the shape first.
+
+    This is a FLOOR, not an equality. `== 3` pinned the parser against a blueprint
+    DISAPPEARING but could not notice one being ADDED — and an added blueprint is the
+    whole failure mode this module exists for. A new blueprint must WIDEN coverage,
+    so more than three is success, not a reason to fail.
+    """
     found = _http_services()
-    assert len(found) == 3, (
-        f"expected the API service in all three blueprints, parsed {len(found)}: "
-        f"{[(p, s.get('name')) for p, s in found]}. If a blueprint was added or "
-        f"renamed, update BLUEPRINTS — do not delete this assertion.")
-    assert {p for p, _ in found} == set(BLUEPRINTS)
+    paths = {p for p, _ in found}
+    missing = KNOWN_BLUEPRINTS - paths
+    assert not missing, (
+        f"blueprints that must exist were not discovered: {sorted(missing)}. Either "
+        f"they were renamed/removed, or `_discover_blueprints` stopped matching them "
+        f"— do not narrow this assertion to make it pass.")
+    assert len(found) >= 3, (
+        f"discovery parsed only {len(found)} uvicorn services: {sorted(paths)}")
     # The label must name the API service, not a nested database reference.
     assert all("api" in s.get("name", "") for _, s in found), \
         [(p, s.get("name")) for p, s in found]

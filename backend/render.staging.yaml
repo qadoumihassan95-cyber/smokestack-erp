@@ -33,15 +33,21 @@ services:
       - key: CORS_ORIGINS
         value: https://smokestack-erp-staging.onrender.com
       - key: TRUSTED_PROXY_HOPS
-        value: "1"               # SECURITY (SEC HIGH-02 / LOW-12): must MATCH production.
-                                 # This file documents itself as a mirror of production and is
-                                 # the environment every migration passes through before
-                                 # promotion, so a different hop count here would make the
-                                 # rate limiter behave differently in the gate than in the
-                                 # environment the gate is supposed to be certifying. One
-                                 # proxy we operate (Render's router) is in front of this
-                                 # service, so the RIGHTMOST X-Forwarded-For entry is the one
-                                 # an attacker cannot forge. Never exceed the real hop count.
+        value: "1"               # SECURITY (SEC HIGH-02 / LOW-12): this is THIS environment's
+                                 # real proxy count — one Render router in front of the
+                                 # service — and it is set from that fact, NOT from what
+                                 # production happens to use. Do not copy this value from
+                                 # another blueprint: matching another file is not the rule,
+                                 # and if a CDN or WAF is ever put in front of production and
+                                 # not staging, "match production" is the instruction that
+                                 # reopens HIGH-02 here.
+                                 #
+                                 # NEVER EXCEED THE REAL HOP COUNT. Too low only degrades to
+                                 # the socket peer (an availability problem). Too high makes
+                                 # the limiter read an X-Forwarded-For entry the CLIENT wrote,
+                                 # handing per-IP attribution back to the attacker — while
+                                 # looking more locked down in review. Raise it only with
+                                 # evidence of this environment's actual proxy path.
       - key: SEED_ON_START
         value: "true"            # staging starts from seed data (safe to reset)
       - key: TELEGRAM_BOT_TOKEN
