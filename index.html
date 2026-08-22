@@ -1680,18 +1680,39 @@ function bInsights(){const rows=repTx();const b=repBuckets('week');const lastW=m
     insight:ins.map(i=>i[0]+' '+i[1]).join('<br>')};}
 
 // ---- catalog ----
+// UX-F: this backend is SINGLE-ENTRY. There is no chart of accounts, no journal and
+// no general ledger anywhere in the application or its migrations, so a balance
+// sheet, a trial balance and the equity statements cannot be produced from it. They
+// were nonetheless offered and rendered numbers, assembled by rearranging a flat
+// transaction list into rows LABELLED "Assets", "Liabilities", "Debits", "Credits".
+// Those figures cannot be wrong in a detectable way, because nothing they claim to
+// reconcile actually exists — which is what makes them worse than an error message.
+//
+// `U(...)` registers a report as UNSUPPORTED: it stays visible so the gap is legible
+// and the roadmap is not silently shortened, but it renders an explanation instead
+// of figures. Deleting them would hide the limitation; leaving them would keep
+// asserting an accounting position the data cannot support.
+function repUnsupported(name, why){
+  return function(){ return {unsupported:true, kpis:[], chart:null, table:null,
+    insight:'<b>'+name+' is not available.</b> '+why+
+      ' Producing it requires double-entry bookkeeping — a chart of accounts and '+
+      'balanced journal entries — which this system does not yet keep. No figure is '+
+      'shown here because any figure would be an assertion the underlying records '+
+      'cannot support.'}; };
+}
 function repCatalog(){const C=[];const R=(cat,id,name,ic,desc,fn)=>C.push({cat,id,name,ic,desc,fn});
+  const U=(cat,id,name,ic,desc,why)=>C.push({cat,id,name,ic,desc:desc,unsupported:true,fn:repUnsupported(name,why)});
   // Financial
   R('Financial','pl','Profit & Loss','<span class=ico-chart></span>','Revenue, COGS, expenses, net profit',()=>bStatement('pl'));
   R('Financial','cashflow','Cash Flow','<span class=ico-dot></span>','Cash in vs out for the period',()=>bStatement('cashflow'));
-  R('Financial','balance','Balance Sheet','<span class=ico-scale></span>','Assets, liabilities & equity',()=>bStatement('balance'));
-  R('Financial','trial','Trial Balance','<span class=ico-filetext></span>','Debits and credits reconciliation',()=>bStatement('trial'));
-  R('Financial','gl','General Ledger','<span class=ico-book></span>','Every posted transaction',()=>bLedger({}));
-  R('Financial','journal','Journal Entries','<span class=ico-pencil></span>','Chronological journal',()=>bLedger({sort:(a,b)=>a.date<b.date?-1:1}));
+  U('Financial','balance','Balance Sheet','<span class=ico-scale></span>','Requires double-entry accounting (not available)','Assets, liabilities and equity are derived from account balances.');
+  U('Financial','trial','Trial Balance','<span class=ico-filetext></span>','Requires double-entry accounting (not available)','A trial balance reconciles debits against credits across ledger accounts.');
+  R('Financial','gl','Transaction Ledger','<span class=ico-book></span>','Every recorded transaction (single-entry list, not a general ledger)',()=>bLedger({}));
+  R('Financial','journal','Transactions by Date','<span class=ico-pencil></span>','Chronological transaction list (not double-entry journal entries)',()=>bLedger({sort:(a,b)=>a.date<b.date?-1:1}));
   R('Financial','cashpos','Cash Position','<span class=ico-building></span>','Balance by account',()=>bStatement('cashpos'));
   R('Financial','bankacct','Bank Account Summary','<span class=ico-building></span>','Movement by account',()=>bGroup({dim:'account',txType:'sale',chart:'pie'}));
-  R('Financial','equity','Owner Equity','<span class=ico-award></span>','Equity movement',()=>bStatement('equity'));
-  R('Financial','retained','Retained Earnings','<span class=ico-dollar></span>','Earnings retained',()=>bStatement('retained'));
+  U('Financial','equity','Owner Equity','<span class=ico-award></span>','Requires double-entry accounting (not available)','Equity movement is derived from capital, drawings and retained earnings accounts.');
+  U('Financial','retained','Retained Earnings','<span class=ico-dollar></span>','Requires double-entry accounting (not available)','Retained earnings accumulate closed period results into an equity account.');
   R('Financial','budget','Budget vs Actual','<span class=ico-target></span>','Plan vs actual by category',()=>bStatement('budget'));
   // Sales
   R('Sales','sdaily','Daily Sales','<span class=ico-calendar></span>','Sales by day (30d)',()=>bSeries({gran:'day',metric:'sale'}));
