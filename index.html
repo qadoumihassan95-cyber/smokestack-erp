@@ -4678,6 +4678,19 @@ function payUnsupported(e){return String(e&&e.payType!=null?e.payType:'').trim()
 function payHidden(e){return !!(e&&e.payHidden);}
 /* money() for a value that may be withheld or uncomputable. Never falls back to 0. */
 function payMoney(e,v){return payHidden(e)?PAY_MASK:(payUnsupported(e)?PAY_UNSUPPORTED_LABEL:money(v));}
+/* The AGGREGATE form of payMoney, for KPI cards and totals rows.
+   A total is not safe just because each cell is: a withheld salary arrives as an
+   ABSENT field, sums as 0, and renders a confident "$0.00" over a roster the viewer
+   is not allowed to see. ERP-UX-Reviewer measured it — a branch_manager finalized a
+   real $2,067 pay run from a screen whose Gross/Net/Total Cost all read $0.00, which
+   is the same blind-finalize defect the per-cell mask was meant to close.
+   Withheld outranks uncomputable: "you may not see this" is the stronger statement,
+   and a manager without view_payroll must never be handed a figure either way. */
+function payTotal(emps,v){
+  if(emps.some(payHidden))return PAY_MASK;
+  if(emps.some(payUnsupported))return PAY_UNSUPPORTED_LABEL;
+  return money(v);
+}
 function _today(){return daysAgo(0);}
 function _eod(ds){return ds+' 23:59';}                       // end-of-day vs nowStamp 'YYYY-MM-DD HH:MM'
 function _rangeTxt(a,b){return a===b?a:a+' → '+b;}
@@ -4754,9 +4767,9 @@ function renderPay(){
   // BF-PR-01: an employee whose pay this build cannot compute contributes nothing to
   // these totals, so publishing a number here would be an understated total that
   // looks exactly like a correct one. Count them and say so instead.
-  var unsupportedN=emps.filter(function(e){return empEligible(e)&&payUnsupported(e);}).length;
+  var eligible=emps.filter(empEligible);
   emps.forEach(function(e){if(!empEligible(e)||payUnsupported(e))return;var c=empPeriodCalc(e,PAY.start,PAY.end);totG+=c.gross;totDed+=c.deductions;totEmployer+=c.employerTax;totNet+=c.net;});
-  var kG=unsupportedN?PAY_UNSUPPORTED_LABEL:money(totG),kN=unsupportedN?PAY_UNSUPPORTED_LABEL:money(totNet);
+  var kG=payTotal(eligible,totG),kN=payTotal(eligible,totNet);
   var K=[["Gross Payroll",kG,"var(--txt)"],["Net Pay",kN,"var(--brand)"],["Total Cost",kG,"var(--bad)"]];
   var pk=document.getElementById('payKpis'); if(pk)pk.innerHTML=K.map(function(k){return '<div class="card kpi"><div class="l">'+k[0]+'</div><div class="v" style="color:'+k[2]+'">'+k[1]+'</div><div class="s">'+_esc(branchLabel())+'</div></div>';}).join('');
   var canSal=can('view_payroll')||can('view_cost');
@@ -4946,7 +4959,7 @@ function payPreview(){
     return '<tr><td><b>'+_esc(e.name)+'</b></td><td>'+_esc(e.store)+'</td><td style="text-align:end">'+money(c.gross)+'</td><td style="text-align:end">'+money(c.deductions)+'</td><td style="text-align:end">'+money(c.net)+'</td></tr>';}).join('');
   // A total over a roster containing an uncomputable employee is exactly the
   // "nonzero aggregate that silently omits someone" hazard — do not draw one.
-  var totTxt=unsupported.length?PAY_UNSUPPORTED_LABEL:money(tot.gross);
+  var totTxt=payTotal(emps,tot.gross);
   var overlap=PAY.finalized.some(function(f){return f.branch===(BRANCH!=='all'?BRANCH:'all')&&!(f.end<PAY.start||f.start>PAY.end);});
   document.getElementById('drwTitle').textContent='Payroll preview · '+_rangeTxt(PAY.start,PAY.end);
   document.getElementById('drwBody').innerHTML=
@@ -4954,7 +4967,7 @@ function payPreview(){
     +(overlap?'<div style="background:var(--warn-bg);color:var(--warn);border-radius:10px;padding:9px 12px;font-size:12.5px;font-weight:600;margin-bottom:12px">A finalized payroll already overlaps this period for '+_esc(branchLabel())+'. Finalizing again will create a duplicate — allowed only if you confirm.</div>':'')
     +'<div class="drw-kv"><div class="k">Branch</div><div class="v">'+_esc(branchLabel())+'</div><div class="k">Period</div><div class="v">'+_rangeTxt(PAY.start,PAY.end)+'</div><div class="k">Eligible employees</div><div class="v">'+emps.length+'</div></div>'
     +'<table style="margin-top:10px"><thead><tr><th>Employee</th><th>Branch</th><th style="text-align:end">Gross</th><th style="text-align:end">Deductions</th><th style="text-align:end">Net</th></tr></thead><tbody>'+rows
-    +'<tr style="border-top:2px solid var(--line)"><td colspan="2"><b>Totals</b></td><td style="text-align:end"><b>'+totTxt+'</b></td><td style="text-align:end"><b>'+(unsupported.length?'—':money(tot.ded))+'</b></td><td style="text-align:end"><b>'+(unsupported.length?'—':money(tot.net))+'</b></td></tr></tbody></table>'
+    +'<tr style="border-top:2px solid var(--line)"><td colspan="2"><b>Totals</b></td><td style="text-align:end"><b>'+totTxt+'</b></td><td style="text-align:end"><b>'+payTotal(emps,tot.ded)+'</b></td><td style="text-align:end"><b>'+payTotal(emps,tot.net)+'</b></td></tr></tbody></table>'
     +'<div class="drw-sec">Total cost</div><div class="drw-kv"><div class="k">Gross payroll</div><div class="v">'+totTxt+'</div><div class="k">Total cost</div><div class="v"><b>'+totTxt+'</b></div></div>';
   // A blocked run offers no Finalize button: the server refuses it (409/400), and an
   // enabled button over a blocked state is how a "$0 payroll" got authorized.
@@ -4975,8 +4988,13 @@ function payFinalize(allowOverlap){
       e.runs=e.runs||[];e.runs.push({start:PAY.start,end:PAY.end,gross:c.gross,net:c.net,status:'finalized',by:ROLE.kind,ts:nowStamp()});});
     LEDGER.push({id:++uid,date:PAY.end,store:BRANCH!=='all'?BRANCH:STORES[0],account:'Checking',type:'payroll',category:'Payroll',amount:totG,memo:'Payroll '+PAY.start+'→'+PAY.end});
     PAY.finalized.push({branch:branchKey,start:PAY.start,end:PAY.end,gross:totG,ts:nowStamp(),by:ROLE.kind});payPersist();
-    audit('finalize','payroll',PAY.start+'_'+PAY.end,branchKey+' gross '+money(totG),'WEB');
-    drwClose();refreshAll();toast('Payroll finalized: '+money(totG));
+    // Same aggregate rule as the KPI cards and the totals row: `totG` is summed from
+    // per-employee figures that are ABSENT when the caller may not see pay, so it is
+    // 0 for exactly the role that must never be shown a number. This is the offline
+    // path (the API layer wraps this function), but it is the identical defect and
+    // it is not worth leaving one unmasked copy behind for someone to reach later.
+    audit('finalize','payroll',PAY.start+'_'+PAY.end,branchKey+' gross '+payTotal(emps,totG),'WEB');
+    drwClose();refreshAll();toast('Payroll finalized: '+payTotal(emps,totG));
   } finally { PAY.busy=false; }
 }
 /* keep the old AI/quick runPayroll working, now period-aware */

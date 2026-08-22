@@ -434,3 +434,45 @@ def test_9_the_frontend_does_not_coerce_a_withheld_total_to_zero():
     assert "PAY_MASK" in html, (
         "no masked state constant found; a withheld payroll total must render as a "
         "mask, never as a number")
+
+
+def test_10_payroll_aggregates_are_masked_not_summed_to_zero():
+    """SOURCE-LEVEL ONLY — the sibling of test 9, at the AGGREGATE sites.
+
+    Masking every per-employee cell is not enough, and I shipped exactly that mistake.
+    A withheld salary arrives as an ABSENT field, sums to 0, and the KPI cards and
+    Totals row then render a confident "$0.00" over a roster the viewer may not see.
+    ERP-UX-Reviewer measured the consequence in a browser: a `branch_manager` without
+    `view_payroll` finalized a real **$2,067** pay run from a screen whose Gross, Net
+    and Total Cost all read $0.00 — the same blind-finalize defect the per-cell mask
+    was supposed to close, one aggregation level up.
+
+    Every aggregate now goes through `payTotal`, which masks if ANY employee in the
+    roster is withheld. The needles are assembled rather than written literally for
+    the reason given in test 9: a substring guard cannot tell code from prose, and
+    this docstring would otherwise trip it.
+
+    This proves the call sites, not the rendering. The browser gate is
+    ERP-UX-Reviewer's, and this test claims nothing about it.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    html = open(os.path.join(here, "..", "..", "index.html"), encoding="utf-8").read()
+
+    assert "function payTotal(" in html, "the aggregate masking helper is gone"
+
+    # The exact aggregate expressions that rendered a fabricated $0.
+    for var in ("totG", "totNet", "tot.gross", "tot.ded", "tot.net"):
+        bare = "money(" + var + ")"
+        assert bare not in html, (
+            f"{bare} renders a payroll aggregate without a mask gate. A withheld "
+            f"salary sums to 0 here and is drawn as a real figure; route it through "
+            f"payTotal(...) like the per-employee cells.")
+
+    # ...and they are actually gated, not merely deleted.
+    assert html.count("payTotal(") >= 8, (
+        f"expected every payroll aggregate to call payTotal (7 call sites plus the "
+        f"definition); found {html.count('payTotal(')}")
+    # This assertion earned its place on its first run: it caught two aggregate sites
+    # in the offline `payFinalize` that I had missed after fixing the KPI cards and
+    # the totals row — a fourth and fifth instance of the same defect, in the same
+    # change, after I had already been told the defect class twice.
