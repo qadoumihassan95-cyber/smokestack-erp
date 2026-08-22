@@ -4663,6 +4663,21 @@ copRespond=function(text){
    ========================================================================== */
 function _esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function _nn(v){var n=parseFloat(v);return isNaN(n)?0:n;}
+/* ---------- Payroll: withheld vs zero, computable vs not (BF-PR-01 / UX-B) ----------
+   Two different absences used to render as the same "$0.00":
+     * the server WITHHOLDS a figure from a role without `view_payroll` (SEC HIGH-07
+       omits it from the response), and `x||0` turned that into a number a branch
+       manager acted on;
+     * the server CANNOT COMPUTE a figure, because hourly/other non-salary pay rules
+       (D4) are not implemented, and a 0 there is a claim the employee earned nothing.
+   Neither may ever be drawn as a number. PAY_MASK is the withheld state; the
+   unsupported state is labelled in words so it cannot be mistaken for a mask. */
+var PAY_MASK='••••';
+var PAY_UNSUPPORTED_LABEL='Not supported';
+function payUnsupported(e){return String(e&&e.payType!=null?e.payType:'').trim().toLowerCase()!=='salary';}
+function payHidden(e){return !!(e&&e.payHidden);}
+/* money() for a value that may be withheld or uncomputable. Never falls back to 0. */
+function payMoney(e,v){return payHidden(e)?PAY_MASK:(payUnsupported(e)?PAY_UNSUPPORTED_LABEL:money(v));}
 function _today(){return daysAgo(0);}
 function _eod(ds){return ds+' 23:59';}                       // end-of-day vs nowStamp 'YYYY-MM-DD HH:MM'
 function _rangeTxt(a,b){return a===b?a:a+' → '+b;}
@@ -4736,8 +4751,13 @@ function renderPay(){
   var sub=document.getElementById('paySub'); if(sub)sub.textContent=branchLabel()+' · '+_rangeTxt(PAY.start,PAY.end);
   var emps=scopeEmp();
   var totG=0,totDed=0,totEmployer=0,totNet=0;
-  emps.forEach(function(e){if(!empEligible(e))return;var c=empPeriodCalc(e,PAY.start,PAY.end);totG+=c.gross;totDed+=c.deductions;totEmployer+=c.employerTax;totNet+=c.net;});
-  var K=[["Gross Payroll",money(totG),"var(--txt)"],["Net Pay",money(totNet),"var(--brand)"],["Total Cost",money(totG),"var(--bad)"]];
+  // BF-PR-01: an employee whose pay this build cannot compute contributes nothing to
+  // these totals, so publishing a number here would be an understated total that
+  // looks exactly like a correct one. Count them and say so instead.
+  var unsupportedN=emps.filter(function(e){return empEligible(e)&&payUnsupported(e);}).length;
+  emps.forEach(function(e){if(!empEligible(e)||payUnsupported(e))return;var c=empPeriodCalc(e,PAY.start,PAY.end);totG+=c.gross;totDed+=c.deductions;totEmployer+=c.employerTax;totNet+=c.net;});
+  var kG=unsupportedN?PAY_UNSUPPORTED_LABEL:money(totG),kN=unsupportedN?PAY_UNSUPPORTED_LABEL:money(totNet);
+  var K=[["Gross Payroll",kG,"var(--txt)"],["Net Pay",kN,"var(--brand)"],["Total Cost",kG,"var(--bad)"]];
   var pk=document.getElementById('payKpis'); if(pk)pk.innerHTML=K.map(function(k){return '<div class="card kpi"><div class="l">'+k[0]+'</div><div class="v" style="color:'+k[2]+'">'+k[1]+'</div><div class="s">'+_esc(branchLabel())+'</div></div>';}).join('');
   var canSal=can('view_payroll')||can('view_cost');
   var body=emps.length?emps.map(function(e){
@@ -4745,9 +4765,12 @@ function renderPay(){
     return '<tr data-empid="'+_esc(e.id)+'" style="cursor:pointer'+(inactive?';opacity:.55':'')+'">'
       +'<td><b>'+_esc(e.name)+'</b>'+(inactive?' <span class="voided-badge">inactive</span>':'')+'</td>'
       +'<td>'+_esc(e.id)+'</td><td>'+_esc(e.store)+'</td><td>'+_esc(e.title)+'</td>'
-      +'<td>'+(e.payType==='hourly'?'Hourly':'Salary')+'</td>'
-      +'<td style="text-align:end">'+(canSal?money(c.gross):'••••')+'</td>'
-      +'<td style="text-align:end"><b>'+(canSal?money(c.net):'••••')+'</b></td>'
+      // `payType==='hourly'?'Hourly':'Salary'` labelled "commission", "Hourly" and
+      // an empty pay type as "Salary" — the exact values the server refuses. Show
+      // what is stored.
+      +'<td>'+_esc(e.payType?(e.payType.charAt(0).toUpperCase()+e.payType.slice(1)):'Unset')+'</td>'
+      +'<td style="text-align:end">'+(canSal?payMoney(e,c.gross):PAY_MASK)+'</td>'
+      +'<td style="text-align:end"><b>'+(canSal?payMoney(e,c.net):PAY_MASK)+'</b></td>'
       +'<td style="text-align:center"><button type="button" class="rowact" data-empmenu="'+_esc(e.id)+'" aria-label="More actions" aria-haspopup="menu" aria-expanded="false" onclick="event.stopPropagation();empRowMenu(event,\''+_esc(e.id)+'\')">⋯</button></td></tr>';
   }).join(''):'<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:18px">No employees at '+_esc(branchLabel())+'. '+(can('add_employee')?'Use <b>+ Add Employee</b> to create one.':'')+'</td></tr>';
   var pt=document.getElementById('payTbl');
@@ -4908,18 +4931,34 @@ function payPreview(){
   if(!can('run_payroll'))return toast('Your role cannot run payroll');
   empMigrate(); var emps=scopeEmp().filter(empEligible);
   if(!emps.length)return toast('No eligible active employees at '+branchLabel()+' for this period');
+  // BF-PR-01 / BF-PR-02: the two states in which the server WILL refuse this run.
+  // The preview must not offer an action the API rejects, and must not draw a
+  // number for pay it cannot compute.
+  var unsupported=emps.filter(payUnsupported);
+  var blockers=[];
+  if(unsupported.length)blockers.push('Payroll cannot be calculated for '+unsupported.length+' employee'+(unsupported.length>1?'s':'')+' ('+unsupported.map(function(e){return _esc(e.name)+' · '+_esc(String(e.payType||'unset'))}).join(', ')+'). Hourly and other non-salary pay rules are not implemented, so no amount can be computed or posted for them — this is not a $0 pay run.');
+  if(BRANCH==='all')blockers.push('Select a single store to finalize. A pay run is posted and audited against one branch, so payroll cannot be finalized across all stores at once.');
   var tot={gross:0,ded:0,employer:0,net:0};
-  var rows=emps.map(function(e){var c=empPeriodCalc(e,PAY.start,PAY.end);tot.gross+=c.gross;tot.ded+=c.deductions;tot.employer+=c.employerTax;tot.net+=c.net;
+  var rows=emps.map(function(e){var c=empPeriodCalc(e,PAY.start,PAY.end);
+    if(payUnsupported(e)||payHidden(e))
+      return '<tr><td><b>'+_esc(e.name)+'</b></td><td>'+_esc(e.store)+'</td><td style="text-align:end" colspan="3">'+payMoney(e,c.gross)+'</td></tr>';
+    tot.gross+=c.gross;tot.ded+=c.deductions;tot.employer+=c.employerTax;tot.net+=c.net;
     return '<tr><td><b>'+_esc(e.name)+'</b></td><td>'+_esc(e.store)+'</td><td style="text-align:end">'+money(c.gross)+'</td><td style="text-align:end">'+money(c.deductions)+'</td><td style="text-align:end">'+money(c.net)+'</td></tr>';}).join('');
+  // A total over a roster containing an uncomputable employee is exactly the
+  // "nonzero aggregate that silently omits someone" hazard — do not draw one.
+  var totTxt=unsupported.length?PAY_UNSUPPORTED_LABEL:money(tot.gross);
   var overlap=PAY.finalized.some(function(f){return f.branch===(BRANCH!=='all'?BRANCH:'all')&&!(f.end<PAY.start||f.start>PAY.end);});
   document.getElementById('drwTitle').textContent='Payroll preview · '+_rangeTxt(PAY.start,PAY.end);
   document.getElementById('drwBody').innerHTML=
-    (overlap?'<div style="background:var(--warn-bg);color:var(--warn);border-radius:10px;padding:9px 12px;font-size:12.5px;font-weight:600;margin-bottom:12px">A finalized payroll already overlaps this period for '+_esc(branchLabel())+'. Finalizing again will create a duplicate — allowed only if you confirm.</div>':'')
+    blockers.map(function(b){return '<div style="background:var(--bad-bg,#fdecec);color:var(--bad);border-radius:10px;padding:9px 12px;font-size:12.5px;font-weight:600;margin-bottom:12px">Payroll is blocked. '+b+'</div>';}).join('')
+    +(overlap?'<div style="background:var(--warn-bg);color:var(--warn);border-radius:10px;padding:9px 12px;font-size:12.5px;font-weight:600;margin-bottom:12px">A finalized payroll already overlaps this period for '+_esc(branchLabel())+'. Finalizing again will create a duplicate — allowed only if you confirm.</div>':'')
     +'<div class="drw-kv"><div class="k">Branch</div><div class="v">'+_esc(branchLabel())+'</div><div class="k">Period</div><div class="v">'+_rangeTxt(PAY.start,PAY.end)+'</div><div class="k">Eligible employees</div><div class="v">'+emps.length+'</div></div>'
     +'<table style="margin-top:10px"><thead><tr><th>Employee</th><th>Branch</th><th style="text-align:end">Gross</th><th style="text-align:end">Deductions</th><th style="text-align:end">Net</th></tr></thead><tbody>'+rows
-    +'<tr style="border-top:2px solid var(--line)"><td colspan="2"><b>Totals</b></td><td style="text-align:end"><b>'+money(tot.gross)+'</b></td><td style="text-align:end"><b>'+money(tot.ded)+'</b></td><td style="text-align:end"><b>'+money(tot.net)+'</b></td></tr></tbody></table>'
-    +'<div class="drw-sec">Total cost</div><div class="drw-kv"><div class="k">Gross payroll</div><div class="v">'+money(tot.gross)+'</div><div class="k">Total cost</div><div class="v"><b>'+money(tot.gross)+'</b></div></div>';
-  var canFin=can('finalize_payroll')||can('run_payroll');
+    +'<tr style="border-top:2px solid var(--line)"><td colspan="2"><b>Totals</b></td><td style="text-align:end"><b>'+totTxt+'</b></td><td style="text-align:end"><b>'+(unsupported.length?'—':money(tot.ded))+'</b></td><td style="text-align:end"><b>'+(unsupported.length?'—':money(tot.net))+'</b></td></tr></tbody></table>'
+    +'<div class="drw-sec">Total cost</div><div class="drw-kv"><div class="k">Gross payroll</div><div class="v">'+totTxt+'</div><div class="k">Total cost</div><div class="v"><b>'+totTxt+'</b></div></div>';
+  // A blocked run offers no Finalize button: the server refuses it (409/400), and an
+  // enabled button over a blocked state is how a "$0 payroll" got authorized.
+  var canFin=(can('finalize_payroll')||can('run_payroll'))&&!blockers.length;
   document.getElementById('drwActs').innerHTML=(canFin?'<button class="pri" onclick="payFinalize('+(overlap?'true':'false')+')"><span class=ico-check></span> Finalize payroll</button>':'')+'<button onclick="drwClose()">Cancel</button>';
   document.getElementById('drw').classList.add('on');scrim(true);
 }
@@ -5344,7 +5383,14 @@ try{ empMigrate(); payRestore(); invDateRestore();
     LEDGER = L; if(typeof REP!=='undefined'&&REP) REP.tx = L; window.uid = 900000;
     // employees
     var emps = await safeList(API.employees);
-    EMPLOYEES = emps.map(function(e){ return {id:e.id, name:e.name, store:e.branch, title:e.title||'Staff', jobRole:'employee', payType:e.pay_type||'salary',
+    // `pay_type` is preserved EXACTLY as stored — `e.pay_type||'salary'` silently
+    // turned an empty pay type into "salary" on the client, which is precisely the
+    // value the server refuses to compute. Normalizing here would have shown a
+    // computable-looking row for a run the API rejects.
+    // `payHidden` records that the server WITHHELD pay (role lacks `view_payroll`)
+    // rather than that it is zero — see PAY_MASK.
+    EMPLOYEES = emps.map(function(e){ return {id:e.id, name:e.name, store:e.branch, title:e.title||'Staff', jobRole:'employee', payType:(e.pay_type==null?'salary':e.pay_type),
+      payHidden:!('salary' in e),
       salary:e.salary||0, gross:e.salary||0, hourlyRate:e.hourly_rate||0, stdHours:160, otMult:1.5, transportAllow:0, otherAllow:0, deductions:0,
       fica:7.65, unemp:2, wh:0, status:e.active?'active':'inactive', active:e.active, hireDate:daysAgo(120), termDate:'', phone:'', email:'',
       payMethod:'Bank transfer', bankRef:'', notes:'', runs:[], createdBy:'system', createdAt:''}; });
@@ -5447,7 +5493,21 @@ try{ empMigrate(); payRestore(); invDateRestore();
       if(typeof drwClose==='function')drwClose(); await afterWrite(editing?'Employee updated in database':'Employee added to database'); }
     catch(e){ var el=document.getElementById('empErr'); if(el){el.style.display='block';el.textContent=apiErr(e);} else toast(apiErr(e)); } finally{ busy=false; } });
 
-  wrap('payFinalize', async function(orig){ if(busy)return; busy=true; try{ var r=await API.finalizePayroll(PAY.start,PAY.end,(BRANCH!=='all'?BRANCH:'all')); if(typeof drwClose==='function')drwClose(); await afterWrite('Payroll finalized in database: '+money(r.gross||0)); }catch(e){ toast(apiErr(e)); } finally{ busy=false; } });
+  wrap('payFinalize', async function(orig){ if(busy)return;
+    // BF-PR-02: never send `all`. The server computed every branch and then posted
+    // the combined total under one of them, and this line was the ordinary path
+    // that did it — the store selector sits on "all" by default.
+    if(BRANCH==='all')return toast('Select a single store before finalizing payroll. A pay run is posted and audited against one branch, so it cannot be combined.');
+    busy=true; try{ var r=await API.finalizePayroll(PAY.start,PAY.end,BRANCH); if(typeof drwClose==='function')drwClose();
+      // BF-PR-01 / UX-B: the receipt OMITS the total for a caller without
+      // `view_payroll` (SEC HIGH-07 withholds it deliberately). This used to fall
+      // back to zero when the figure was absent, which reported a real, nonzero
+      // posting as "$0.00" to the branch manager who had just authorized it.
+      // Absence renders as a mask. NOTE: do not restate the old expression
+      // literally here — the regression guard is a substring check over this file,
+      // and quoting the defect in a comment makes the guard fire on its own prose.
+      await afterWrite('Payroll finalized in database: '+(('gross' in r)?money(r.gross):PAY_MASK));
+    }catch(e){ toast(apiErr(e)); } finally{ busy=false; } });
 
   wrap('invDeactivate', async function(orig, sku){ if(busy)return; busy=true;
     try{ await call('/api/inventory/products/'+encodeURIComponent(sku)+'/deactivate',{method:'POST'}); await afterWrite('Product deactivated in database'); }

@@ -54,10 +54,31 @@ def test_payroll_has_no_employee_tax():
         assert r.status_code == 200, r.text
         d = r.json()
         assert "employer_tax" not in d
+        # BF-PR-01: a row whose pay type this build cannot compute carries NO figure
+        # at all — neither `gross` nor `net`, because a 0 there is a claim the person
+        # earned nothing. This loop previously assumed every row carries both keys and
+        # raised KeyError as soon as one such employee existed in scope.
+        #
+        # The original assertion is unchanged for rows that DO carry figures, and the
+        # unsupported rows are now asserted about rather than skipped — the point of
+        # this test (no employee tax anywhere) still holds over every row.
+        computed = 0
         for row in d["rows"]:
             assert "tax" not in row
+            if row.get("status") == "unsupported":
+                assert "gross" not in row and "net" not in row, (
+                    f"an uncomputable row published a figure: {row}")
+                continue
+            computed += 1
             assert row["net"] == row["gross"]     # net equals gross (no employee tax)
-        assert d["total_cost"] == d["gross"]
+
+        if any(r.get("status") == "unsupported" for r in d["rows"]):
+            # No total may be published over a roster containing an employee whose pay
+            # was not computed: a partial sum is indistinguishable from a correct one.
+            assert "gross" not in d and "total_cost" not in d, d
+        else:
+            assert d["total_cost"] == d["gross"]
+            assert computed == len(d["rows"])
 
 
 def test_licenses_crud_and_alerts():

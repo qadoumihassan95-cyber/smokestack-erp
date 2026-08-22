@@ -309,10 +309,25 @@ def test_bf13_real_transfer_produces_an_identified_pair():
 
 
 # ------------------------------------------------------------------ SIM-06
+#
+# CONTRACT MIGRATION (BF-PR-02). These three tests called `finalize` with no `branch`
+# param, which defaulted to `branch="all"`. That default is now REFUSED before any
+# write: finalize computed the total across every branch and then persisted it under
+# `scope[0]`, so one PayrollRun labelled Store A carried Store A + B + C, and a later
+# explicit Store B run for the same period could not collide with it and was accepted.
+#
+# ONLY the request setup changed — each test keeps its original assertions verbatim
+# (200 then 409 on the duplicate, unchanged row counts after the refusal, distinct
+# periods still posting). Nothing was relaxed to obtain a pass; the duplicate is still
+# required to be refused by the DATABASE, and the natural key it collides on now
+# genuinely describes one branch's pay run instead of a combined one.
+_BR = "Store A"
+
+
 def test_sim06_duplicate_payroll_finalize_is_refused_by_the_database():
     with TestClient(app) as c:
         hdr = _hdr(c)
-        period = {"start": "2026-09-01", "end": "2026-09-15"}
+        period = {"start": "2026-09-01", "end": "2026-09-15", "branch": _BR}
         memo = f"Payroll {period['start']}->{period['end']}"
 
         def rows():
@@ -337,7 +352,7 @@ def test_sim06_rejected_duplicate_leaves_no_partial_state():
     """The 409 must roll back the ledger row, the run row AND the audit row."""
     with TestClient(app) as c:
         hdr = _hdr(c)
-        period = {"start": "2026-10-01", "end": "2026-10-15"}
+        period = {"start": "2026-10-01", "end": "2026-10-15", "branch": _BR}
         assert c.post("/api/payroll/finalize", headers=hdr, params=period).status_code == 200
         before = _counts()
         assert c.post("/api/payroll/finalize", headers=hdr, params=period).status_code == 409
@@ -348,10 +363,17 @@ def test_sim06_distinct_periods_and_branches_still_post():
     with TestClient(app) as c:
         hdr = _hdr(c)
         a = c.post("/api/payroll/finalize", headers=hdr,
-                   params={"start": "2026-11-01", "end": "2026-11-15"})
+                   params={"start": "2026-11-01", "end": "2026-11-15", "branch": _BR})
         b = c.post("/api/payroll/finalize", headers=hdr,
-                   params={"start": "2026-11-16", "end": "2026-11-30"})
+                   params={"start": "2026-11-16", "end": "2026-11-30", "branch": _BR})
         assert a.status_code == 200 and b.status_code == 200, "distinct periods must post"
+        # The name promised "and branches" but only distinct PERIODS were ever
+        # exercised, because `branch` defaulted to "all" and every call resolved to
+        # the same target. Now that the branch is explicit, assert the other half.
+        d = c.post("/api/payroll/finalize", headers=hdr,
+                   params={"start": "2026-11-01", "end": "2026-11-15", "branch": "Store B"})
+        assert d.status_code == 200, (
+            f"the same period at a DIFFERENT branch must post, got {d.status_code}: {d.text}")
 
 
 def test_sim06_uniqueness_is_a_database_constraint_not_a_precheck():

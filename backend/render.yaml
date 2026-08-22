@@ -29,6 +29,18 @@ services:
         value: "720"
       - key: CORS_ORIGINS
         value: https://smokestack-erp.onrender.com
+      - key: TRUSTED_PROXY_HOPS
+        value: "1"             # SECURITY (SEC HIGH-02 / LOW-12): exactly ONE proxy we operate
+                               # (Render's router) sits in front of this service, so the
+                               # RIGHTMOST X-Forwarded-For entry is the address that router
+                               # observed and the only one an attacker cannot forge. The code
+                               # default is 0 (ignore the header, trust the socket peer), which
+                               # is the SAFE default but the WRONG one here: behind the router
+                               # every request would attribute to the router itself, collapsing
+                               # the per-IP rate limit into ONE shared bucket for the entire
+                               # customer base. This value must never exceed the number of
+                               # proxies actually in the path. Kept identical to the root
+                               # render.yaml, which defines the same service.
       - key: SEED_ON_START
         value: "false"         # SECURITY: production must never seed demo/default accounts.
                                # The DB is already seeded; the code also defaults this to

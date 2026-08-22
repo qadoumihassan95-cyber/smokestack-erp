@@ -10,8 +10,15 @@ import json
 router = APIRouter(prefix="/api", tags=["hr"])
 
 def _emp(e):
+    # BF-PR-01 / UX-A: `hourly_rate` was accepted on write, stored, and then never
+    # serialized back. The web client reads `e.hourly_rate||0`, so every hourly
+    # employee rendered as a $0/hour worker while the database held their real rate.
+    # It is mapped to `view_payroll` in `S.FINANCIAL_FIELD_PERMS` exactly like
+    # `salary`, so `redact_financials` at each call site already withholds it from
+    # roles that may not see pay.
     return {"id": e.id, "name": e.name, "branch": e.branch, "title": e.title,
-            "pay_type": e.pay_type, "salary": float(e.salary or 0), "active": e.active,
+            "pay_type": e.pay_type, "salary": float(e.salary or 0),
+            "hourly_rate": float(e.hourly_rate or 0), "active": e.active,
             "sched_start": e.sched_start or "09:00", "sched_end": e.sched_end or "17:00",
             "sched_days": e.sched_days or "Mon-Sat",
             "role": e.role or "employee", "user_id": e.user_id}
@@ -68,6 +75,27 @@ def deactivate(eid: str, db: Session = Depends(get_db), user: models.User = Depe
     S.audit(db, user, "deactivate", "employee", eid)
     return {"ok": True}
 
+# --- BF-PR-01: which pay types this build can actually compute -----------------
+#
+# An ALLOW-LIST, not a deny-list on "hourly". `pay_type` is unvalidated end to end:
+# `models.py` gives it no enum and no CHECK, `schemas.py` no validator, and
+# `add_employee`/`update_employee` write the caller's string straight through. So
+# "Hourly", "HOURLY", " hourly ", "commission", "contract", "" and any typo all
+# produce exactly the same uncomputable pay while slipping past `== "hourly"`.
+# Listing what we CAN compute fails closed on pay types nobody has invented yet.
+#
+# When the D4 hourly rules are approved, this set grows and `_payroll_figures`
+# learns the second formula — one predicate, one call site.
+SUPPORTED_PAY_TYPES = frozenset({"salary"})
+UNSUPPORTED_PAY_REASON = (
+    "pay type is not supported by this build: hourly and other non-salary pay rules "
+    "(D4) are not implemented, so no figure can be computed for this employee")
+
+
+def _pay_type_supported(e) -> bool:
+    return str(e.pay_type or "").strip().casefold() in SUPPORTED_PAY_TYPES
+
+
 def _payroll_figures(start: str, end: str, branch: str, db: Session, user: models.User):
     """Compute the pay run for ``branch`` — a PLAIN function with NO guard of its own.
 
@@ -94,12 +122,36 @@ def _payroll_figures(start: str, end: str, branch: str, db: Session, user: model
     brs = S.resolve_branches(user, db, branch)
     emps = db.query(models.Employee).filter(models.Employee.active == True, models.Employee.branch.in_(brs)).all()
     days = max(1, (date.fromisoformat(end) - date.fromisoformat(start)).days + 1)
-    rows, gross = [], 0
+    rows, gross, blocked = [], 0, []
     for e in emps:
+        if not _pay_type_supported(e):
+            # BF-PR-01: OMIT the figure. A `0` here is a claim that this person
+            # earned nothing, and it is the claim the ledger acted on.
+            blocked.append(e)
+            rows.append({"id": e.id, "name": e.name, "branch": e.branch,
+                         "pay_type": e.pay_type, "status": "unsupported",
+                         "reason": UNSUPPORTED_PAY_REASON})
+            continue
         g = round(float(e.salary or 0) * days / 30)
         gross += g
-        rows.append({"name": e.name, "branch": e.branch, "gross": g, "net": g})
-    return {"start": start, "end": end, "rows": rows, "gross": gross, "total_cost": gross}
+        rows.append({"id": e.id, "name": e.name, "branch": e.branch, "gross": g, "net": g})
+
+    out = {"start": start, "end": end, "rows": rows}
+    if blocked:
+        # NO total is published — not even a partial one over the computable rows.
+        # ERP-Accounting-Auditor's point is decisive: a mixed salaried/hourly branch
+        # yields a NONZERO aggregate that silently omits the hourly component, and
+        # nothing downstream can tell that apart from a correct total. Absence is the
+        # only honest answer, and it also means `finalize` cannot post a figure by
+        # accident if this guard is ever removed — `s["gross"]` would raise instead
+        # of quietly posting a wrong number.
+        out["status"] = "unsupported"
+        out["reason"] = UNSUPPORTED_PAY_REASON
+        out["unsupported_employees"] = [e.id for e in blocked]
+    else:
+        out["gross"] = gross
+        out["total_cost"] = gross
+    return out
 
 
 @router.get("/payroll")
@@ -111,15 +163,57 @@ def payroll(start: str, end: str, branch: str = "all", db: Session = Depends(get
 @router.post("/payroll/finalize")
 def finalize(start: str, end: str, branch: str = "all", db: Session = Depends(get_db),
              user: models.User = Depends(S.require("run_payroll"))):
-    # resolve_branches inside 403s on an unauthorized branch
-    s = _payroll_figures(start, end, branch, db, user)
-    # BF-14: with fail-closed branch assignment this list can legitimately be empty
-    # (a branch-scoped user with no assignment). Indexing it raised IndexError -> 500,
-    # which is an authorization failure reported as a server fault. Refuse explicitly.
+    # BF-PR-02: THE BRANCH THAT IS COMPUTED MUST BE THE BRANCH THAT IS PERSISTED.
+    #
+    # This used to compute over the whole resolved scope and then post the combined
+    # total under `scope[0]`, with `branch="all"` as the DEFAULT — so the ordinary
+    # path for a multi-branch owner posted one PayrollRun labelled Store A carrying
+    # Store A + B + C. Worse, the natural key is
+    # UNIQUE(company_id, branch, period_start, period_end), so a later explicit
+    # `branch=Store B` finalize for the same period could not collide with the row
+    # labelled Store A and was ACCEPTED — Store B counted twice.
+    #
+    # Refusing "all" is stricter than picking a branch for the caller, deliberately:
+    # the branch a payroll is attributed to is an accounting fact, and the server
+    # must not choose it. This is checked BEFORE any computation, so a refusal reads
+    # nothing and writes nothing.
+    req = str(branch or "").strip()
+    if req == "" or req.casefold() == "all":
+        raise HTTPException(400, (
+            "Finalizing payroll requires one explicit branch. A pay run is posted "
+            "and audited against a single branch, so the branch cannot be defaulted "
+            "or combined; finalize each branch separately."))
+
+    # 403s on a branch the caller does not hold. Ordering matters: authorization owes
+    # a 403, and it must not be swallowed by the 400 above or below.
     scope = S.resolve_branches(user, db, branch)
-    if not scope:
-        raise HTTPException(403, "No branch is assigned to this account.")
+    if len(scope) != 1:
+        # Defense in depth, not a currently reachable path: `resolve_branches`
+        # returns exactly `[req]` for an explicit permitted branch. Stated as a
+        # refusal rather than a comment so that a future change to that function
+        # cannot silently restore combined posting.
+        raise HTTPException(400, "Payroll must resolve to exactly one branch.")
     tgt = scope[0]
+
+    s = _payroll_figures(start, end, tgt, db, user)
+
+    # BF-PR-01: refuse to POST a figure this build cannot COMPUTE.
+    #
+    # Placed before the first `db.add`, so ledger, payroll_runs and audit_log are
+    # untouched BY CONSTRUCTION rather than by cleanup. 409, not 422: the request is
+    # well-formed, it is the data state that makes it unprocessable.
+    #
+    # The message names the blocking employees and their pay types — both already
+    # readable by any role that can reach this endpoint, via `GET /api/employees` —
+    # and deliberately names NO money, because `run_payroll` does not imply
+    # `view_payroll` and a diagnostic must not become a side channel around that.
+    if s.get("status") == "unsupported":
+        blocked = ", ".join(f"{e['id']} ({e.get('pay_type') or 'unset'})"
+                            for e in s["rows"] if e.get("status") == "unsupported")
+        raise HTTPException(409, (
+            f"Payroll for {tgt} cannot be finalized: {blocked}. "
+            f"{UNSUPPORTED_PAY_REASON}. Approved D4 pay rules are required before "
+            f"these employees can be paid through payroll."))
 
     # SIM-06 + AA-06: the posting, its natural key and the audit evidence are one
     # transaction, and the pay period's uniqueness is enforced by the DATABASE.

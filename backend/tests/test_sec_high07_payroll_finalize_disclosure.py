@@ -36,6 +36,7 @@ os.environ.setdefault("SEED_DEMO_DATA", "true")
 os.environ.setdefault("JWT_SECRET", "sec-h07-secret-long-enough-for-tests")
 os.environ.setdefault("TELEGRAM_BOT_TOKEN", "test-bot-token")
 
+import pytest                                       # noqa: E402
 from fastapi.testclient import TestClient           # noqa: E402
 
 from app.main import app                            # noqa: E402
@@ -50,6 +51,58 @@ PW = "demo1234"
 # view_payroll (so the read is legitimately refused). That gap IS the finding.
 ATTACKER = "U-bm"
 CONTROL = "U-acct"          # holds run_payroll AND view_payroll AND finalize_payroll
+
+
+BRANCH = "Store A"
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _scope_this_module_can_actually_finalize():
+    """Tests 2 and 3 are CAPABILITY controls — they require `finalize` to SUCCEED, to
+    prove the disclosure fix did not simply remove the ability to run payroll.
+
+    After BF-PR-01, `finalize` correctly refuses any scope containing an active
+    employee whose pay type this build cannot compute. The repo suite shares ONE
+    SQLite database across modules, so an employee created by an unrelated module —
+    `test_reminders.py` creates `RM-CASH` in Store A with `pay_type="hourly"`, purely
+    incidental to the RBAC assertions it makes — lands in this module's payroll scope
+    and makes the capability control fail for a reason that has nothing to do with
+    disclosure. Run alone, this module passes; run in the suite, it did not.
+
+    Rather than edit another module's fixture (which would fix this instance and leave
+    the next one to chance) or weaken these assertions (which would destroy the
+    control), this module takes ownership of its own scope: deactivate the employees
+    it cannot compute, and RESTORE them afterwards so the shared database is left as
+    it was found and the module is order-independent in both directions.
+
+    This is scope control, not a workaround for the guard: BF-PR-01 refusing an hourly
+    roster is the intended behaviour and is asserted directly in
+    `test_bfpr_payroll_containment.py`.
+    """
+    from app.database import SessionLocal
+    db = SessionLocal()
+    parked = []
+    try:
+        for e in (db.query(models.Employee)
+                  .filter(models.Employee.active == True,            # noqa: E712
+                          models.Employee.branch == BRANCH).all()):
+            if str(e.pay_type or "").strip().casefold() != "salary":
+                parked.append(e.id)
+                e.active = False
+        db.commit()
+    finally:
+        db.close()
+
+    yield
+
+    if parked:
+        db = SessionLocal()
+        try:
+            for e in db.query(models.Employee).filter(models.Employee.id.in_(parked)).all():
+                e.active = True
+            db.commit()
+        finally:
+            db.close()
 
 
 def _h(uid, pw=PW):
