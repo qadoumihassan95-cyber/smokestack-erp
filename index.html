@@ -1422,8 +1422,8 @@ let RECON=[{date:daysAgo(0),desc:"CASH DEPOSIT",amt:4000,matched:true,cat:"Depos
  {date:daysAgo(1),desc:"STRIPE PAYOUT",amt:2260,matched:false,cat:"Card Sales"},
  {date:daysAgo(2),desc:"SHELL OIL 574",amt:-64,matched:false,cat:"Fuel Expense"}];
 function renderRecon(){var _rt=document.getElementById('reconTbl');if(!_rt)return;_rt.innerHTML=`<thead><tr><th>Date</th><th>Description</th><th>Auto-category</th><th>Amount</th><th>Status</th></tr></thead><tbody>`+
-  RECON.map((r,i)=>`<tr><td>${r.date.slice(5)}</td><td><b>${r.desc}</b></td><td>${r.cat}</td><td style="color:${r.amt<0?'var(--bad)':'var(--ok)'}">${money2(Math.abs(r.amt))}</td><td>${r.matched?'<span class="chip c-sale">Matched</span>':`<button class="btn g" style="padding:5px 10px" onclick="matchRecon(${i})">Record</button>`}</td></tr>`).join('')+`</tbody>`;}
-function matchRecon(i){RECON[i].matched=true;const r=RECON[i];LEDGER.push({id:++uid,date:r.date,store:STORES[0],account:"Business Bank",type:r.amt<0?"expense":"deposit",category:r.cat,amount:Math.abs(r.amt),memo:r.desc});renderRecon();renderDash();toast('Recorded & matched: '+r.desc);}
+  RECON.map((r,i)=>`<tr><td>${r.date.slice(5)}</td><td><b>${r.desc}</b></td><td>${r.cat}</td><td style="color:${r.amt<0?'var(--bad)':'var(--ok)'}">${money2(Math.abs(r.amt))}</td><td>${r.matched?'<span class="chip c-sale">Matched</span>':`<button class="btn g" style="padding:5px 10px" onclick="matchRecon('${i}')">Record</button>`}</td></tr>`).join('')+`</tbody>`;}
+function matchRecon(i){i=Number(i);RECON[i].matched=true;const r=RECON[i];LEDGER.push({id:++uid,date:r.date,store:STORES[0],account:"Business Bank",type:r.amt<0?"expense":"deposit",category:r.cat,amount:Math.abs(r.amt),memo:r.desc});renderRecon();renderDash();toast('Recorded & matched: '+r.desc);}
 function importDemo(){toast('Bank statement imported — 5 lines auto-categorized');go('recon');}
 
 // ---------------- Sales Tax ----------------
@@ -3134,7 +3134,7 @@ function drwOpenTx(id){const x=txById(id);if(!x)return;
       :`<div class="audit-row">Created on ${x.date}. No changes recorded.</div>`);
   // actions, permission-gated
   const acts=[];
-  if(can('edit')&&!x.voided)acts.push(`<button class="pri" onclick="editRecord(${x.id})"><span class=ico-pencil></span> Edit</button>`);
+  if(can('edit')&&!x.voided)acts.push(`<button class="pri" onclick="editRecord('${x.id}')"><span class=ico-pencil></span> Edit</button>`);
   acts.push(`<button onclick="drwPrint()"><span class=ico-printer></span> Print</button>`);
   if((x.type==='purchase'||x.type==='expense')&&can('create'))acts.push(`<button onclick="drwDuplicate()">⧉ Duplicate</button>`);
   if(can('void')&&!x.voided)acts.push(`<button class="danger" onclick="drwVoid()"><span class=ico-ban></span> Void / correct</button>`);
@@ -3188,8 +3188,8 @@ function editRecord(id){const x=txById(id);if(!x)return;
     +F.map(([k,v])=>`<div class="k">${k}</div><div class="v">${v}</div>`).join('')+fin+`</div>`
     +`<div class="drw-sec">Editing #${x.id} in place — the record keeps its id and audit trail.</div>`;
   document.getElementById('drwActs').innerHTML=
-    `<button class="pri" id="edSaveBtn" onclick="editSave(${x.id})"><span class=ico-save></span> Save changes</button>`
-    +`<button onclick="drwOpenTx(${x.id})">Cancel</button>`;
+    `<button class="pri" id="edSaveBtn" onclick="editSave('${x.id}')"><span class=ico-save></span> Save changes</button>`
+    +`<button onclick="drwOpenTx('${x.id}')">Cancel</button>`;
   document.getElementById('drw').classList.add('on');scrim(true);
 }
 function editSave(id){const x=txById(id);if(!x)return;
@@ -3498,8 +3498,8 @@ function invTransferActions(t){
   const next={pending:'approved',approved:'shipped',shipped:'received'}[t.status];
   const lbl={approved:'Approve',shipped:'Ship',received:'Receive'}[next];
   let h='';
-  if(next)h+=`<button class="rowact" title="${lbl}" onclick="invAdvanceTransfer(${t.id})">${next==='received'?'<span class=ico-check></span>':'→'}</button>`;
-  if(t.status!=='received'&&t.status!=='cancelled')h+=` <button class="rowact" title="Cancel" onclick="invCancelTransfer(${t.id})"><span class=ico-x></span></button>`;
+  if(next)h+=`<button class="rowact" title="${lbl}" onclick="invAdvanceTransfer('${t.id}')">${next==='received'?'<span class=ico-check></span>':'→'}</button>`;
+  if(t.status!=='received'&&t.status!=='cancelled')h+=` <button class="rowact" title="Cancel" onclick="invCancelTransfer('${t.id}')"><span class=ico-x></span></button>`;
   return h||'—';
 }
 // ---------------- product CRUD ----------------
@@ -3578,7 +3578,7 @@ function invProductForm(sku,opts){opts=opts||{};
     <label class="full">Notes<textarea id="pfNotes" rows="2">${v('notes')}</textarea></label>
     <label class="full">Product image<input id="pfImg" type="file" accept="image/*" onchange="invPreviewImg(this)"><div id="pfImgPrev" style="margin-top:6px">${p&&p.image?`<img src="${p.image}" style="height:54px;border-radius:8px">`:''}</div></label>
   </div>`;
-  document.getElementById('drwActs').innerHTML=`<button class="pri" id="pfSaveBtn" onclick="invSaveProduct(${p?p.id:'null'})"><span class=ico-save></span> Save</button><button onclick="${p?`invOpenProduct('${p.sku}')`:'drwClose()'}">Cancel</button>`;
+  document.getElementById('drwActs').innerHTML=`<button class="pri" id="pfSaveBtn" onclick="invSaveProduct('${p?p.id:''}')"><span class=ico-save></span> Save</button><button onclick="${p?`invOpenProduct('${p.sku}')`:'drwClose()'}">Cancel</button>`;
   document.getElementById('drw').classList.add('on');scrim(true);
 }
 let _pfImg='';
@@ -3604,7 +3604,7 @@ function invSaveProduct(id){
     status:g('pfStatus'),desc:g('pfDesc'),notes:g('pfNotes'),updated:daysAgo(0)};
   if(can('view_cost'))fields.cost=cost;
   if(_pfImg)fields.image=_pfImg;
-  if(id){const p=INV.products.find(x=>x.id===id);
+  if(id){const p=INV.products.find(x=>String(x.id)===String(id));
     // field-level diff for the audit log; NEVER touch stock here (that's the adjust workflow)
     const changed=Object.keys(fields).filter(f=>f!=='updated'&&String(p[f]??'')!==String(fields[f]??''))
       .map(f=>`${f}: "${p[f]??''}"→"${fields[f]??''}"`);
@@ -3696,10 +3696,10 @@ function invAdjustForm(sku){const p=invProductBySku(sku);if(!p)return;
   };
   ['adjBranch','adjType','adjQty'].forEach(i=>{const el=document.getElementById(i);el.oninput=recompute;el.onchange=recompute;});
   recompute();
-  document.getElementById('drwActs').innerHTML=`<button class="pri" id="adjSave" onclick="invDoAdjust(${p.id})"><span class=ico-save></span> Apply adjustment</button><button onclick="invOpenProduct('${p.sku}')">Cancel</button>`;
+  document.getElementById('drwActs').innerHTML=`<button class="pri" id="adjSave" onclick="invDoAdjust('${p.id}')"><span class=ico-save></span> Apply adjustment</button><button onclick="invOpenProduct('${p.sku}')">Cancel</button>`;
   document.getElementById('drw').classList.add('on');scrim(true);
 }
-function invDoAdjust(id){const p=INV.products.find(x=>x.id===id);if(!p)return;
+function invDoAdjust(id){const p=INV.products.find(x=>String(x.id)===String(id));if(!p)return;
   const btn=document.getElementById('adjSave');if(btn){if(btn.disabled)return;btn.disabled=true;}
   const branch=document.getElementById('adjBranch').value,type=document.getElementById('adjType').value;
   const qty=+document.getElementById('adjQty').value,note=document.getElementById('adjNote').value.trim();
@@ -3734,10 +3734,10 @@ function invAddStockForm(sku){const p=invProductBySku(sku);if(!p)return;
   const upd=()=>{const b=document.getElementById('asBranch').value;const cur=p.stock[b]||0;const q=+document.getElementById('asQty').value||0;
     document.getElementById('asNowB').textContent=b;document.getElementById('asNow').textContent=cur;document.getElementById('asAfter').textContent=cur+q;};
   ['asBranch','asQty'].forEach(i=>{document.getElementById(i).oninput=upd;document.getElementById(i).onchange=upd;});
-  document.getElementById('drwActs').innerHTML=`<button class="pri" id="asSave" onclick="invDoAddStock(${p.id})"><span class=ico-save></span> Receive stock</button><button onclick="invOpenProduct('${p.sku}')">Cancel</button>`;
+  document.getElementById('drwActs').innerHTML=`<button class="pri" id="asSave" onclick="invDoAddStock('${p.id}')"><span class=ico-save></span> Receive stock</button><button onclick="invOpenProduct('${p.sku}')">Cancel</button>`;
   document.getElementById('drw').classList.add('on');scrim(true);
 }
-function invDoAddStock(id){const p=INV.products.find(x=>x.id===id);if(!p)return;
+function invDoAddStock(id){const p=INV.products.find(x=>String(x.id)===String(id));if(!p)return;
   const btn=document.getElementById('asSave');if(btn){if(btn.disabled)return;btn.disabled=true;}
   const branch=document.getElementById('asBranch').value,qty=+document.getElementById('asQty').value;
   const cost=can('view_cost')&&document.getElementById('asCost')?+document.getElementById('asCost').value:p.cost;
@@ -3783,7 +3783,7 @@ function invCreateTransfer(){
   INV.transfers.unshift(t);audit('transfer:create','transfer',t.ref,`${qty} ${p.name} ${from}→${to} [source: WEB]`);
   drwClose();INV.tab='transfers';renderInventory();toast('Transfer '+t.ref+' created (pending)');
 }
-function invAdvanceTransfer(id){const t=INV.transfers.find(x=>x.id===id);if(!t||!can('transfer_stock'))return;
+function invAdvanceTransfer(id){const t=INV.transfers.find(x=>String(x.id)===String(id));if(!t||!can('transfer_stock'))return;
   const p=invProductBySku(t.sku);const flow={pending:'approved',approved:'shipped',shipped:'received'};const next=flow[t.status];if(!next)return;
   if(next==='shipped'){if((p.stock[t.from]||0)<t.qty)return toast('Not enough stock at source to ship');
     const r=invMove(p,t.from,'transfer_out',-t.qty,'Transfer '+t.ref+' → '+t.to);if(r.err)return toast(r.err);}
@@ -3792,7 +3792,7 @@ function invAdvanceTransfer(id){const t=INV.transfers.find(x=>x.id===id);if(!t||
   audit('transfer:'+next,'transfer',t.ref,`${t.from}→${t.to} ${t.qty}`);
   renderInventory();toast('Transfer '+t.ref+' → '+next);
 }
-function invCancelTransfer(id){const t=INV.transfers.find(x=>x.id===id);if(!t||!can('transfer_stock'))return;
+function invCancelTransfer(id){const t=INV.transfers.find(x=>String(x.id)===String(id));if(!t||!can('transfer_stock'))return;
   dlgAsk('Cancel transfer '+t.ref+'?','If it was already shipped, stock is returned to the source branch.',{danger:true,okLabel:'Cancel transfer',reason:true},(reason)=>{
     if(t.status==='shipped'){const p=invProductBySku(t.sku);invMove(p,t.from,'transfer_cancel',t.qty,'Cancelled '+t.ref);}
     t.status='cancelled';t.history.push({s:'cancelled',ts:nowStamp(),by:ROLE.kind,reason});
@@ -3998,15 +3998,16 @@ function bcAddLine(p){const s=BC.session;const ex=s.lines.find(l=>l.sku===p.sku)
 function bcUnknownLine(code){const s=BC.session;
   s.lines.push({sku:null,name:'Unknown ('+code+')',barcode:code,qty:1,cost:0,unknown:true});bcRenderLines();}
 function bcRenderLines(){const el=document.getElementById('bcLines');if(!el)return;const s=BC.session;
-  const rows=s.lines.map((l,i)=>`<div class="bc-line"><div>${l.unknown?'<span class=ico-alert></span> ':''}<b>${l.name}</b>${l.unknown?` <button class="ptool" style="padding:3px 8px" onclick="bcCreateUnknown(${i})">Create product</button>`:''}</div>
+  const rows=s.lines.map((l,i)=>`<div class="bc-line"><div>${l.unknown?'<span class=ico-alert></span> ':''}<b>${l.name}</b>${l.unknown?` <button class="ptool" style="padding:3px 8px" onclick="bcCreateUnknown('${i}')">Create product</button>`:''}</div>
     <input type="number" min="1" value="${l.qty}" onchange="BC.session.lines[${i}].qty=Math.max(1,+this.value||1);bcRenderLines()">
     <div style="text-align:end">${invMoney(l.qty*l.cost)}</div>
-    <button class="rowact" title="Remove" onclick="BC.session.lines.splice(${i},1);bcRenderLines()"><span class=ico-x></span></button></div>`).join('');
+    <button class="rowact" title="Remove" onclick="bcRemoveLine('${i}')"><span class=ico-x></span></button></div>`).join('');
   const totQty=s.lines.reduce((a,l)=>a+l.qty,0), totCost=s.lines.reduce((a,l)=>a+l.qty*l.cost,0);
   el.innerHTML=(s.lines.length?rows:`<div style="color:var(--muted);padding:12px 0;font-size:13px">Scan items to build the receiving list.</div>`)
     +`<div class="bc-total"><span>${totQty} item(s)</span><span>${invMoney(totCost)}</span></div>`;
 }
-function bcCreateUnknown(i){const l=BC.session.lines[i];if(!l||!can('edit'))return toast('No permission to create products');
+function bcRemoveLine(i){i=Number(i);BC.session.lines.splice(i,1);bcRenderLines();}
+function bcCreateUnknown(i){i=Number(i);const l=BC.session.lines[i];if(!l||!can('edit'))return toast('No permission to create products');
   // quick create WITHOUT losing the list: remember the line, open the form pre-filled
   BC.pendingLine=i;
   invProductForm(null,{barcode:l.barcode});
@@ -5414,7 +5415,7 @@ try{ empMigrate(); payRestore(); invDateRestore();
       payMethod:'Bank transfer', bankRef:'', notes:'', runs:[], createdBy:'system', createdAt:''}; });
     if(typeof empMigrate==='function') empMigrate();
     // transfers
-    try{ var tr=await API.transfers(); INV.transfers = tr.map(function(t){ return {id:t.id, sku:t.sku, product:_skuName[t.sku]||t.sku, from:t['from'], to:t.to, qty:t.qty, status:t.status, history:[]}; }); }catch(e){ INV.transfers=INV.transfers||[]; }
+    try{ var tr=await API.transfers(); INV.transfers = tr.map(function(t){ return {id:t.id, ref:t.id, sku:t.sku, product:_skuName[t.sku]||t.sku, from:t['from'], to:t.to, qty:t.qty, status:t.status, history:[]}; }); }catch(e){ INV.transfers=INV.transfers||[]; }
   }
   window.apiRehydrate = hydrate;
 
